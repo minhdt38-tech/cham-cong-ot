@@ -370,6 +370,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_manager_stats(qs); return
         if path == '/api/manager/export':
             self.api_manager_export(qs); return
+        if path == '/api/manager/storage':
+            self.api_manager_storage(); return
 
         # SPA fallback
         self.send_file(os.path.join(PUBLIC_DIR, 'index.html'))
@@ -925,6 +927,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 (before_month,)
             )
             db.commit()
+            db.execute('VACUUM')
         # Xoa file anh
         deleted_files = 0
         for row in rows:
@@ -953,6 +956,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.execute('DELETE FROM overtime_requests')
             db.execute("DELETE FROM users WHERE username != 'admin'")
             db.commit()
+            db.execute('VACUUM')
         # Xoa toan bo file anh
         for fname in os.listdir(UPLOADS_DIR):
             try:
@@ -960,6 +964,31 @@ class Handler(http.server.BaseHTTPRequestHandler):
             except Exception:
                 pass
         self.send_json({'ok': True})
+
+    def api_manager_storage(self):
+        sess = self.require_manager()
+        if not sess:
+            return
+        total_bytes = 0
+        for dirpath, _, filenames in os.walk(DATA_DIR):
+            for fname in filenames:
+                try:
+                    total_bytes += os.path.getsize(os.path.join(dirpath, fname))
+                except OSError:
+                    pass
+        used_mb    = total_bytes / (1024 * 1024)
+        limit_mb   = 500
+        warn_mb    = 410
+        danger_mb  = 480
+        self.send_json({
+            'used_mb':    round(used_mb, 1),
+            'limit_mb':   limit_mb,
+            'warn_mb':    warn_mb,
+            'danger_mb':  danger_mb,
+            'percent':    round(used_mb / limit_mb * 100, 1),
+            'is_warning': used_mb >= warn_mb,
+            'is_danger':  used_mb >= danger_mb,
+        })
 
     # --- NOTIFICATIONS ---
 

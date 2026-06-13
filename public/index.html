@@ -210,6 +210,20 @@
   .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
   .proof-img { max-width: 100%; border-radius: 10px; margin-top: 10px; }
 
+  /* ── STORAGE WARNING ── */
+  #storage-banner {
+    padding: 12px 24px; font-size: 14px; display: flex;
+    align-items: center; justify-content: space-between; gap: 12px;
+    flex-wrap: wrap;
+  }
+  #storage-banner.warn   { background: #fef3c7; color: #92400e; border-bottom: 1px solid #fcd34d; }
+  #storage-banner.danger { background: #fee2e2; color: #991b1b; border-bottom: 1px solid #fca5a5; }
+  .storage-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .storage-bar { height: 8px; width: 160px; background: rgba(0,0,0,0.1); border-radius: 4px; overflow: hidden; }
+  .storage-bar-fill { height: 100%; border-radius: 4px; transition: width 0.3s; }
+  .warn   .storage-bar-fill { background: #d97706; }
+  .danger .storage-bar-fill { background: #dc2626; }
+
   /* ── RESPONSIVE ── */
   @media (max-width: 640px) {
     :root { --sidebar-w: 0px; }
@@ -300,6 +314,7 @@
         </div>
       </div>
     </div>
+    <div id="storage-banner" class="hidden"></div>
     <div class="content-area" id="content-area"></div>
   </div>
 </div>
@@ -490,7 +505,10 @@ function showApp() {
   if (currentUser.role !== 'manager') {
     document.getElementById('notif-wrap').classList.remove('hidden');
     loadNotifBadge();
-    notifPollTimer = setInterval(loadNotifBadge, 30000); // poll every 30s
+    notifPollTimer = setInterval(loadNotifBadge, 30000);
+  } else {
+    checkStorage();
+    setInterval(checkStorage, 5 * 60 * 1000); // kiem tra moi 5 phut
   }
   navigate('dashboard');
 }
@@ -1212,6 +1230,36 @@ async function resetPassword(uid, name) {
     `);
     showModal('reset-pwd-modal');
   } catch(e) { alert(e.message); }
+}
+
+async function checkStorage() {
+  try {
+    const d = await api('GET', '/api/manager/storage');
+    const banner = document.getElementById('storage-banner');
+    if (!d.is_warning) { banner.className = 'hidden'; return; }
+
+    const level = d.is_danger ? 'danger' : 'warn';
+    const icon  = d.is_danger ? '🚨' : '⚠️';
+    const msg   = d.is_danger
+      ? `Dung lượng sắp đầy! Cần xóa dữ liệu ngay.`
+      : `Dung lượng sắp đạt ngưỡng cảnh báo. Hãy xóa dữ liệu cũ sớm.`;
+
+    banner.className = level;
+    banner.innerHTML = `
+      <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+        <span style="font-size:18px">${icon}</span>
+        <strong>${msg}</strong>
+        <div class="storage-bar-wrap">
+          <div class="storage-bar">
+            <div class="storage-bar-fill" style="width:${Math.min(d.percent,100)}%"></div>
+          </div>
+          <span style="font-size:13px;font-weight:600">${d.used_mb} / ${d.limit_mb} MB (${d.percent}%)</span>
+        </div>
+      </div>
+      <button class="btn btn-sm" style="background:rgba(0,0,0,0.1);border:none;cursor:pointer;white-space:nowrap"
+        onclick="navigate('data-mgmt')">Quản lý dữ liệu →</button>
+    `;
+  } catch {}
 }
 
 function renderDataMgmt() {
