@@ -904,9 +904,9 @@ function renderSubmitOT() {
           <textarea id="ot-reason" placeholder="Mô tả công việc bạn đã làm ngoài giờ..."></textarea>
         </div>
         <div class="form-group full">
-          <label>Ảnh chứng minh (tuỳ chọn)</label>
+          <label>Ảnh hiện trường * <span style="font-weight:400;color:var(--muted)">(Yêu cầu chụp bằng Timemark, thể hiện tên của từng người)</span></label>
           <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
-            <div class="icon">📎</div>
+            <div class="icon">📷</div>
             <p>Nhấn để chọn ảnh hoặc kéo thả vào đây</p>
             <p><strong>JPG, PNG, PDF</strong> — tối đa 10MB</p>
           </div>
@@ -962,6 +962,10 @@ async function submitOT() {
   msg.className = 'hidden';
   if (!date || !start || !end || !reason) {
     showMsg('ot-msg', 'error', 'Vui lòng điền đầy đủ thông tin bắt buộc');
+    return;
+  }
+  if (!file) {
+    showMsg('ot-msg', 'error', 'Vui lòng đính kèm ảnh hiện trường (chụp bằng Timemark)');
     return;
   }
 
