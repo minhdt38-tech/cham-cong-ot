@@ -113,17 +113,10 @@ def init_db():
 
 
 def compress_image(file_bytes, ext):
-    """
-    Nen anh truoc khi luu:
-    - Resize max 1920px
-    - Chuyen sang JPEG chat luong 75%
-    - Giam tu ~5MB xuong con ~200-400KB
-    """
     if not PIL_AVAILABLE:
         return file_bytes, ext
     try:
         img = PilImage.open(io.BytesIO(file_bytes))
-        # Chuyen sang RGB (JPEG khong ho tro alpha)
         if img.mode in ('RGBA', 'P', 'LA'):
             bg = PilImage.new('RGB', img.size, (255, 255, 255))
             if img.mode == 'P':
@@ -132,18 +125,16 @@ def compress_image(file_bytes, ext):
             img = bg
         elif img.mode != 'RGB':
             img = img.convert('RGB')
-        # Resize neu qua lon (max 1920px chieu dai nhat)
         max_px = 1920
         w, h = img.size
         if w > max_px or h > max_px:
             ratio = min(max_px / w, max_px / h)
             img = img.resize((int(w * ratio), int(h * ratio)), PilImage.LANCZOS)
-        # Luu thanh JPEG chat luong 75
         out = io.BytesIO()
         img.save(out, format='JPEG', quality=75, optimize=True)
         return out.getvalue(), '.jpg'
     except Exception:
-        return file_bytes, ext  # fallback: luu nguyen ban goc
+        return file_bytes, ext
 
 
 def hash_password(pw):
@@ -160,7 +151,6 @@ def rows_to_list(rows):
 
 
 def generate_temp_password():
-    """Tao mat khau tam thoi 8 ky tu (chu + so)"""
     import random, string
     chars = string.ascii_letters + string.digits
     return ''.join(random.choices(chars, k=8))
@@ -198,14 +188,9 @@ def parse_cookie(cookie_str):
     return cookies
 
 
-# --- MULTIPART PARSER (replaces removed cgi module) ---
+# --- MULTIPART PARSER ---
 
 def parse_multipart(content_type, body):
-    """
-    Parse multipart/form-data body.
-    Returns (fields: dict[str,str], files: dict[str, FileItem])
-    Compatible with Python 3.13+
-    """
     boundary = None
     for part in content_type.split(';'):
         part = part.strip()
@@ -217,7 +202,6 @@ def parse_multipart(content_type, body):
 
     fields = {}
     files  = {}
-
     delimiter = b'--' + boundary
     raw_parts = body.split(delimiter)
 
@@ -273,9 +257,7 @@ def parse_multipart(content_type, body):
 class Handler(http.server.BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
-        pass  # suppress default access log
-
-    # Helpers
+        pass
 
     def get_token(self):
         cookies = parse_cookie(self.headers.get('Cookie', ''))
@@ -373,7 +355,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == '/api/manager/storage':
             self.api_manager_storage(); return
 
-        # SPA fallback
         self.send_file(os.path.join(PUBLIC_DIR, 'index.html'))
 
     def do_POST(self):
@@ -522,31 +503,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json({'error': 'Vui long dien day du thong tin'}, 400)
             return
 
-        # Tu dong xac dinh loai OT va validate khung gio theo ngay
         try:
             from datetime import date as dclass
             y, mo, d = map(int, req_date.split('-'))
-            dow = dclass(y, mo, d).weekday()  # 0=Mon ... 6=Sun
+            dow = dclass(y, mo, d).weekday()
         except Exception:
             self.send_json({'error': 'Ngay khong hop le'}, 400)
             return
 
-        # dow: 0-4 = T2-T6, 5 = T7, 6 = CN
-        if dow <= 4:   # T2-T6
-            ot_type   = 'weekday'
-            min_start = (17, 30)
-            max_end   = (23, 0)
-            rule_msg  = 'OT ngay thuong chi duoc tu 17:30 den 23:00'
-        elif dow == 5: # T7
-            ot_type   = 'weekend'
-            min_start = (13, 30)
-            max_end   = (23, 0)
-            rule_msg  = 'OT thu 7 chi duoc tu 13:30 den 23:00'
-        else:          # CN
-            ot_type   = 'weekend'
-            min_start = (8, 0)
-            max_end   = (23, 0)
-            rule_msg  = 'OT chu nhat chi duoc tu 08:00 den 23:00'
+        if dow <= 4:
+            ot_type = 'weekday'; min_start = (17,30); max_end = (23,0)
+            rule_msg = 'OT ngay thuong chi duoc tu 17:30 den 23:00'
+        elif dow == 5:
+            ot_type = 'weekend'; min_start = (13,30); max_end = (23,0)
+            rule_msg = 'OT thu 7 chi duoc tu 13:30 den 23:00'
+        else:
+            ot_type = 'weekend'; min_start = (8,0); max_end = (23,0)
+            rule_msg = 'OT chu nhat chi duoc tu 08:00 den 23:00'
 
         try:
             sh, sm = map(int, start_time.split(':'))
@@ -555,10 +528,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json({'error': 'Gio khong hop le'}, 400)
             return
 
-        start_min = sh * 60 + sm
-        end_min   = eh * 60 + em
-        min_start_min = min_start[0] * 60 + min_start[1]
-        max_end_min   = max_end[0]   * 60 + max_end[1]
+        start_min = sh*60+sm
+        end_min   = eh*60+em
+        min_start_min = min_start[0]*60+min_start[1]
+        max_end_min   = max_end[0]*60+max_end[1]
 
         if start_min < min_start_min or end_min > max_end_min:
             self.send_json({'error': rule_msg}, 400)
@@ -567,11 +540,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json({'error': 'Gio ket thuc phai sau gio bat dau'}, 400)
             return
 
-        # Khong duoc khai bao vuot qua thoi diem hien tai (neu la ngay hom nay)
         now = datetime.now()
         today_str = now.strftime('%Y-%m-%d')
         if req_date == today_str:
-            now_min = now.hour * 60 + now.minute
+            now_min = now.hour*60+now.minute
             now_hm  = now.strftime('%H:%M')
             if end_min > now_min:
                 self.send_json({'error': 'Gio ket thuc (' + end_time + ') vuot qua thoi diem hien tai (' + now_hm + ')'}, 400)
@@ -582,10 +554,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
         raw_minutes = end_min - start_min
         deduct_min  = 0
-        # CN: tu dong tru nghi trua 12:00-13:30
         if dow == 6:
-            lunch_s = 12 * 60       # 720
-            lunch_e = 13 * 60 + 30  # 810
+            lunch_s = 720; lunch_e = 810
             overlap = max(0, min(end_min, lunch_e) - max(start_min, lunch_s))
             deduct_min = overlap
 
@@ -602,7 +572,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self.send_json({'error': 'Dinh dang file khong ho tro'}, 400)
                 return
             file_bytes = fitem.file.read()
-            # Nen anh (bo qua PDF)
             if ext != '.pdf':
                 file_bytes, ext = compress_image(file_bytes, ext)
             fname = f"{int(datetime.now().timestamp()*1000)}_{sess['userId']}{ext}"
@@ -638,7 +607,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if row['status'] != 'pending':
                 self.send_json({'error': 'Yeu cau huy Khai bao cua ban khong the thuc hien do Admin da phe duyet Khai bao nay'}, 400)
                 return
-            # Xoa anh neu co
             if row['image_path']:
                 try:
                     fpath = os.path.join(DATA_DIR, row['image_path'].lstrip('/'))
@@ -647,7 +615,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 except Exception:
                     pass
             db.execute('DELETE FROM overtime_requests WHERE id=?', (ot_id,))
-            db.execute('DELETE FROM notifications WHERE overtime_id=?', (ot_id,))
+            db.execute('DELETE FROM notifications WHERE ot_id=?', (ot_id,))
             db.commit()
         self.send_json({'ok': True})
 
@@ -698,7 +666,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ot_type = 'weekend'; min_start = (13,30); max_end = (23,0)
             rule_msg = 'OT thu 7 chi duoc tu 13:30 den 23:00'
         else:
-            ot_type = 'weekend'; min_start = (8,0);   max_end = (23,0)
+            ot_type = 'weekend'; min_start = (8,0); max_end = (23,0)
             rule_msg = 'OT chu nhat chi duoc tu 08:00 den 23:00'
 
         try:
@@ -736,8 +704,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if hours <= 0:
             self.send_json({'error': 'Tong gio OT phai lon hon 0'}, 400); return
 
-        # Xu ly anh moi (neu co)
-        image_path = row['image_path']  # giu anh cu mac dinh
+        image_path = row['image_path']
         if 'image' in files:
             fitem = files['image']
             ext = os.path.splitext(fitem.filename)[1].lower()
@@ -750,7 +717,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             fpath = os.path.join(UPLOADS_DIR, fname)
             with open(fpath, 'wb') as f:
                 f.write(file_bytes)
-            # Xoa anh cu
             if row['image_path']:
                 try:
                     old = os.path.join(DATA_DIR, row['image_path'].lstrip('/'))
@@ -790,6 +756,59 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with get_db() as db:
             rows = db.execute(sql, params).fetchall()
         self.send_json(rows_to_list(rows))
+
+    # --- NOTIFICATIONS ---
+
+    def api_notifications_list(self):
+        sess = self.require_auth()
+        if not sess:
+            return
+        with get_db() as db:
+            rows = db.execute(
+                """SELECT n.*, r.request_date, r.start_time, r.end_time, r.ot_type
+                   FROM notifications n
+                   JOIN overtime_requests r ON n.ot_id = r.id
+                   WHERE n.user_id = ?
+                   ORDER BY n.created_at DESC
+                   LIMIT 50""",
+                (sess['userId'],)
+            ).fetchall()
+        self.send_json(rows_to_list(rows))
+
+    def api_notifications_unread_count(self):
+        sess = self.require_auth()
+        if not sess:
+            return
+        with get_db() as db:
+            row = db.execute(
+                'SELECT COUNT(*) as cnt FROM notifications WHERE user_id=? AND is_read=0',
+                (sess['userId'],)
+            ).fetchone()
+        self.send_json({'count': row['cnt']})
+
+    def api_notification_mark_read(self, notif_id):
+        sess = self.require_auth()
+        if not sess:
+            return
+        with get_db() as db:
+            db.execute(
+                'UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?',
+                (notif_id, sess['userId'])
+            )
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_notifications_read_all(self):
+        sess = self.require_auth()
+        if not sess:
+            return
+        with get_db() as db:
+            db.execute(
+                'UPDATE notifications SET is_read=1 WHERE user_id=?',
+                (sess['userId'],)
+            )
+            db.commit()
+        self.send_json({'ok': True})
 
     # --- MANAGER ---
 
@@ -864,7 +883,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    WHERE id=?""",
                 (reason, sess['userId'], now, ot_id)
             )
-            # Tao thong bao cho nhan vien
             ot_date  = row['request_date']
             st_time  = row['start_time']
             en_time  = row['end_time']
@@ -1008,14 +1026,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             ws = wb.active
             ws.title = 'Cham Cong OT'
 
-            # Header style
-            hdr_fill = PatternFill('solid', fgColor='2563EB')
-            hdr_font = Font(bold=True, color='FFFFFF')
+            hdr_fill  = PatternFill('solid', fgColor='2563EB')
+            hdr_font  = Font(bold=True, color='FFFFFF')
             hdr_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
 
-            headers = ['STT','Họ tên','Bộ phận','Ngày OT','Loại OT',
-                       'Giờ bắt đầu','Giờ kết thúc','Số giờ',
-                       'Lý do','Trạng thái','Ghi chú QT','Ngày gửi']
+            headers = ['STT','Ho ten','Bo phan','Ngay OT','Loai OT',
+                       'Gio bat dau','Gio ket thuc','So gio',
+                       'Ly do','Trang thai','Ghi chu QT','Ngay gui']
             col_widths = [5, 22, 16, 13, 14, 13, 13, 9, 40, 14, 30, 18]
 
             for ci, (h, w) in enumerate(zip(headers, col_widths), 1):
@@ -1058,7 +1075,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if fill and ci == 10:
                         cell.fill = fill
 
-            # Tong ket
             total_row = len(rows) + 3
             ws.cell(row=total_row, column=1, value='Tong cong').font = Font(bold=True)
             approved_hours = sum(r['hours'] or 0 for r in rows if r['status'] == 'approved')
@@ -1071,7 +1087,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
             fname = f'cham_cong_OT_{label_month}.xlsx'
             ct = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         else:
-            # Fallback: CSV
             import csv
             buf = io.StringIO()
             w = csv.writer(buf)
@@ -1106,7 +1121,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             new_pw = generate_temp_password()
             db.execute('UPDATE users SET password=? WHERE id=?',
-                                     (hash_password(new_pw), uid))
+                       (hash_password(new_pw), uid))
             db.commit()
         self.send_json({'ok': True, 'new_password': new_pw, 'full_name': row['full_name']})
 
@@ -1137,7 +1152,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 (before_month,)
             )
             db.execute(
-                "DELETE FROM notifications WHERE overtime_id NOT IN (SELECT id FROM overtime_requests)"
+                "DELETE FROM notifications WHERE ot_id NOT IN (SELECT id FROM overtime_requests)"
             )
             db.execute('VACUUM')
             db.commit()
@@ -1151,7 +1166,6 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if body.get('confirm') != 'XAC_NHAN_XOA_HET':
             self.send_json({'error': 'Xac nhan khong dung'}, 400)
             return
-        # Xoa tat ca anh
         for fname in os.listdir(UPLOADS_DIR):
             try:
                 os.remove(os.path.join(UPLOADS_DIR, fname))
@@ -1213,7 +1227,6 @@ if __name__ == '__main__':
     print("")
     print("=" * 50)
     print("  CHAM CONG OT - Server dang chay")
-    print("=" * 50)
     print(f"  Local:   http://localhost:{PORT}")
     print(f"  Network: http://{ip}:{PORT}")
     print("  Nhan Ctrl+C de dung server")
@@ -1224,89 +1237,3 @@ if __name__ == '__main__':
         httpd.serve_forever()
     except KeyboardInterrupt:
         print("\nServer da dung.")
-b.execute(
-                """SELECT n.*, r.request_date, r.start_time, r.end_time, r.ot_type
-                   FROM notifications n
-                   JOIN overtime_requests r ON n.ot_id = r.id
-                   WHERE n.user_id = ?
-                   ORDER BY n.created_at DESC
-                   LIMIT 50""",
-                (sess['userId'],)
-            ).fetchall()
-        self.send_json(rows_to_list(rows))
-
-    def api_notifications_unread_count(self):
-        sess = self.require_auth()
-        if not sess:
-            return
-        with get_db() as db:
-            row = db.execute(
-                'SELECT COUNT(*) as cnt FROM notifications WHERE user_id=? AND is_read=0',
-                (sess['userId'],)
-            ).fetchone()
-        self.send_json({'count': row['cnt']})
-
-    def api_notification_mark_read(self, notif_id):
-        sess = self.require_auth()
-        if not sess:
-            return
-        with get_db() as db:
-            db.execute(
-                'UPDATE notifications SET is_read=1 WHERE id=? AND user_id=?',
-                (notif_id, sess['userId'])
-            )
-            db.commit()
-        self.send_json({'ok': True})
-
-    def api_notifications_read_all(self):
-        sess = self.require_auth()
-        if not sess:
-            return
-        with get_db() as db:
-            db.execute(
-                'UPDATE notifications SET is_read=1 WHERE user_id=?',
-                (sess['userId'],)
-            )
-            db.commit()
-        self.send_json({'ok': True})
-
-
-# --- SERVER ---
-
-class ThreadedServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
-    daemon_threads      = True
-    allow_reuse_address = True
-
-
-def get_local_ip():
-    import socket
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('8.8.8.8', 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return 'localhost'
-
-
-if __name__ == '__main__':
-    init_db()
-    ip = get_local_ip()
-    print("")
-    print("=" * 50)
-    print("  CHAM CONG OT - Server dang chay")
-    print("=" * 50)
-    print(f"  Local:   http://localhost:{PORT}")
-    print(f"  Network: http://{ip}:{PORT}")
-    print("  Nhan Ctrl+C de dung server")
-    print("=" * 50)
-    print("")
-    httpd = ThreadingHTTPServer(('', PORT), Handler)
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\nServer da dung.")
-server.serve_forever()
-        except KeyboardInterrupt:
-            print('\nDa dung server.')
