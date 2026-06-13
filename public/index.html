@@ -714,44 +714,21 @@ async function renderDashboard() {
   }
 }
 
-function buildDateSelect(todayStr) {
-  const [ty, tmo, td] = todayStr.split('-').map(Number);
-  // Nam: 2 nam truoc den nam hien tai
-  const ySel = document.getElementById('ot-date-y');
-  ySel.innerHTML = '';
-  for (let y = ty; y >= ty-1; y--) {
-    const o = document.createElement('option'); o.value=y; o.textContent=y; ySel.appendChild(o);
-  }
-  ySel.value = ty;
-  // Thang 1-12
-  const moSel = document.getElementById('ot-date-mo');
-  moSel.innerHTML = Array.from({length:12},(_,i)=>
-    `<option value="${String(i+1).padStart(2,'0')}">${String(i+1).padStart(2,'0')}</option>`
-  ).join('');
-  moSel.value = String(tmo).padStart(2,'0');
-  // Ngay 1-31 (se cap nhat theo thang)
-  updateDayOptions(ty, tmo, td);
+function initDatePicker(todayStr) {
+  const [y,m,d] = todayStr.split('-');
+  document.getElementById('ot-date-display').value = d+'/'+m+'/'+y;
+  document.getElementById('ot-date-picker').value  = todayStr;
+  document.getElementById('ot-date').value          = todayStr;
 }
 
-function updateDayOptions(y, mo, selectedDay) {
-  const dSel = document.getElementById('ot-date-d');
-  const maxDay = new Date(y, mo, 0).getDate();
-  const cur = parseInt(dSel.value)||selectedDay;
-  dSel.innerHTML = Array.from({length:maxDay},(_,i)=>
-    `<option value="${String(i+1).padStart(2,'0')}">${String(i+1).padStart(2,'0')}</option>`
-  ).join('');
-  dSel.value = String(Math.min(cur, maxDay)).padStart(2,'0');
-}
-
-function syncDateInput() {
-  const y  = document.getElementById('ot-date-y').value;
-  const mo = document.getElementById('ot-date-mo').value;
-  updateDayOptions(parseInt(y), parseInt(mo), parseInt(document.getElementById('ot-date-d').value));
-  const d  = document.getElementById('ot-date-d').value;
-  // Khong cho chon ngay tuong lai
+function onDatePicked(val) {
+  if (!val) return;
   const today = new Date().toISOString().split('T')[0];
-  const chosen = y+'-'+mo+'-'+d;
-  document.getElementById('ot-date').value = chosen > today ? today : chosen;
+  const safe  = val > today ? today : val;
+  const [y,m,d] = safe.split('-');
+  document.getElementById('ot-date-display').value = d+'/'+m+'/'+y;
+  document.getElementById('ot-date').value          = safe;
+  updateOTForm();
 }
 
 function buildTimeSelects(startVal, endVal) {
@@ -862,12 +839,14 @@ function renderSubmitOT() {
       <div class="form-grid">
         <div class="form-group">
           <label>Ngày làm thêm *</label>
-          <div style="display:flex;gap:6px;align-items:center">
-            <select id="ot-date-d" onchange="syncDateInput();updateOTForm()" style="flex:1;padding:10px 8px;border:1px solid var(--border);border-radius:8px;font-size:15px"></select>
-            <span style="font-weight:600;color:var(--muted)">/</span>
-            <select id="ot-date-mo" onchange="syncDateInput();updateOTForm()" style="flex:1;padding:10px 8px;border:1px solid var(--border);border-radius:8px;font-size:15px"></select>
-            <span style="font-weight:600;color:var(--muted)">/</span>
-            <select id="ot-date-y" onchange="syncDateInput();updateOTForm()" style="flex:1.5;padding:10px 8px;border:1px solid var(--border);border-radius:8px;font-size:15px"></select>
+          <div style="position:relative">
+            <input type="text" id="ot-date-display" readonly
+              style="width:100%;padding:10px 42px 10px 12px;border:1px solid var(--border);border-radius:8px;font-size:15px;cursor:pointer;background:#fff;box-sizing:border-box"
+              onclick="document.getElementById('ot-date-picker').showPicker()">
+            <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:18px;pointer-events:none;cursor:pointer">📅</span>
+            <input type="date" id="ot-date-picker" id2="ot-date"
+              style="position:absolute;opacity:0;width:0;height:0;top:0;left:0"
+              max="${today}" onchange="onDatePicked(this.value)">
           </div>
           <input type="hidden" id="ot-date" value="${today}">
         </div>
@@ -922,8 +901,8 @@ function renderSubmitOT() {
     </div>
   `);
 
-  // Khoi tao dropdowns ngay/thang/nam va gio 24h
-  buildDateSelect(today);
+  // Khoi tao date picker va gio 24h
+  initDatePicker(today);
   buildTimeSelects('17:30','19:00');
   updateOTForm();
 
