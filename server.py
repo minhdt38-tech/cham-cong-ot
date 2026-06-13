@@ -413,6 +413,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/manager/users/(\d+)$', path)
         if m:
             self.api_manager_delete_user(int(m.group(1))); return
+        if path == '/api/manager/data/cleanup':
+            self.api_manager_cleanup_data(); return
+        if path == '/api/manager/data/reset-all':
+            self.api_manager_reset_all(); return
         self.send_json({'error': 'Not found'}, 404)
 
     # --- AUTH ---
@@ -888,6 +892,74 @@ class Handler(http.server.BaseHTTPRequestHandler):
                        (hash_password(new_pw), uid))
             db.commit()
         self.send_json({'ok': True, 'new_password': new_pw, 'full_name': row['full_name']})
+
+    def api_manager_cleanup_data(self):
+        """Xoa du lieu OT truoc mot thang nhat dinh (giu nguyen tai khoan)"""
+        sess = self.require_manager()
+        if not sess:
+            return
+        body        = self.read_json()
+        before_month = body.get('before_month', '').strip()  # format: "YYYY-MM"
+        if not re.match(r'^\d{4}-\d{2}$', before_month):
+            self.send_json({'error': 'Dinh dang thang khong hop le (YYYY-MM)'}, 400)
+            return
+        with get_db() as db:
+            # Lay danh sach anh can xoa
+            rows = db.execute(
+                "SELECT image_path FROM overtime_requests WHERE image_path IS NOT NULL AND strftime('%Y-%m', request_date) < ?",
+                (before_month,)
+            ).fetchall()
+            deleted_count = db.execute(
+                "SELECT COUNT(*) as cnt FROM overtime_requests WHERE strftime('%Y-%m', request_date) < ?",
+                (before_month,)
+            ).fetchone()['cnt']
+            # Xoa notifications lien quan
+            db.execute(
+                """DELETE FROM notifications WHERE ot_id IN
+                   (SELECT id FROM overtime_requests WHERE strftime('%Y-%m', request_date) < ?)""",
+                (before_month,)
+            )
+            # Xoa ban ghi OT
+            db.execute(
+                "DELETE FROM overtime_requests WHERE strftime('%Y-%m', request_date) < ?",
+                (before_month,)
+            )
+            db.commit()
+        # Xoa file anh
+        deleted_files = 0
+        for row in rows:
+            if row['image_path']:
+                fname = os.path.basename(row['image_path'])
+                fpath = os.path.join(UPLOADS_DIR, fname)
+                try:
+                    os.remove(fpath)
+                    deleted_files += 1
+                except Exception:
+                    pass
+        self.send_json({'ok': True, 'deleted_records': deleted_count, 'deleted_files': deleted_files})
+
+    def api_manager_reset_all(self):
+        """Xoa toan bo du lieu: OT, thong bao, anh, tat ca NV ngoai tru admin"""
+        sess = self.require_manager()
+        if not sess:
+            return
+        body    = self.read_json()
+        confirm = body.get('confirm', '')
+        if confirm != 'XAC_NHAN_XOA_HET':
+            self.send_json({'error': 'Xac nhan khong dung'}, 400)
+            return
+        with get_db() as db:
+            db.execute('DELETE FROM notifications')
+            db.execute('DELETE FROM overtime_requests')
+            db.execute("DELETE FROM users WHERE username != 'admin'")
+            db.commit()
+        # Xoa toan bo file anh
+        for fname in os.listdir(UPLOADS_DIR):
+            try:
+                os.remove(os.path.join(UPLOADS_DIR, fname))
+            except Exception:
+                pass
+        self.send_json({'ok': True})
 
     # --- NOTIFICATIONS ---
 

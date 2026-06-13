@@ -573,6 +573,7 @@ function buildNav() {
     { page: 'all-records', icon: '📋', label: 'Tất cả chấm công' },
     { page: 'report', icon: '📈', label: 'Báo cáo' },
     { page: 'users', icon: '👥', label: 'Quản lý nhân viên' },
+    { page: 'data-mgmt', icon: '🗄️', label: 'Quản lý dữ liệu' },
   ] : [
     { page: 'dashboard', icon: '📊', label: 'Tổng quan' },
     { page: 'submit-ot', icon: '⏰', label: 'Khai báo OT' },
@@ -592,7 +593,8 @@ function navigate(page) {
   const titles = {
     dashboard: 'Tổng quan', 'submit-ot': 'Khai báo OT',
     'my-records': 'Lịch sử của tôi', approve: 'Duyệt OT',
-    'all-records': 'Tất cả chấm công', report: 'Báo cáo', users: 'Quản lý nhân viên'
+    'all-records': 'Tất cả chấm công', report: 'Báo cáo',
+    users: 'Quản lý nhân viên', 'data-mgmt': 'Quản lý dữ liệu'
   };
   document.getElementById('page-title').textContent = titles[page] || page;
   const content = document.getElementById('content-area');
@@ -606,6 +608,7 @@ function navigate(page) {
   else if (page === 'all-records') renderAllRecords();
   else if (page === 'report') renderReport();
   else if (page === 'users') renderUsers();
+  else if (page === 'data-mgmt') renderDataMgmt();
 }
 
 // ─────────────── PAGES ───────────────
@@ -1209,6 +1212,82 @@ async function resetPassword(uid, name) {
     `);
     showModal('reset-pwd-modal');
   } catch(e) { alert(e.message); }
+}
+
+function renderDataMgmt() {
+  const now = new Date();
+  const thisMonth = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}`;
+  set('content-area', `
+    <div style="display:flex;flex-direction:column;gap:20px;max-width:680px">
+
+      <div class="card">
+        <h3>🧹 Xóa dữ liệu chấm công cũ</h3>
+        <p style="color:var(--muted);font-size:14px;margin-bottom:16px;line-height:1.6">
+          Xóa toàn bộ bản ghi OT <strong>trước tháng được chọn</strong> để giải phóng dung lượng.<br>
+          Tài khoản nhân viên <strong>không bị ảnh hưởng</strong>. Nên xuất Excel trước khi xóa.
+        </p>
+        <div class="flex items-center gap-2" style="flex-wrap:wrap">
+          <label style="font-size:14px;font-weight:500">Xóa dữ liệu trước tháng:</label>
+          <input type="month" id="cleanup-month" value="${thisMonth}" style="padding:8px 12px;border:1px solid var(--border);border-radius:8px">
+          <button class="btn btn-danger" onclick="doCleanup()">🗑️ Xóa dữ liệu cũ</button>
+        </div>
+        <div id="cleanup-msg" class="hidden" style="margin-top:12px"></div>
+      </div>
+
+      <div class="card" style="border:2px solid var(--danger)">
+        <h3 style="color:var(--danger)">⚠️ Reset toàn bộ hệ thống</h3>
+        <p style="color:var(--muted);font-size:14px;margin-bottom:16px;line-height:1.6">
+          Xóa <strong>tất cả</strong>: dữ liệu chấm công, thông báo, ảnh upload, và toàn bộ tài khoản nhân viên.<br>
+          Chỉ giữ lại tài khoản <code>admin</code>. <strong style="color:var(--danger)">Không thể hoàn tác!</strong>
+        </p>
+        <div class="form-group" style="max-width:340px;margin-bottom:12px">
+          <label style="font-size:13px">Nhập <strong>XAC_NHAN_XOA_HET</strong> để xác nhận:</label>
+          <input type="text" id="reset-confirm-input" placeholder="XAC_NHAN_XOA_HET" style="font-family:monospace">
+        </div>
+        <button class="btn btn-danger" onclick="doResetAll()">💣 Reset toàn bộ hệ thống</button>
+        <div id="reset-msg" class="hidden" style="margin-top:12px"></div>
+      </div>
+
+    </div>
+  `);
+}
+
+async function doCleanup() {
+  const val = document.getElementById('cleanup-month').value;
+  if (!val) { alert('Vui long chon thang'); return; }
+  if (!confirm(`Xac nhan xoa toan bo du lieu OT truoc thang ${val}?\nHanh dong nay khong the hoan tac.`)) return;
+  const msg = document.getElementById('cleanup-msg');
+  try {
+    const res = await api('DELETE', '/api/manager/data/cleanup', { before_month: val });
+    msg.className = 'alert alert-success';
+    msg.textContent = `Da xoa ${res.deleted_records} ban ghi va ${res.deleted_files} file anh.`;
+    msg.classList.remove('hidden');
+  } catch(e) {
+    msg.className = 'alert alert-error';
+    msg.textContent = e.message;
+    msg.classList.remove('hidden');
+  }
+}
+
+async function doResetAll() {
+  const val = document.getElementById('reset-confirm-input').value.trim();
+  if (val !== 'XAC_NHAN_XOA_HET') {
+    alert('Chu xac nhan khong dung. Nhap chinh xac: XAC_NHAN_XOA_HET');
+    return;
+  }
+  if (!confirm('LAN CUOI XAC NHAN: Xoa toan bo du lieu va nhan vien?\nChi giu lai tai khoan admin.')) return;
+  const msg = document.getElementById('reset-msg');
+  try {
+    await api('DELETE', '/api/manager/data/reset-all', { confirm: 'XAC_NHAN_XOA_HET' });
+    msg.className = 'alert alert-success';
+    msg.textContent = 'Da reset toan bo. Dang tai lai...';
+    msg.classList.remove('hidden');
+    setTimeout(() => location.reload(), 1500);
+  } catch(e) {
+    msg.className = 'alert alert-error';
+    msg.textContent = e.message;
+    msg.classList.remove('hidden');
+  }
 }
 
 function copyPw(pw, btn) {
