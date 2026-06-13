@@ -18,7 +18,9 @@ import io
 import re
 import threading
 from urllib.parse import urlparse, parse_qs
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
+
+VN_TZ = timezone(timedelta(hours=7))
 
 try:
     from PIL import Image as PilImage
@@ -540,7 +542,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json({'error': 'Gio ket thuc phai sau gio bat dau'}, 400)
             return
 
-        now = datetime.now()
+        now = datetime.now(VN_TZ).replace(tzinfo=None)
         today_str = now.strftime('%Y-%m-%d')
         if req_date == today_str:
             now_min = now.hour*60+now.minute
@@ -685,7 +687,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if end_min <= start_min:
             self.send_json({'error': 'Gio ket thuc phai sau gio bat dau'}, 400); return
 
-        now = datetime.now()
+        now = datetime.now(VN_TZ).replace(tzinfo=None)
         today_str = now.strftime('%Y-%m-%d')
         if req_date == today_str:
             now_min = now.hour*60+now.minute
@@ -849,7 +851,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if status not in ('approved', 'rejected'):
             self.send_json({'error': 'Trang thai khong hop le'}, 400)
             return
-        now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+        now = datetime.now(VN_TZ).strftime('%Y-%m-%d %H:%M:%S')
         with get_db() as db:
             db.execute(
                 """UPDATE overtime_requests
@@ -1231,7 +1233,6 @@ if __name__ == '__main__':
     print(f"  Network: http://{ip}:{PORT}")
     print("  Nhan Ctrl+C de dung server")
     print("=" * 50)
-    print("")
     httpd = ThreadingHTTPServer(('', PORT), Handler)
     try:
         httpd.serve_forever()
