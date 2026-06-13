@@ -561,6 +561,19 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json({'error': 'Gio ket thuc phai sau gio bat dau'}, 400)
             return
 
+        # Khong duoc khai bao vuot qua thoi diem hien tai (neu la ngay hom nay)
+        now = datetime.now()
+        today_str = now.strftime('%Y-%m-%d')
+        if req_date == today_str:
+            now_min = now.hour * 60 + now.minute
+            now_hm  = now.strftime('%H:%M')
+            if end_min > now_min:
+                self.send_json({'error': 'Gio ket thuc (' + end_time + ') vuot qua thoi diem hien tai (' + now_hm + ')'}, 400)
+                return
+            if start_min >= now_min:
+                self.send_json({'error': 'Gio bat dau (' + start_time + ') chua den gio hien tai (' + now_hm + ')'}, 400)
+                return
+
         raw_minutes = end_min - start_min
         deduct_min  = 0
         # CN: tu dong tru nghi trua 12:00-13:30
@@ -1114,18 +1127,19 @@ if __name__ == '__main__':
     init_db()
     ip = get_local_ip()
     print("")
-    print("=" * 46)
-    print("  HE THONG CHAM CONG OT - DANG CHAY")
-    print("=" * 46)
-    print(f"  Local   : http://localhost:{PORT}")
-    print(f"  Mang LAN: http://{ip}:{PORT}")
-    print("")
-    print("  Tai khoan quan ly: admin / admin123")
+    print("=" * 50)
+    print("  CHAM CONG OT - Server dang chay")
+    print("=" * 50)
+    print(f"  Local:   http://localhost:{PORT}")
+    print(f"  Network: http://{ip}:{PORT}")
     print("  Nhan Ctrl+C de dung server")
-    print("=" * 46)
+    print("=" * 50)
     print("")
-    with ThreadedServer(('0.0.0.0', PORT), Handler) as server:
-        try:
-            server.serve_forever()
+    httpd = ThreadingHTTPServer(('', PORT), Handler)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nServer da dung.")
+server.serve_forever()
         except KeyboardInterrupt:
             print('\nDa dung server.')

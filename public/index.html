@@ -1028,12 +1028,27 @@ async function submitOT() {
   // Client-side validate khung gio
   const rules = getOTRules(date);
   if (start < rules.minStart || start >= rules.maxEnd) {
-    showMsg('ot-msg', 'error', 'Gio bat dau khong hop le. ' + rules.hint);
+    showMsg('ot-msg', 'error', 'Giờ bắt đầu không hợp lệ. ' + rules.hint);
     return;
   }
   if (end <= start || end > rules.maxEnd) {
-    showMsg('ot-msg', 'error', 'Gio ket thuc khong hop le. ' + rules.hint);
+    showMsg('ot-msg', 'error', 'Giờ kết thúc không hợp lệ. ' + rules.hint);
     return;
+  }
+
+  // Khong duoc khai bao vuot qua thoi diem hien tai (neu chon ngay hom nay)
+  const today = new Date().toISOString().split('T')[0];
+  if (date === today) {
+    const now = new Date();
+    const nowStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
+    if (end > nowStr) {
+      showMsg('ot-msg', 'error', `Giờ kết thúc (${end}) không được vượt quá giờ hiện tại (${nowStr}).`);
+      return;
+    }
+    if (start >= nowStr) {
+      showMsg('ot-msg', 'error', `Giờ bắt đầu (${start}) không được từ giờ hiện tại trở đi (${nowStr}).`);
+      return;
+    }
   }
 
   btn.disabled = true; btn.textContent = '⏳ Đang gửi...';
