@@ -1,0 +1,7 @@
+cham_cong.db
+cham_cong.db-wal
+cham_cong.db-shm
+uploads/
+__pycache__/
+*.pyc
+node_modules/

@@ -1,0 +1,1265 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chấm Công OT</title>
+<style>
+  :root {
+    --primary: #2563eb;
+    --primary-dark: #1d4ed8;
+    --success: #16a34a;
+    --danger: #dc2626;
+    --warning: #d97706;
+    --bg: #f1f5f9;
+    --card: #ffffff;
+    --border: #e2e8f0;
+    --text: #1e293b;
+    --muted: #64748b;
+    --sidebar-w: 240px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); }
+
+  /* ── LOGIN ── */
+  #login-page {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+  }
+  .login-card {
+    background: white; border-radius: 16px; padding: 40px; width: 360px; box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+  }
+  .login-card h1 { text-align: center; font-size: 22px; color: var(--primary); margin-bottom: 8px; }
+  .login-card p { text-align: center; color: var(--muted); font-size: 14px; margin-bottom: 28px; }
+  .login-card .logo { text-align:center; font-size: 48px; margin-bottom: 12px; }
+
+  /* ── LAYOUT ── */
+  #app { display: flex; min-height: 100vh; }
+  #sidebar {
+    width: var(--sidebar-w); background: #1e293b; color: white;
+    display: flex; flex-direction: column; flex-shrink: 0; position: fixed;
+    top: 0; left: 0; height: 100vh; z-index: 100;
+  }
+  .sidebar-logo { padding: 20px 16px; border-bottom: 1px solid #334155; }
+  .sidebar-logo h2 { font-size: 16px; font-weight: 700; }
+  .sidebar-logo span { font-size: 12px; color: #94a3b8; }
+  .sidebar-nav { flex: 1; padding: 12px 0; overflow-y: auto; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+    cursor: pointer; border-radius: 8px; margin: 2px 8px;
+    font-size: 14px; transition: background 0.15s; color: #cbd5e1;
+  }
+  .nav-item:hover { background: #334155; color: white; }
+  .nav-item.active { background: var(--primary); color: white; }
+  .nav-item .icon { font-size: 18px; width: 22px; text-align: center; flex-shrink: 0; }
+  .nav-section { font-size: 11px; color: #475569; text-transform: uppercase; padding: 12px 16px 4px; letter-spacing: 0.05em; }
+  .sidebar-footer { padding: 12px 8px; border-top: 1px solid #334155; }
+  .user-info { padding: 8px 8px; border-radius: 8px; margin-bottom: 4px; }
+  .user-info .name { font-size: 13px; font-weight: 600; }
+  .user-info .role { font-size: 11px; color: #94a3b8; }
+
+  #main-content { margin-left: var(--sidebar-w); flex: 1; }
+  .topbar {
+    background: white; border-bottom: 1px solid var(--border);
+    padding: 16px 24px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 50;
+  }
+  .topbar h1 { font-size: 20px; font-weight: 700; }
+  .content-area { padding: 24px; }
+
+  /* ── CARDS ── */
+  .card { background: white; border-radius: 12px; padding: 20px; border: 1px solid var(--border); }
+  .card h3 { font-size: 16px; font-weight: 600; margin-bottom: 16px; color: var(--text); }
+  .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat-card {
+    background: white; border-radius: 12px; padding: 20px; border: 1px solid var(--border);
+    display: flex; align-items: center; gap: 16px;
+  }
+  .stat-icon { font-size: 28px; width: 52px; height: 52px; border-radius: 12px; display: flex; align-items: center; justify-content: center; }
+  .stat-icon.blue { background: #dbeafe; }
+  .stat-icon.green { background: #dcfce7; }
+  .stat-icon.orange { background: #ffedd5; }
+  .stat-icon.red { background: #fee2e2; }
+  .stat-num { font-size: 24px; font-weight: 700; }
+  .stat-label { font-size: 12px; color: var(--muted); margin-top: 2px; }
+
+  /* ── FORM ── */
+  .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-group.full { grid-column: 1 / -1; }
+  label { font-size: 13px; font-weight: 500; color: var(--text); }
+  input, select, textarea {
+    padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px;
+    font-size: 14px; font-family: inherit; transition: border-color 0.15s; outline: none;
+    background: white; color: var(--text);
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(37,99,235,0.1); }
+  textarea { resize: vertical; min-height: 80px; }
+
+  /* ── BUTTONS ── */
+  .btn {
+    padding: 10px 20px; border-radius: 8px; border: none; cursor: pointer;
+    font-size: 14px; font-weight: 500; font-family: inherit;
+    transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px;
+  }
+  .btn-primary { background: var(--primary); color: white; }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-success { background: var(--success); color: white; }
+  .btn-success:hover { background: #15803d; }
+  .btn-danger { background: var(--danger); color: white; }
+  .btn-danger:hover { background: #b91c1c; }
+  .btn-outline { background: white; color: var(--text); border: 1px solid var(--border); }
+  .btn-outline:hover { background: var(--bg); }
+  .btn-sm { padding: 6px 12px; font-size: 13px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ── TABLE ── */
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  th { background: #f8fafc; padding: 10px 14px; text-align: left; font-weight: 600; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid var(--border); }
+  td { padding: 12px 14px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: #f8fafc; }
+
+  /* ── BADGES ── */
+  .badge { display: inline-flex; align-items: center; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 500; }
+  .badge-pending { background: #fef3c7; color: #92400e; }
+  .badge-approved { background: #dcfce7; color: #166534; }
+  .badge-rejected { background: #fee2e2; color: #991b1b; }
+  .badge-cancelled { background: #f1f5f9; color: #475569; text-decoration: line-through; }
+  .badge-weekday { background: #dbeafe; color: #1e40af; }
+  .badge-weekend { background: #ede9fe; color: #6d28d9; }
+
+  /* ── NOTIFICATION BELL ── */
+  .notif-btn {
+    position: relative; background: none; border: none; cursor: pointer;
+    font-size: 22px; padding: 4px 8px; border-radius: 8px; transition: background 0.15s;
+  }
+  .notif-btn:hover { background: #f1f5f9; }
+  .notif-badge {
+    position: absolute; top: -2px; right: -2px;
+    background: var(--danger); color: white;
+    font-size: 10px; font-weight: 700; min-width: 18px; height: 18px;
+    border-radius: 9px; display: flex; align-items: center; justify-content: center;
+    padding: 0 4px; border: 2px solid white;
+  }
+  .notif-dropdown {
+    position: absolute; top: 48px; right: 0; width: 360px; max-height: 480px;
+    background: white; border-radius: 14px; box-shadow: 0 8px 32px rgba(0,0,0,0.15);
+    border: 1px solid var(--border); z-index: 200; overflow: hidden;
+    display: flex; flex-direction: column;
+  }
+  .notif-header {
+    padding: 14px 16px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    font-weight: 600; font-size: 14px; flex-shrink: 0;
+  }
+  .notif-list { overflow-y: auto; flex: 1; }
+  .notif-item {
+    padding: 14px 16px; border-bottom: 1px solid var(--border);
+    cursor: pointer; transition: background 0.1s;
+  }
+  .notif-item:hover { background: #f8fafc; }
+  .notif-item.unread { background: #eff6ff; border-left: 3px solid var(--primary); }
+  .notif-item .notif-title { font-weight: 600; font-size: 13px; color: var(--danger); margin-bottom: 4px; }
+  .notif-item .notif-msg { font-size: 13px; color: var(--text); line-height: 1.4; }
+  .notif-item .notif-time { font-size: 11px; color: var(--muted); margin-top: 6px; }
+  .notif-empty { padding: 32px; text-align: center; color: var(--muted); font-size: 14px; }
+
+  /* ── UPLOAD ── */
+  .upload-zone {
+    border: 2px dashed var(--border); border-radius: 10px; padding: 24px;
+    text-align: center; cursor: pointer; transition: all 0.15s;
+  }
+  .upload-zone:hover, .upload-zone.drag { border-color: var(--primary); background: #eff6ff; }
+  .upload-zone .icon { font-size: 32px; margin-bottom: 8px; }
+  .upload-zone p { font-size: 14px; color: var(--muted); }
+  .upload-zone strong { color: var(--primary); }
+  #preview-img { max-width: 100%; max-height: 200px; border-radius: 8px; margin-top: 12px; display: none; }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    display: flex; align-items: center; justify-content: center; z-index: 1000;
+    padding: 16px;
+  }
+  .modal { background: white; border-radius: 16px; width: 560px; max-width: 100%; max-height: 90vh; overflow-y: auto; }
+  .modal-header { padding: 20px 24px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+  .modal-header h3 { font-size: 18px; font-weight: 600; }
+  .modal-body { padding: 24px; }
+  .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+  .close-btn { background: none; border: none; cursor: pointer; font-size: 20px; color: var(--muted); padding: 4px; }
+
+  /* ── UTILS ── */
+  .hidden { display: none !important; }
+  .flex { display: flex; }
+  .gap-2 { gap: 8px; }
+  .gap-3 { gap: 12px; }
+  .items-center { align-items: center; }
+  .justify-between { justify-content: space-between; }
+  .mb-4 { margin-bottom: 16px; }
+  .mt-4 { margin-top: 16px; }
+  .text-muted { color: var(--muted); font-size: 13px; }
+  .alert { padding: 12px 16px; border-radius: 8px; font-size: 14px; margin-bottom: 16px; }
+  .alert-success { background: #dcfce7; color: #166534; }
+  .alert-error { background: #fee2e2; color: #991b1b; }
+  .img-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 6px; cursor: pointer; border: 1px solid var(--border); }
+  .filter-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+  .filter-bar select, .filter-bar input { padding: 8px 12px; min-width: 120px; }
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--muted); }
+  .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+  .proof-img { max-width: 100%; border-radius: 10px; margin-top: 10px; }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 640px) {
+    :root { --sidebar-w: 0px; }
+    #sidebar { transform: translateX(-100%); transition: transform 0.3s; width: 240px; }
+    #sidebar.open { transform: translateX(0); }
+    #main-content { margin-left: 0; }
+    .form-grid { grid-template-columns: 1fr; }
+    .topbar { padding: 12px 16px; }
+    .content-area { padding: 16px; }
+    #menu-btn { display: flex !important; }
+  }
+  #menu-btn { display: none; background: none; border: none; cursor: pointer; font-size: 22px; padding: 4px; }
+  #overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 90; }
+  #overlay.show { display: block; }
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN ── -->
+<div id="login-page">
+  <div class="login-card">
+    <div class="logo">🏢</div>
+    <h1>Chấm Công OT</h1>
+    <p>Đăng nhập để tiếp tục</p>
+    <div id="login-error" class="alert alert-error hidden"></div>
+    <form id="login-form">
+      <div class="form-group mb-4">
+        <label>Tên đăng nhập</label>
+        <input id="inp-username" type="text" placeholder="username" required autocomplete="username">
+      </div>
+      <div class="form-group mb-4">
+        <label>Mật khẩu</label>
+        <input id="inp-password" type="password" placeholder="••••••••" required autocomplete="current-password">
+      </div>
+      <button type="submit" class="btn btn-primary" style="width:100%; justify-content:center;">
+        Đăng nhập
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- ── MAIN APP ── -->
+<div id="app" class="hidden">
+  <div id="overlay"></div>
+
+  <!-- Sidebar -->
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <h2>🏢 Chấm Công OT</h2>
+      <span id="sb-username"></span>
+    </div>
+    <div class="sidebar-nav" id="sidebar-nav"></div>
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="name" id="sb-fullname"></div>
+        <div class="role" id="sb-role"></div>
+      </div>
+      <button class="nav-item" onclick="showChangePwd()" style="width:100%">
+        <span class="icon">🔑</span> Đổi mật khẩu
+      </button>
+      <button class="nav-item" onclick="logout()" style="width:100%">
+        <span class="icon">🚪</span> Đăng xuất
+      </button>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <div id="main-content">
+    <div class="topbar">
+      <div class="flex items-center gap-2">
+        <button id="menu-btn" onclick="toggleSidebar()">☰</button>
+        <h1 id="page-title">Dashboard</h1>
+      </div>
+      <!-- Notification bell (employee only) -->
+      <div id="notif-wrap" class="hidden" style="position:relative">
+        <button class="notif-btn" id="notif-btn" onclick="toggleNotifDropdown()">
+          🔔
+          <span class="notif-badge hidden" id="notif-badge">0</span>
+        </button>
+        <div class="notif-dropdown hidden" id="notif-dropdown">
+          <div class="notif-header">
+            <span>Thông báo</span>
+            <button class="btn btn-outline btn-sm" onclick="markAllRead()">Đọc tất cả</button>
+          </div>
+          <div class="notif-list" id="notif-list">
+            <div class="notif-empty">Không có thông báo</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="content-area" id="content-area"></div>
+  </div>
+</div>
+
+<!-- ── MODALS ── -->
+<!-- Duyệt OT -->
+<div id="review-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Duyệt yêu cầu OT</h3>
+      <button class="close-btn" onclick="closeModal('review-modal')">✕</button>
+    </div>
+    <div class="modal-body" id="review-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('review-modal')">Huỷ</button>
+      <button class="btn btn-danger" onclick="doReview('rejected')">❌ Từ chối</button>
+      <button class="btn btn-success" onclick="doReview('approved')">✅ Duyệt</button>
+    </div>
+  </div>
+</div>
+
+<!-- Chi tiết OT -->
+<div id="detail-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Chi tiết yêu cầu</h3>
+      <button class="close-btn" onclick="closeModal('detail-modal')">✕</button>
+    </div>
+    <div class="modal-body" id="detail-modal-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('detail-modal')">Đóng</button>
+    </div>
+  </div>
+</div>
+
+<!-- Huỷ OT đã duyệt -->
+<div id="cancel-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Huỷ yêu cầu OT đã duyệt</h3>
+      <button class="close-btn" onclick="closeModal('cancel-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="cancel-info" style="background:#fef3c7;border-radius:10px;padding:14px;margin-bottom:16px;font-size:14px;border:1px solid #fcd34d"></div>
+      <div class="form-group">
+        <label>Lý do huỷ (sẽ gửi thông báo cho nhân viên)</label>
+        <textarea id="cancel-reason" placeholder="Nhập lý do huỷ..." style="min-height:80px"></textarea>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('cancel-modal')">Không huỷ</button>
+      <button class="btn btn-danger" onclick="doCancel()">🚫 Xác nhận huỷ</button>
+    </div>
+  </div>
+</div>
+
+<!-- Thêm/Sửa nhân viên -->
+<div id="user-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 id="user-modal-title">Thêm nhân viên</h3>
+      <button class="close-btn" onclick="closeModal('user-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="user-modal-err" class="alert alert-error hidden"></div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Tên đăng nhập *</label>
+          <input id="um-username" type="text" placeholder="vd: nguyen.van.a">
+        </div>
+        <div class="form-group">
+          <label>Mật khẩu *</label>
+          <input id="um-password" type="password" placeholder="Tối thiểu 6 ký tự">
+        </div>
+        <div class="form-group">
+          <label>Họ tên *</label>
+          <input id="um-fullname" type="text" placeholder="Nguyễn Văn A">
+        </div>
+        <div class="form-group">
+          <label>Bộ phận</label>
+          <input id="um-dept" type="text" placeholder="Kỹ thuật, Kinh doanh...">
+        </div>
+        <div class="form-group">
+          <label>Vai trò</label>
+          <select id="um-role">
+            <option value="employee">Nhân viên</option>
+            <option value="manager">Quản lý</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('user-modal')">Huỷ</button>
+      <button class="btn btn-primary" onclick="saveUser()">💾 Lưu</button>
+    </div>
+  </div>
+</div>
+
+<!-- Đổi mật khẩu -->
+<div id="pwd-modal" class="modal-overlay hidden">
+  <div class="modal">
+    <div class="modal-header">
+      <h3>Đổi mật khẩu</h3>
+      <button class="close-btn" onclick="closeModal('pwd-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="pwd-modal-msg" class="hidden"></div>
+      <div class="form-group mb-4">
+        <label>Mật khẩu cũ</label>
+        <input id="pwd-old" type="password">
+      </div>
+      <div class="form-group mb-4">
+        <label>Mật khẩu mới</label>
+        <input id="pwd-new" type="password">
+      </div>
+      <div class="form-group">
+        <label>Xác nhận mật khẩu mới</label>
+        <input id="pwd-confirm" type="password">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('pwd-modal')">Huỷ</button>
+      <button class="btn btn-primary" onclick="doChangePwd()">💾 Đổi mật khẩu</button>
+    </div>
+  </div>
+</div>
+
+<!-- Xem ảnh lớn -->
+<div id="img-modal" class="modal-overlay hidden" onclick="closeModal('img-modal')">
+  <img id="img-modal-src" src="" style="max-width:90vw;max-height:90vh;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
+</div>
+
+<script>
+// ─────────────── STATE ───────────────
+let currentUser = null;
+let currentReviewId = null;
+let editingUserId = null;
+let fileInput = null;
+
+// ─────────────── INIT ───────────────
+document.getElementById('login-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const username = document.getElementById('inp-username').value;
+  const password = document.getElementById('inp-password').value;
+  const err = document.getElementById('login-error');
+  err.classList.add('hidden');
+  try {
+    const r = await api('POST', '/api/login', { username, password });
+    currentUser = r;
+    showApp();
+  } catch(e) {
+    err.textContent = e.message;
+    err.classList.remove('hidden');
+  }
+});
+
+let notifPollTimer = null;
+
+async function init() {
+  try {
+    currentUser = await api('GET', '/api/me');
+    showApp();
+  } catch { /* not logged in */ }
+}
+
+function showApp() {
+  document.getElementById('login-page').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('sb-username').textContent = '@' + currentUser.username;
+  document.getElementById('sb-fullname').textContent = currentUser.full_name;
+  document.getElementById('sb-role').textContent = currentUser.role === 'manager' ? '👑 Quản lý' : '👤 Nhân viên';
+  buildNav();
+  // Show notification bell only for employees
+  if (currentUser.role !== 'manager') {
+    document.getElementById('notif-wrap').classList.remove('hidden');
+    loadNotifBadge();
+    notifPollTimer = setInterval(loadNotifBadge, 30000); // poll every 30s
+  }
+  navigate('dashboard');
+}
+
+// ── NOTIFICATIONS ────────────────────────────
+async function loadNotifBadge() {
+  try {
+    const d = await api('GET', '/api/notifications/unread');
+    const badge = document.getElementById('notif-badge');
+    if (d.count > 0) {
+      badge.textContent = d.count > 9 ? '9+' : d.count;
+      badge.classList.remove('hidden');
+    } else {
+      badge.classList.add('hidden');
+    }
+  } catch {}
+}
+
+async function toggleNotifDropdown() {
+  const dd = document.getElementById('notif-dropdown');
+  if (dd.classList.contains('hidden')) {
+    dd.classList.remove('hidden');
+    await loadNotifList();
+  } else {
+    dd.classList.add('hidden');
+  }
+}
+
+async function loadNotifList() {
+  const list = document.getElementById('notif-list');
+  list.innerHTML = '<div class="notif-empty">Đang tải...</div>';
+  try {
+    const items = await api('GET', '/api/notifications');
+    if (!items.length) {
+      list.innerHTML = '<div class="notif-empty">🔕 Không có thông báo</div>';
+      return;
+    }
+    list.innerHTML = items.map(n => `
+      <div class="notif-item ${n.is_read ? '' : 'unread'}" onclick="markRead(${n.id}, this)">
+        <div class="notif-title">🚫 ${n.title}</div>
+        <div class="notif-msg">${n.message}</div>
+        <div class="notif-time">${n.created_at}</div>
+      </div>
+    `).join('');
+  } catch {
+    list.innerHTML = '<div class="notif-empty">Lỗi tải thông báo</div>';
+  }
+}
+
+async function markRead(id, el) {
+  try {
+    await api('PUT', `/api/notifications/${id}/read`);
+    el.classList.remove('unread');
+    loadNotifBadge();
+  } catch {}
+}
+
+async function markAllRead() {
+  try {
+    await api('POST', '/api/notifications/read-all');
+    document.getElementById('notif-badge').classList.add('hidden');
+    await loadNotifList();
+  } catch {}
+}
+
+// Close dropdown when clicking outside
+document.addEventListener('click', e => {
+  const wrap = document.getElementById('notif-wrap');
+  if (wrap && !wrap.contains(e.target)) {
+    document.getElementById('notif-dropdown')?.classList.add('hidden');
+  }
+});
+
+function buildNav() {
+  const nav = document.getElementById('sidebar-nav');
+  const isManager = currentUser.role === 'manager';
+  const items = isManager ? [
+    { page: 'dashboard', icon: '📊', label: 'Tổng quan' },
+    { page: 'approve', icon: '✅', label: 'Duyệt OT' },
+    { page: 'all-records', icon: '📋', label: 'Tất cả chấm công' },
+    { page: 'report', icon: '📈', label: 'Báo cáo' },
+    { page: 'users', icon: '👥', label: 'Quản lý nhân viên' },
+  ] : [
+    { page: 'dashboard', icon: '📊', label: 'Tổng quan' },
+    { page: 'submit-ot', icon: '⏰', label: 'Khai báo OT' },
+    { page: 'my-records', icon: '📋', label: 'Lịch sử của tôi' },
+  ];
+  nav.innerHTML = items.map(i =>
+    `<div class="nav-item" onclick="navigate('${i.page}')" data-page="${i.page}">
+      <span class="icon">${i.icon}</span> ${i.label}
+    </div>`
+  ).join('');
+}
+
+function navigate(page) {
+  document.querySelectorAll('.nav-item[data-page]').forEach(el => {
+    el.classList.toggle('active', el.dataset.page === page);
+  });
+  const titles = {
+    dashboard: 'Tổng quan', 'submit-ot': 'Khai báo OT',
+    'my-records': 'Lịch sử của tôi', approve: 'Duyệt OT',
+    'all-records': 'Tất cả chấm công', report: 'Báo cáo', users: 'Quản lý nhân viên'
+  };
+  document.getElementById('page-title').textContent = titles[page] || page;
+  const content = document.getElementById('content-area');
+  content.innerHTML = '<div style="text-align:center;padding:40px;color:#64748b">Đang tải...</div>';
+  closeSidebar();
+
+  if (page === 'dashboard') renderDashboard();
+  else if (page === 'submit-ot') renderSubmitOT();
+  else if (page === 'my-records') renderMyRecords();
+  else if (page === 'approve') renderApprove();
+  else if (page === 'all-records') renderAllRecords();
+  else if (page === 'report') renderReport();
+  else if (page === 'users') renderUsers();
+}
+
+// ─────────────── PAGES ───────────────
+async function renderDashboard() {
+  const isManager = currentUser.role === 'manager';
+  const now = new Date();
+  const month = now.getMonth() + 1;
+  const year = now.getFullYear();
+
+  if (isManager) {
+    const [stats, pending] = await Promise.all([
+      api('GET', `/api/manager/stats?month=${month}&year=${year}`),
+      api('GET', '/api/manager/overtime?status=pending')
+    ]);
+    const totalHours = stats.reduce((s, u) => s + (u.total_hours || 0), 0);
+    const totalPending = pending.length;
+    const totalApproved = stats.reduce((s, u) => s + (u.approved_count || 0), 0);
+
+    set('content-area', `
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon orange">⏳</div>
+          <div><div class="stat-num">${totalPending}</div><div class="stat-label">Chờ duyệt</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green">✅</div>
+          <div><div class="stat-num">${totalApproved}</div><div class="stat-label">Đã duyệt T${month}</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon blue">⏱️</div>
+          <div><div class="stat-num">${totalHours.toFixed(1)}h</div><div class="stat-label">Tổng giờ OT T${month}</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon blue">👥</div>
+          <div><div class="stat-num">${stats.length}</div><div class="stat-label">Nhân viên</div></div>
+        </div>
+      </div>
+      ${totalPending > 0 ? `
+      <div class="card">
+        <div class="flex justify-between items-center mb-4">
+          <h3>⏳ Chờ duyệt (${totalPending})</h3>
+          <button class="btn btn-outline btn-sm" onclick="navigate('approve')">Xem tất cả →</button>
+        </div>
+        ${renderOTTable(pending.slice(0, 5), r => r.status === 'pending', false)}
+      </div>` : `
+      <div class="card" style="text-align:center;padding:40px">
+        <div style="font-size:40px;margin-bottom:12px">🎉</div>
+        <div style="color:var(--muted)">Không có yêu cầu nào chờ duyệt</div>
+      </div>`}
+    `);
+  } else {
+    const records = await api('GET', `/api/overtime/my?month=${month}&year=${year}`);
+    const approved = records.filter(r => r.status === 'approved');
+    const pending = records.filter(r => r.status === 'pending');
+    const totalHours = approved.reduce((s, r) => s + (r.hours || 0), 0);
+
+    set('content-area', `
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-icon blue">⏱️</div>
+          <div><div class="stat-num">${totalHours.toFixed(1)}h</div><div class="stat-label">Giờ OT được duyệt T${month}</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon orange">⏳</div>
+          <div><div class="stat-num">${pending.length}</div><div class="stat-label">Đang chờ duyệt</div></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-icon green">✅</div>
+          <div><div class="stat-num">${approved.length}</div><div class="stat-label">Đã được duyệt</div></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="flex justify-between items-center mb-4">
+          <h3>📋 Hoạt động gần đây</h3>
+          <button class="btn btn-primary btn-sm" onclick="navigate('submit-ot')">+ Khai báo OT</button>
+        </div>
+        ${records.length ? renderOTTable(records.slice(0, 8), false) : `
+          <div class="empty-state">
+            <div class="icon">📝</div>
+            <div>Chưa có yêu cầu OT nào trong tháng này</div>
+            <button class="btn btn-primary mt-4" onclick="navigate('submit-ot')">+ Khai báo OT ngay</button>
+          </div>`}
+      </div>
+    `);
+  }
+}
+
+function renderSubmitOT() {
+  const today = new Date().toISOString().split('T')[0];
+  set('content-area', `
+    <div class="card" style="max-width:600px">
+      <h3>📝 Khai báo làm thêm giờ</h3>
+      <div id="ot-msg" class="hidden"></div>
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Ngày làm thêm *</label>
+          <input type="date" id="ot-date" value="${today}" max="${today}">
+        </div>
+        <div class="form-group">
+          <label>Loại OT *</label>
+          <select id="ot-type">
+            <option value="weekday">Ngày thường (ngoài giờ)</option>
+            <option value="weekend">Cuối tuần / Lễ</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Giờ bắt đầu *</label>
+          <input type="time" id="ot-start" value="17:30">
+        </div>
+        <div class="form-group">
+          <label>Giờ kết thúc *</label>
+          <input type="time" id="ot-end" value="19:00">
+        </div>
+        <div class="form-group full">
+          <label>Lý do / Công việc thực hiện *</label>
+          <textarea id="ot-reason" placeholder="Mô tả công việc bạn đã làm ngoài giờ..."></textarea>
+        </div>
+        <div class="form-group full">
+          <label>Ảnh chứng minh (tuỳ chọn)</label>
+          <div class="upload-zone" id="upload-zone" onclick="document.getElementById('file-input').click()">
+            <div class="icon">📎</div>
+            <p>Nhấn để chọn ảnh hoặc kéo thả vào đây</p>
+            <p><strong>JPG, PNG, PDF</strong> — tối đa 10MB</p>
+          </div>
+          <img id="preview-img">
+          <input type="file" id="file-input" accept="image/*,.pdf" style="display:none" onchange="previewFile(this)">
+        </div>
+      </div>
+      <div class="mt-4">
+        <button class="btn btn-primary" onclick="submitOT()" id="submit-btn">
+          📤 Gửi yêu cầu OT
+        </button>
+      </div>
+    </div>
+  `);
+
+  const zone = document.getElementById('upload-zone');
+  zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
+  zone.addEventListener('dragleave', () => zone.classList.remove('drag'));
+  zone.addEventListener('drop', e => {
+    e.preventDefault(); zone.classList.remove('drag');
+    const f = e.dataTransfer.files[0];
+    if (f) { document.getElementById('file-input').files = e.dataTransfer.files; previewFile(document.getElementById('file-input')); }
+  });
+}
+
+function previewFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const img = document.getElementById('preview-img');
+  if (file.type.startsWith('image/')) {
+    img.src = URL.createObjectURL(file);
+    img.style.display = 'block';
+  } else {
+    img.style.display = 'none';
+  }
+  document.getElementById('upload-zone').querySelector('p').textContent = `📎 ${file.name}`;
+}
+
+async function submitOT() {
+  const btn = document.getElementById('submit-btn');
+  const msg = document.getElementById('ot-msg');
+  const date = document.getElementById('ot-date').value;
+  const type = document.getElementById('ot-type').value;
+  const start = document.getElementById('ot-start').value;
+  const end = document.getElementById('ot-end').value;
+  const reason = document.getElementById('ot-reason').value.trim();
+  const file = document.getElementById('file-input').files[0];
+
+  msg.className = 'hidden';
+  if (!date || !start || !end || !reason) {
+    showMsg('ot-msg', 'error', 'Vui lòng điền đầy đủ thông tin bắt buộc');
+    return;
+  }
+
+  btn.disabled = true; btn.textContent = '⏳ Đang gửi...';
+  try {
+    const form = new FormData();
+    form.append('request_date', date);
+    form.append('ot_type', type);
+    form.append('start_time', start);
+    form.append('end_time', end);
+    form.append('reason', reason);
+    if (file) form.append('image', file);
+
+    await fetch('/api/overtime', { method: 'POST', body: form }).then(async r => {
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error);
+      return data;
+    });
+    showMsg('ot-msg', 'success', '✅ Gửi yêu cầu thành công! Chờ quản lý duyệt.');
+    document.getElementById('ot-reason').value = '';
+    document.getElementById('file-input').value = '';
+    document.getElementById('preview-img').style.display = 'none';
+    document.getElementById('upload-zone').querySelector('p').textContent = 'Nhấn để chọn ảnh hoặc kéo thả vào đây';
+  } catch(e) {
+    showMsg('ot-msg', 'error', e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '📤 Gửi yêu cầu OT';
+  }
+}
+
+async function renderMyRecords() {
+  const now = new Date();
+  let month = now.getMonth() + 1, year = now.getFullYear();
+
+  async function load() {
+    const records = await api('GET', `/api/overtime/my?month=${month}&year=${year}`);
+    set('content-area', `
+      <div class="card">
+        <div class="flex justify-between items-center mb-4" style="flex-wrap:wrap;gap:10px">
+          <h3>📋 Lịch sử OT của tôi</h3>
+          <div class="filter-bar" style="margin:0">
+            <select id="f-month" onchange="updateMyFilter()">
+              ${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1==month?'selected':''}>Tháng ${i+1}</option>`).join('')}
+            </select>
+            <select id="f-year" onchange="updateMyFilter()">
+              ${[year-1,year,year+1].map(y=>`<option value="${y}" ${y==year?'selected':''}>${y}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        ${records.length ? renderOTTable(records, false) : `
+          <div class="empty-state">
+            <div class="icon">📭</div>
+            <div>Không có dữ liệu</div>
+          </div>`}
+      </div>
+    `);
+  }
+  window.updateMyFilter = () => {
+    month = +document.getElementById('f-month').value;
+    year = +document.getElementById('f-year').value;
+    load();
+  };
+  load();
+}
+
+async function renderApprove() {
+  async function load(status) {
+    const records = await api('GET', `/api/manager/overtime?status=${status}`);
+    set('content-area', `
+      <div class="card">
+        <div class="flex items-center mb-4" style="gap:8px;flex-wrap:wrap">
+          <h3 style="margin:0">Duyệt OT</h3>
+          <div style="display:flex;gap:8px;margin-left:auto;flex-wrap:wrap">
+            ${['pending','approved','rejected','cancelled'].map(s => `
+              <button class="btn btn-sm ${s===status?'btn-primary':'btn-outline'}" onclick="loadApprove('${s}')">
+                ${s==='pending'?'⏳ Chờ duyệt':s==='approved'?'✅ Đã duyệt':s==='rejected'?'❌ Từ chối':'🚫 Đã huỷ'}
+              </button>`).join('')}
+          </div>
+        </div>
+        ${records.length ? renderOTTable(records, r => r.status === 'pending', r => r.status === 'approved') : `
+          <div class="empty-state"><div class="icon">🎉</div><div>Không có dữ liệu</div></div>`}
+      </div>
+    `);
+  }
+  window.loadApprove = load;
+  load('pending');
+}
+
+async function renderAllRecords() {
+  const now = new Date();
+  let month = now.getMonth() + 1, year = now.getFullYear();
+  const users = await api('GET', '/api/manager/users');
+
+  async function load() {
+    const uid = document.getElementById ? (document.getElementById('f-uid')?.value || '') : '';
+    const params = new URLSearchParams({ month, year });
+    if (uid) params.set('user_id', uid);
+    const records = await api('GET', `/api/manager/overtime?${params}`);
+    set('content-area', `
+      <div class="card">
+        <div class="flex justify-between items-center mb-4" style="flex-wrap:wrap;gap:10px">
+          <h3>📋 Tất cả chấm công OT</h3>
+          <div class="filter-bar" style="margin:0">
+            <select id="f-month2" onchange="updateAllFilter()">
+              ${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1==month?'selected':''}>Tháng ${i+1}</option>`).join('')}
+            </select>
+            <select id="f-year2" onchange="updateAllFilter()">
+              ${[year-1,year,year+1].map(y=>`<option value="${y}" ${y==year?'selected':''}>${y}</option>`).join('')}
+            </select>
+            <select id="f-uid" onchange="updateAllFilter()">
+              <option value="">Tất cả NV</option>
+              ${users.filter(u=>u.role==='employee').map(u=>`<option value="${u.id}">${u.full_name}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        ${records.length ? renderOTTable(records, r => r.status === 'pending', r => r.status === 'approved') : `
+          <div class="empty-state"><div class="icon">📭</div><div>Không có dữ liệu</div></div>`}
+      </div>
+    `);
+  }
+  window.updateAllFilter = () => {
+    month = +document.getElementById('f-month2').value;
+    year = +document.getElementById('f-year2').value;
+    load();
+  };
+  load();
+}
+
+async function renderReport() {
+  const now = new Date();
+  let month = now.getMonth() + 1, year = now.getFullYear();
+
+  async function load() {
+    const stats = await api('GET', `/api/manager/stats?month=${month}&year=${year}`);
+    const rows = stats.map(u => `
+      <tr>
+        <td><strong>${u.full_name}</strong>${u.department?`<br><small style="color:var(--muted)">${u.department}</small>`:''}</td>
+        <td>${u.approved_count || 0}</td>
+        <td style="font-weight:600;color:var(--primary)">${(u.total_hours||0).toFixed(1)}h</td>
+        <td>${(u.weekday_hours||0).toFixed(1)}h</td>
+        <td>${(u.weekend_hours||0).toFixed(1)}h</td>
+        <td>${u.pending_count || 0}</td>
+      </tr>
+    `).join('');
+    const totHours = stats.reduce((s,u)=>s+(u.total_hours||0),0);
+
+    set('content-area', `
+      <div class="card">
+        <div class="flex justify-between items-center mb-4" style="flex-wrap:wrap;gap:10px">
+          <h3>📈 Báo cáo OT tháng ${month}/${year}</h3>
+          <div class="filter-bar" style="margin:0">
+            <select id="r-month" onchange="updateReport()">
+              ${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1==month?'selected':''}>Tháng ${i+1}</option>`).join('')}
+            </select>
+            <select id="r-year" onchange="updateReport()">
+              ${[year-1,year,year+1].map(y=>`<option value="${y}" ${y==year?'selected':''}>${y}</option>`).join('')}
+            </select>
+          </div>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead><tr>
+              <th>Nhân viên</th><th>Số lần OT</th><th>Tổng giờ</th>
+              <th>OT ngày thường</th><th>OT cuối tuần</th><th>Chờ duyệt</th>
+            </tr></thead>
+            <tbody>${rows || '<tr><td colspan="6" style="text-align:center;padding:30px;color:var(--muted)">Không có dữ liệu</td></tr>'}</tbody>
+            <tfoot><tr style="background:#f8fafc;font-weight:600">
+              <td>Tổng cộng</td>
+              <td>${stats.reduce((s,u)=>s+(u.approved_count||0),0)}</td>
+              <td>${totHours.toFixed(1)}h</td>
+              <td>${stats.reduce((s,u)=>s+(u.weekday_hours||0),0).toFixed(1)}h</td>
+              <td>${stats.reduce((s,u)=>s+(u.weekend_hours||0),0).toFixed(1)}h</td>
+              <td>${stats.reduce((s,u)=>s+(u.pending_count||0),0)}</td>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+    `);
+  }
+  window.updateReport = () => {
+    month = +document.getElementById('r-month').value;
+    year = +document.getElementById('r-year').value;
+    load();
+  };
+  load();
+}
+
+async function renderUsers() {
+  const users = await api('GET', '/api/manager/users');
+  const rows = users.map(u => `
+    <tr>
+      <td><strong>${u.full_name}</strong></td>
+      <td><code style="background:#f1f5f9;padding:2px 6px;border-radius:4px">${u.username}</code></td>
+      <td>${u.department || '<span style="color:var(--muted)">—</span>'}</td>
+      <td><span class="badge ${u.role==='manager'?'badge-approved':'badge-weekday'}">${u.role==='manager'?'👑 Quản lý':'👤 NV'}</span></td>
+      <td>${u.created_at?.split(' ')[0] || ''}</td>
+      <td>
+        <div class="flex gap-2">
+          <button class="btn btn-outline btn-sm" onclick="editUser(${u.id},'${esc(u.username)}','${esc(u.full_name)}','${u.role}','${esc(u.department||'')}')">✏️</button>
+          ${u.id !== currentUser.id ? `<button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id},'${esc(u.full_name)}')">🗑️</button>` : ''}
+        </div>
+      </td>
+    </tr>
+  `).join('');
+
+  set('content-area', `
+    <div class="card">
+      <div class="flex justify-between items-center mb-4">
+        <h3>👥 Danh sách nhân viên (${users.length})</h3>
+        <button class="btn btn-primary" onclick="addUser()">+ Thêm nhân viên</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Họ tên</th><th>Tài khoản</th><th>Bộ phận</th><th>Vai trò</th><th>Ngày tạo</th><th>Thao tác</th></tr></thead>
+          <tbody>${rows || '<tr><td colspan="6" style="text-align:center;padding:30px">Chưa có nhân viên</td></tr>'}</tbody>
+        </table>
+      </div>
+    </div>
+  `);
+}
+
+// ─────────────── OT TABLE ───────────────
+function statusLabel(s) {
+  return s === 'pending'   ? '⏳ Chờ duyệt'
+       : s === 'approved'  ? '✅ Đã duyệt'
+       : s === 'rejected'  ? '❌ Từ chối'
+       : s === 'cancelled' ? '🚫 Đã huỷ'
+       : s;
+}
+
+function renderOTTable(records, canReviewFn, canCancelFn) {
+  const isManager = currentUser.role === 'manager';
+  const rows = records.map(r => {
+    const canReview = typeof canReviewFn === 'function' ? canReviewFn(r) : canReviewFn;
+    const canCancel = typeof canCancelFn === 'function' ? canCancelFn(r) : false;
+    return `<tr>
+      ${isManager ? `<td><strong>${r.full_name}</strong>${r.department?`<br><small style="color:var(--muted)">${r.department}</small>`:''}</td>` : ''}
+      <td>${formatDate(r.request_date)}</td>
+      <td><span class="badge badge-${r.ot_type}">${r.ot_type==='weekday'?'Ngày thường':'Cuối tuần'}</span></td>
+      <td>${r.start_time} – ${r.end_time}</td>
+      <td><strong>${(r.hours||0).toFixed(1)}h</strong></td>
+      <td>${r.reason.length > 40 ? r.reason.slice(0,40)+'…' : r.reason}</td>
+      <td>${r.image_path ? `<img class="img-thumb" src="${r.image_path}" onclick="viewImg('${r.image_path}')" title="Xem ảnh">` : '<span style="color:var(--muted)">—</span>'}</td>
+      <td><span class="badge badge-${r.status}">${statusLabel(r.status)}</span></td>
+      <td>
+        <div class="flex gap-2">
+          <button class="btn btn-outline btn-sm" onclick="viewDetail(${r.id})">👁️</button>
+          ${canReview ? `<button class="btn btn-primary btn-sm" onclick="openReview(${r.id},'${esc(r.full_name||currentUser.full_name)}','${r.request_date}','${r.start_time}','${r.end_time}','${esc(r.reason)}','${r.image_path||''}')">Duyệt</button>` : ''}
+          ${canCancel ? `<button class="btn btn-danger btn-sm" onclick="openCancel(${r.id},'${esc(r.full_name)}','${r.request_date}','${r.start_time}','${r.end_time}')">🚫 Huỷ</button>` : ''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+
+  return `<div class="table-wrap"><table>
+    <thead><tr>
+      ${isManager ? '<th>Nhân viên</th>' : ''}
+      <th>Ngày</th><th>Loại</th><th>Giờ làm</th><th>Số giờ</th>
+      <th>Lý do</th><th>Ảnh</th><th>Trạng thái</th><th>Thao tác</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table></div>`;
+}
+
+// ─────────────── MODALS ───────────────
+let allRecords = {};
+
+async function viewDetail(id) {
+  // Fetch from appropriate endpoint based on role
+  let r = null;
+  try {
+    if (currentUser.role === 'manager') {
+      const all = await api('GET', '/api/manager/overtime');
+      r = all.find(x => x.id === id);
+    } else {
+      const all = await api('GET', '/api/overtime/my');
+      r = all.find(x => x.id === id);
+    }
+  } catch(e) {}
+  if (!r) { alert('Không tìm thấy dữ liệu'); return; }
+
+  set('detail-modal-body', `
+    <table style="width:100%;font-size:14px;border-collapse:collapse">
+      ${row2('Nhân viên', r.full_name)}
+      ${row2('Ngày OT', formatDate(r.request_date))}
+      ${row2('Loại OT', r.ot_type==='weekday'?'Ngày thường':'Cuối tuần/Lễ')}
+      ${row2('Thời gian', `${r.start_time} – ${r.end_time} (${(r.hours||0).toFixed(1)}h)`)}
+      ${row2('Lý do', r.reason)}
+      ${row2('Trạng thái', `<span class="badge badge-${r.status}">${statusLabel(r.status)}</span>`)}
+      ${r.manager_note ? row2(r.status === 'cancelled' ? 'Lý do huỷ' : 'Ghi chú QT', r.manager_note) : ''}
+      ${row2('Ngày gửi', r.created_at)}
+    </table>
+    ${r.image_path ? `<div style="margin-top:16px"><strong style="font-size:13px">Ảnh chứng minh:</strong><br><img src="${r.image_path}" class="proof-img" onclick="viewImg('${r.image_path}')" style="cursor:pointer"></div>` : ''}
+  `);
+  showModal('detail-modal');
+}
+
+function row2(label, val) {
+  return `<tr style="border-bottom:1px solid var(--border)">
+    <td style="padding:10px;color:var(--muted);width:140px;font-weight:500">${label}</td>
+    <td style="padding:10px">${val}</td>
+  </tr>`;
+}
+
+function openReview(id, name, date, start, end, reason, img) {
+  currentReviewId = id;
+  set('review-modal-body', `
+    <div style="background:#f8fafc;border-radius:10px;padding:16px;margin-bottom:16px;font-size:14px">
+      <div><strong>${name}</strong></div>
+      <div style="color:var(--muted)">${formatDate(date)} • ${start} – ${end}</div>
+      <div style="margin-top:8px">${reason}</div>
+      ${img ? `<img src="${img}" class="proof-img" onclick="viewImg('${img}')" style="cursor:pointer;margin-top:10px">` : ''}
+    </div>
+    <div class="form-group">
+      <label>Ghi chú (tuỳ chọn)</label>
+      <textarea id="review-note" placeholder="Nhận xét, lý do từ chối..."></textarea>
+    </div>
+  `);
+  showModal('review-modal');
+}
+
+async function doReview(status) {
+  const note = document.getElementById('review-note')?.value || '';
+  try {
+    await api('PUT', `/api/manager/overtime/${currentReviewId}`, { status, manager_note: note });
+    closeModal('review-modal');
+    navigate('approve');
+  } catch(e) { alert(e.message); }
+}
+
+let currentCancelId = null;
+
+function openCancel(id, name, date, start, end) {
+  currentCancelId = id;
+  document.getElementById('cancel-reason').value = '';
+  document.getElementById('cancel-info').innerHTML = `
+    <strong>⚠️ Bạn sắp huỷ yêu cầu OT đã được duyệt</strong><br>
+    <span style="color:var(--muted)">Nhân viên: <b>${name}</b> &nbsp;|&nbsp; ${formatDate(date)} &nbsp;|&nbsp; ${start}–${end}</span><br>
+    <span style="color:var(--danger);font-size:13px;margin-top:6px;display:block">Nhân viên sẽ nhận thông báo về việc huỷ này.</span>
+  `;
+  showModal('cancel-modal');
+}
+
+async function doCancel() {
+  const reason = document.getElementById('cancel-reason').value.trim();
+  try {
+    await api('PUT', `/api/manager/overtime/${currentCancelId}/cancel`, { cancel_reason: reason });
+    closeModal('cancel-modal');
+    navigate('approve');
+  } catch(e) { alert(e.message); }
+}
+
+function addUser() {
+  editingUserId = null;
+  document.getElementById('user-modal-title').textContent = 'Thêm nhân viên';
+  document.getElementById('um-username').value = '';
+  document.getElementById('um-password').value = '';
+  document.getElementById('um-fullname').value = '';
+  document.getElementById('um-dept').value = '';
+  document.getElementById('um-role').value = 'employee';
+  document.getElementById('um-username').disabled = false;
+  document.getElementById('user-modal-err').classList.add('hidden');
+  showModal('user-modal');
+}
+
+function editUser(id, username, fullname, role, dept) {
+  editingUserId = id;
+  document.getElementById('user-modal-title').textContent = 'Sửa nhân viên';
+  document.getElementById('um-username').value = username;
+  document.getElementById('um-username').disabled = true;
+  document.getElementById('um-password').value = '';
+  document.getElementById('um-fullname').value = fullname;
+  document.getElementById('um-dept').value = dept;
+  document.getElementById('um-role').value = role;
+  document.getElementById('user-modal-err').classList.add('hidden');
+  showModal('user-modal');
+}
+
+async function saveUser() {
+  const username = document.getElementById('um-username').value.trim();
+  const password = document.getElementById('um-password').value;
+  const full_name = document.getElementById('um-fullname').value.trim();
+  const department = document.getElementById('um-dept').value.trim();
+  const role = document.getElementById('um-role').value;
+  const errEl = document.getElementById('user-modal-err');
+  errEl.classList.add('hidden');
+
+  try {
+    if (editingUserId) {
+      await api('PUT', `/api/manager/users/${editingUserId}`, { full_name, role, department, password: password || undefined });
+    } else {
+      if (!username || !password || !full_name) throw new Error('Vui lòng điền đầy đủ thông tin bắt buộc');
+      await api('POST', '/api/manager/users', { username, password, full_name, role, department });
+    }
+    closeModal('user-modal');
+    renderUsers();
+  } catch(e) {
+    errEl.textContent = e.message;
+    errEl.classList.remove('hidden');
+  }
+}
+
+async function deleteUser(id, name) {
+  if (!confirm(`Xác nhận xoá tài khoản của "${name}"?`)) return;
+  try {
+    await api('DELETE', `/api/manager/users/${id}`);
+    renderUsers();
+  } catch(e) { alert(e.message); }
+}
+
+function showChangePwd() {
+  document.getElementById('pwd-old').value = '';
+  document.getElementById('pwd-new').value = '';
+  document.getElementById('pwd-confirm').value = '';
+  const msg = document.getElementById('pwd-modal-msg');
+  msg.className = 'hidden'; msg.textContent = '';
+  showModal('pwd-modal');
+}
+
+async function doChangePwd() {
+  const old_password = document.getElementById('pwd-old').value;
+  const new_password = document.getElementById('pwd-new').value;
+  const confirm = document.getElementById('pwd-confirm').value;
+  const msg = document.getElementById('pwd-modal-msg');
+  msg.className = 'hidden';
+
+  if (new_password !== confirm) {
+    msg.textContent = 'Mật khẩu xác nhận không khớp';
+    msg.className = 'alert alert-error';
+    return;
+  }
+  try {
+    await api('POST', '/api/change-password', { old_password, new_password });
+    msg.textContent = '✅ Đổi mật khẩu thành công!';
+    msg.className = 'alert alert-success';
+    setTimeout(() => closeModal('pwd-modal'), 1500);
+  } catch(e) {
+    msg.textContent = e.message;
+    msg.className = 'alert alert-error';
+  }
+}
+
+function viewImg(src) {
+  document.getElementById('img-modal-src').src = src;
+  showModal('img-modal');
+}
+
+// ─────────────── HELPERS ───────────────
+async function api(method, url, body) {
+  const opts = { method, headers: {} };
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const r = await fetch(url, opts);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || 'Lỗi không xác định');
+  return data;
+}
+
+function set(id, html) { const el = document.getElementById(id); if(el) el.innerHTML = html; }
+function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+function showMsg(id, type, msg) {
+  const el = document.getElementById(id);
+  el.className = `alert alert-${type}`;
+  el.textContent = msg;
+}
+function esc(s) { return String(s).replace(/'/g,"&#39;").replace(/"/g,'&quot;'); }
+function formatDate(d) {
+  if (!d) return '';
+  const [y,m,day] = d.split('-');
+  const dow = ['CN','T2','T3','T4','T5','T6','T7'][new Date(d).getDay()];
+  return `${dow} ${day}/${m}/${y}`;
+}
+
+async function logout() {
+  await api('POST', '/api/logout');
+  location.reload();
+}
+
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('overlay').classList.toggle('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+document.getElementById('overlay').addEventListener('click', closeSidebar);
+
+// Keyboard close modal
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    ['review-modal','detail-modal','user-modal','pwd-modal','img-modal'].forEach(closeModal);
+  }
+});
+
+init();
+</script>
+</body>
+</html>
