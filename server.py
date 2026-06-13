@@ -20,6 +20,12 @@ import threading
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime
 
+try:
+    from PIL import Image as PilImage
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
+
 PORT = int(os.environ.get('PORT', 3000))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -97,6 +103,40 @@ def init_db():
                 ('admin', pwd, 'Quan ly', 'manager')
             )
         db.commit()
+
+
+def compress_image(file_bytes, ext):
+    """
+    Nen anh truoc khi luu:
+    - Resize max 1920px
+    - Chuyen sang JPEG chat luong 75%
+    - Giam tu ~5MB xuong con ~200-400KB
+    """
+    if not PIL_AVAILABLE:
+        return file_bytes, ext
+    try:
+        img = PilImage.open(io.BytesIO(file_bytes))
+        # Chuyen sang RGB (JPEG khong ho tro alpha)
+        if img.mode in ('RGBA', 'P', 'LA'):
+            bg = PilImage.new('RGB', img.size, (255, 255, 255))
+            if img.mode == 'P':
+                img = img.convert('RGBA')
+            bg.paste(img, mask=img.split()[-1] if img.mode in ('RGBA', 'LA') else None)
+            img = bg
+        elif img.mode != 'RGB':
+            img = img.convert('RGB')
+        # Resize neu qua lon (max 1920px chieu dai nhat)
+        max_px = 1920
+        w, h = img.size
+        if w > max_px or h > max_px:
+            ratio = min(max_px / w, max_px / h)
+            img = img.resize((int(w * ratio), int(h * ratio)), PilImage.LANCZOS)
+        # Luu thanh JPEG chat luong 75
+        out = io.BytesIO()
+        img.save(out, format='JPEG', quality=75, optimize=True)
+        return out.getvalue(), '.jpg'
+    except Exception:
+        return file_bytes, ext  # fallback: luu nguyen ban goc
 
 
 def hash_password(pw):
@@ -470,10 +510,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if ext not in ('.jpg', '.jpeg', '.png', '.gif', '.webp', '.pdf'):
                 self.send_json({'error': 'Dinh dang file khong ho tro'}, 400)
                 return
+            file_bytes = fitem.file.read()
+            # Nen anh (bo qua PDF)
+            if ext != '.pdf':
+                file_bytes, ext = compress_image(file_bytes, ext)
             fname = f"{int(datetime.now().timestamp()*1000)}_{sess['userId']}{ext}"
             fpath = os.path.join(UPLOADS_DIR, fname)
             with open(fpath, 'wb') as f:
-                f.write(fitem.file.read())
+                f.write(file_bytes)
             image_path = f'/uploads/{fname}'
 
         with get_db() as db:

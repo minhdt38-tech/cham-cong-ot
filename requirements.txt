@@ -1,2 +1,2 @@
-# Khong can thu vien ngoai - dung Python stdlib thuan
 # File nay de Railway nhan dien day la Python app
+Pillow>=10.0.0
