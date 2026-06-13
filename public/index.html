@@ -714,6 +714,75 @@ async function renderDashboard() {
   }
 }
 
+function getOTRules(dateStr) {
+  const dow = new Date(dateStr).getDay(); // 0=CN,1=T2,...,6=T7
+  if (dow >= 1 && dow <= 5) return { type:'weekday', label:'Ngày thường (T2–T6)', minStart:'17:30', maxEnd:'23:00', hint:'Khung giờ: 17:30 – 23:00', dow };
+  if (dow === 6)             return { type:'weekend', label:'Cuối tuần – Thứ 7',   minStart:'13:30', maxEnd:'23:00', hint:'Khung giờ: 13:30 – 23:00', dow };
+  return                            { type:'weekend', label:'Cuối tuần – Chủ nhật', minStart:'08:00', maxEnd:'23:00', hint:'Khung giờ: 08:00 – 23:00 (tự trừ nghỉ trưa 12:00–13:30)', dow };
+}
+
+function toMin(t) { const [h,m]=t.split(':').map(Number); return h*60+m; }
+
+function calcOTHours(start, end, dow) {
+  let mins = toMin(end) - toMin(start);
+  let deduct = 0;
+  if (dow === 0) { // CN: tru nghi trua 12:00-13:30
+    const overlap = Math.max(0, Math.min(toMin(end),810) - Math.max(toMin(start),720));
+    deduct = overlap;
+    mins -= overlap;
+  }
+  return { hours: mins/60, deductMin: deduct };
+}
+
+function updateOTForm() {
+  const dateEl  = document.getElementById('ot-date');
+  const startEl = document.getElementById('ot-start');
+  const endEl   = document.getElementById('ot-end');
+  if (!dateEl || !startEl) return;
+
+  const rules = getOTRules(dateEl.value);
+
+  // Cap nhat badge loai OT
+  const badge = document.getElementById('ot-type-badge');
+  if (badge) {
+    badge.textContent = rules.label;
+    badge.className = 'badge ' + (rules.type==='weekday' ? 'badge-weekday' : 'badge-weekend');
+  }
+
+  // Cap nhat hint khung gio
+  const hint = document.getElementById('ot-time-hint');
+  if (hint) hint.textContent = rules.hint;
+
+  // Neu gio bat dau chua hop le, reset ve min
+  if (startEl.value < rules.minStart) {
+    startEl.value = rules.minStart;
+    endEl.value   = rules.minStart.replace(/(\d+):(\d+)/, (_, h, m) => {
+      const t = parseInt(h)*60+parseInt(m)+90;
+      return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
+    });
+  }
+
+  updateHoursPreview();
+}
+
+function updateHoursPreview() {
+  const dateEl  = document.getElementById('ot-date');
+  const startEl = document.getElementById('ot-start');
+  const endEl   = document.getElementById('ot-end');
+  const preview = document.getElementById('ot-hours-preview');
+  if (!preview || !dateEl || !startEl || !endEl || !startEl.value || !endEl.value) return;
+
+  const rules = getOTRules(dateEl.value);
+  if (toMin(endEl.value) <= toMin(startEl.value)) { preview.innerHTML=''; return; }
+
+  const {hours, deductMin} = calcOTHours(startEl.value, endEl.value, rules.dow);
+  if (hours <= 0) { preview.innerHTML=''; return; }
+
+  let html = `<span style="color:var(--primary);font-weight:600">⏱ ${hours.toFixed(1)} giờ OT</span>`;
+  if (deductMin > 0) html += ` <span style="color:var(--muted);font-size:12px">(đã trừ ${deductMin} phút nghỉ trưa)</span>`;
+  preview.innerHTML = html;
+}
+
 function renderSubmitOT() {
   const today = new Date().toISOString().split('T')[0];
   set('content-area', `
@@ -723,22 +792,25 @@ function renderSubmitOT() {
       <div class="form-grid">
         <div class="form-group">
           <label>Ngày làm thêm *</label>
-          <input type="date" id="ot-date" value="${today}" max="${today}">
+          <input type="date" id="ot-date" value="${today}" max="${today}" onchange="updateOTForm()">
         </div>
-        <div class="form-group">
-          <label>Loại OT *</label>
-          <select id="ot-type">
-            <option value="weekday">Ngày thường (ngoài giờ)</option>
-            <option value="weekend">Cuối tuần / Lễ</option>
-          </select>
+        <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-end">
+          <label>Loại OT (tự động)</label>
+          <div style="padding:10px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:8px;display:flex;align-items:center;gap:8px">
+            <span id="ot-type-badge" class="badge badge-weekday">—</span>
+            <span id="ot-time-hint" style="font-size:12px;color:var(--muted)"></span>
+          </div>
         </div>
         <div class="form-group">
           <label>Giờ bắt đầu *</label>
-          <input type="time" id="ot-start" value="17:30">
+          <input type="time" id="ot-start" value="17:30" onchange="updateHoursPreview()">
         </div>
         <div class="form-group">
           <label>Giờ kết thúc *</label>
-          <input type="time" id="ot-end" value="19:00">
+          <input type="time" id="ot-end" value="19:00" onchange="updateHoursPreview()">
+        </div>
+        <div class="form-group full">
+          <div id="ot-hours-preview" style="margin-bottom:4px;min-height:20px"></div>
         </div>
         <div class="form-group full">
           <label>Lý do / Công việc thực hiện *</label>
@@ -762,6 +834,9 @@ function renderSubmitOT() {
       </div>
     </div>
   `);
+
+  // Khoi tao form voi ngay hom nay
+  updateOTForm();
 
   const zone = document.getElementById('upload-zone');
   zone.addEventListener('dragover', e => { e.preventDefault(); zone.classList.add('drag'); });
@@ -790,7 +865,6 @@ async function submitOT() {
   const btn = document.getElementById('submit-btn');
   const msg = document.getElementById('ot-msg');
   const date = document.getElementById('ot-date').value;
-  const type = document.getElementById('ot-type').value;
   const start = document.getElementById('ot-start').value;
   const end = document.getElementById('ot-end').value;
   const reason = document.getElementById('ot-reason').value.trim();
@@ -802,11 +876,21 @@ async function submitOT() {
     return;
   }
 
+  // Client-side validate khung gio
+  const rules = getOTRules(date);
+  if (start < rules.minStart || start >= rules.maxEnd) {
+    showMsg('ot-msg', 'error', 'Gio bat dau khong hop le. ' + rules.hint);
+    return;
+  }
+  if (end <= start || end > rules.maxEnd) {
+    showMsg('ot-msg', 'error', 'Gio ket thuc khong hop le. ' + rules.hint);
+    return;
+  }
+
   btn.disabled = true; btn.textContent = '⏳ Đang gửi...';
   try {
     const form = new FormData();
     form.append('request_date', date);
-    form.append('ot_type', type);
     form.append('start_time', start);
     form.append('end_time', end);
     form.append('reason', reason);

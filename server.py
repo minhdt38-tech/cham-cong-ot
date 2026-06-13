@@ -508,24 +508,71 @@ class Handler(http.server.BaseHTTPRequestHandler):
             files  = {}
 
         req_date   = fields.get('request_date', '').strip()
-        ot_type    = fields.get('ot_type', '').strip()
         start_time = fields.get('start_time', '').strip()
         end_time   = fields.get('end_time', '').strip()
         reason     = fields.get('reason', '').strip()
 
-        if not all([req_date, ot_type, start_time, end_time, reason]):
+        if not all([req_date, start_time, end_time, reason]):
             self.send_json({'error': 'Vui long dien day du thong tin'}, 400)
             return
+
+        # Tu dong xac dinh loai OT va validate khung gio theo ngay
+        try:
+            from datetime import date as dclass
+            y, mo, d = map(int, req_date.split('-'))
+            dow = dclass(y, mo, d).weekday()  # 0=Mon ... 6=Sun
+        except Exception:
+            self.send_json({'error': 'Ngay khong hop le'}, 400)
+            return
+
+        # dow: 0-4 = T2-T6, 5 = T7, 6 = CN
+        if dow <= 4:   # T2-T6
+            ot_type   = 'weekday'
+            min_start = (17, 30)
+            max_end   = (23, 0)
+            rule_msg  = 'OT ngay thuong chi duoc tu 17:30 den 23:00'
+        elif dow == 5: # T7
+            ot_type   = 'weekend'
+            min_start = (13, 30)
+            max_end   = (23, 0)
+            rule_msg  = 'OT thu 7 chi duoc tu 13:30 den 23:00'
+        else:          # CN
+            ot_type   = 'weekend'
+            min_start = (8, 0)
+            max_end   = (23, 0)
+            rule_msg  = 'OT chu nhat chi duoc tu 08:00 den 23:00'
 
         try:
             sh, sm = map(int, start_time.split(':'))
             eh, em = map(int, end_time.split(':'))
-            hours  = ((eh * 60 + em) - (sh * 60 + sm)) / 60.0
         except Exception:
             self.send_json({'error': 'Gio khong hop le'}, 400)
             return
-        if hours <= 0:
+
+        start_min = sh * 60 + sm
+        end_min   = eh * 60 + em
+        min_start_min = min_start[0] * 60 + min_start[1]
+        max_end_min   = max_end[0]   * 60 + max_end[1]
+
+        if start_min < min_start_min or end_min > max_end_min:
+            self.send_json({'error': rule_msg}, 400)
+            return
+        if end_min <= start_min:
             self.send_json({'error': 'Gio ket thuc phai sau gio bat dau'}, 400)
+            return
+
+        raw_minutes = end_min - start_min
+        deduct_min  = 0
+        # CN: tu dong tru nghi trua 12:00-13:30
+        if dow == 6:
+            lunch_s = 12 * 60       # 720
+            lunch_e = 13 * 60 + 30  # 810
+            overlap = max(0, min(end_min, lunch_e) - max(start_min, lunch_s))
+            deduct_min = overlap
+
+        hours = (raw_minutes - deduct_min) / 60.0
+        if hours <= 0:
+            self.send_json({'error': 'Tong gio OT sau khi tru nghi trua phai lon hon 0'}, 400)
             return
 
         image_path = None
