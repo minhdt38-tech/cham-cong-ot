@@ -714,6 +714,34 @@ async function renderDashboard() {
   }
 }
 
+function buildTimeSelects(startVal, endVal) {
+  // Populate gio (0-23) va phut (00, 30)
+  ['start','end'].forEach(id => {
+    const hSel = document.getElementById('ot-'+id+'-h');
+    const mSel = document.getElementById('ot-'+id+'-m');
+    if (!hSel || !mSel) return;
+    hSel.innerHTML = Array.from({length:24},(_,i)=>
+      `<option value="${String(i).padStart(2,'0')}">${String(i).padStart(2,'0')}</option>`
+    ).join('');
+    mSel.innerHTML = ['00','15','30','45'].map(m=>
+      `<option value="${m}">${m}</option>`
+    ).join('');
+  });
+  // Set gia tri mac dinh
+  const [sh,sm] = (startVal||'17:30').split(':');
+  const [eh,em] = (endVal  ||'19:00').split(':');
+  document.getElementById('ot-start-h').value = sh;
+  document.getElementById('ot-start-m').value = sm||'00';
+  document.getElementById('ot-end-h').value   = eh;
+  document.getElementById('ot-end-m').value   = em||'00';
+}
+
+function syncTimeInput(id) {
+  const h = document.getElementById('ot-'+id+'-h').value;
+  const m = document.getElementById('ot-'+id+'-m').value;
+  document.getElementById('ot-'+id).value = h+':'+m;
+}
+
 function getOTRules(dateStr) {
   const dow = new Date(dateStr).getDay(); // 0=CN,1=T2,...,6=T7
   if (dow >= 1 && dow <= 5) return { type:'weekday', label:'Ngày thường (T2–T6)', minStart:'17:30', maxEnd:'23:00', hint:'Khung giờ: 17:30 – 23:00', dow };
@@ -753,13 +781,15 @@ function updateOTForm() {
   const hint = document.getElementById('ot-time-hint');
   if (hint) hint.textContent = rules.hint;
 
-  // Neu gio bat dau chua hop le, reset ve min
+  // Neu gio bat dau chua hop le, reset ve min va dong bo dropdown
   if (startEl.value < rules.minStart) {
-    startEl.value = rules.minStart;
-    endEl.value   = rules.minStart.replace(/(\d+):(\d+)/, (_, h, m) => {
+    const newEnd = rules.minStart.replace(/(\d+):(\d+)/, (_, h, m) => {
       const t = parseInt(h)*60+parseInt(m)+90;
       return String(Math.floor(t/60)).padStart(2,'0')+':'+String(t%60).padStart(2,'0');
     });
+    buildTimeSelects(rules.minStart, newEnd);
+    startEl.value = rules.minStart;
+    endEl.value   = newEnd;
   }
 
   updateHoursPreview();
@@ -803,11 +833,21 @@ function renderSubmitOT() {
         </div>
         <div class="form-group">
           <label>Giờ bắt đầu *</label>
-          <input type="time" id="ot-start" value="17:30" onchange="updateHoursPreview()">
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="ot-start-h" onchange="syncTimeInput('start');updateHoursPreview()" style="flex:1;padding:10px 8px;border:1px solid var(--border);border-radius:8px;font-size:15px"></select>
+            <span style="font-weight:600;color:var(--muted)">:</span>
+            <select id="ot-start-m" onchange="syncTimeInput('start');updateHoursPreview()" style="flex:1;padding:10px 8px;border:1px solid var(--border);border-radius:8px;font-size:15px"></select>
+          </div>
+          <input type="hidden" id="ot-start" value="17:30">
         </div>
         <div class="form-group">
           <label>Giờ kết thúc *</label>
-          <input type="time" id="ot-end" value="19:00" onchange="updateHoursPreview()">
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="ot-end-h" onchange="syncTimeInput('end');updateHoursPreview()" style="flex:1;padding:10px 8px;border:1px solid var(--border);border-radius:8px;font-size:15px"></select>
+            <span style="font-weight:600;color:var(--muted)">:</span>
+            <select id="ot-end-m" onchange="syncTimeInput('end');updateHoursPreview()" style="flex:1;padding:10px 8px;border:1px solid var(--border);border-radius:8px;font-size:15px"></select>
+          </div>
+          <input type="hidden" id="ot-end" value="19:00">
         </div>
         <div class="form-group full">
           <div id="ot-hours-preview" style="margin-bottom:4px;min-height:20px"></div>
@@ -835,7 +875,8 @@ function renderSubmitOT() {
     </div>
   `);
 
-  // Khoi tao form voi ngay hom nay
+  // Khoi tao dropdowns 24h va form
+  buildTimeSelects('17:30','19:00');
   updateOTForm();
 
   const zone = document.getElementById('upload-zone');
