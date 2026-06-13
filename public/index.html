@@ -316,7 +316,13 @@
       </div>
       <div class="form-group mb-4">
         <label>Mật khẩu</label>
-        <input id="inp-password" type="password" placeholder="Nhập mật khẩu" required autocomplete="current-password">
+        <div style="position:relative">
+          <input id="inp-password" type="password" placeholder="Nhập mật khẩu" required autocomplete="current-password" style="width:100%;padding-right:44px">
+          <button type="button" onclick="toggleLoginPwd(this)" title="Hiện/ẩn mật khẩu"
+            style="position:absolute;right:0;top:0;height:100%;width:44px;background:none;border:none;cursor:pointer;font-size:18px;color:var(--muted);display:flex;align-items:center;justify-content:center;padding:0;">
+            👁
+          </button>
+        </div>
       </div>
       <button type="submit" class="btn btn-accent" style="width:100%; justify-content:center; margin-top:8px;">
         Đăng nhập
@@ -346,10 +352,10 @@
         <div class="name" id="sb-fullname"></div>
         <div class="role" id="sb-role"></div>
       </div>
-      <button class="nav-item" onclick="showChangePwd()" style="width:100%">
+      <button class="nav-item" onclick="showChangePwd()" style="width:100%;color:rgba(255,255,255,0.85);background:none;border:none;cursor:pointer;font-family:inherit;text-align:left;">
         <span class="icon">🔑</span> Đổi mật khẩu
       </button>
-      <button class="nav-item" onclick="logout()" style="width:100%">
+      <button class="nav-item" onclick="logout()" style="width:100%;color:rgba(255,255,255,0.85);background:none;border:none;cursor:pointer;font-family:inherit;text-align:left;">
         <span class="icon">🚪</span> Đăng xuất
       </button>
     </div>
@@ -527,6 +533,12 @@
 </div>
 
 <script>
+function toggleLoginPwd(btn) {
+  const inp = document.getElementById('inp-password');
+  if (inp.type === 'password') { inp.type = 'text';     btn.textContent = '🙈'; }
+  else                         { inp.type = 'password'; btn.textContent = '👁';  }
+}
+
 // ─────────────── STATE ───────────────
 let currentUser = null;
 let currentReviewId = null;
