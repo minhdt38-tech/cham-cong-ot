@@ -532,11 +532,262 @@
   <img id="img-modal-src" src="" style="max-width:90vw;max-height:90vh;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
 </div>
 
+<!-- Sửa yêu cầu OT -->
+<div id="edit-ot-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:560px">
+    <div class="modal-header">
+      <h3>✏️ Chỉnh sửa yêu cầu OT</h3>
+      <button class="close-btn" onclick="closeModal('edit-ot-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="edit-ot-msg" class="hidden"></div>
+      <input type="hidden" id="edit-ot-id">
+      <div class="form-grid">
+        <div class="form-group">
+          <label>Ngày làm thêm *</label>
+          <div style="position:relative">
+            <input type="text" id="edit-date-display" readonly
+              style="width:100%;padding:10px 42px 10px 12px;border:1px solid var(--border);border-radius:4px;font-size:15px;cursor:pointer;background:#fff;box-sizing:border-box"
+              onclick="document.getElementById('edit-date-picker').showPicker()">
+            <span style="position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:18px;pointer-events:none">📅</span>
+            <input type="date" id="edit-date-picker" style="position:absolute;opacity:0;width:0;height:0;top:0;left:0"
+              onchange="onEditDatePicked(this.value)">
+          </div>
+          <input type="hidden" id="edit-ot-date">
+        </div>
+        <div class="form-group" style="display:flex;flex-direction:column;justify-content:flex-end">
+          <label>Loại OT (tự động)</label>
+          <div style="padding:10px 12px;background:#f8fafc;border:1px solid var(--border);border-radius:4px;display:flex;align-items:center;gap:8px">
+            <span id="edit-ot-type-badge" class="badge badge-weekday">—</span>
+            <span id="edit-ot-time-hint" style="font-size:12px;color:var(--muted)"></span>
+          </div>
+        </div>
+        <div class="form-group">
+          <label>Giờ bắt đầu *</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="edit-start-h" onchange="syncEditTime('start')" style="flex:1;padding:10px 8px;border:1px solid var(--border);border-radius:4px;font-size:15px"></select>
+            <span style="font-weight:600;color:var(--muted)">:</span>
+            <select id="edit-start-m" onchange="syncEditTime('start')" style="flex:1;padding:10px 8px;border:1px solid var(--border);border-radius:4px;font-size:15px"></select>
+          </div>
+          <input type="hidden" id="edit-ot-start">
+        </div>
+        <div class="form-group">
+          <label>Giờ kết thúc *</label>
+          <div style="display:flex;gap:6px;align-items:center">
+            <select id="edit-end-h" onchange="syncEditTime('end')" style="flex:1;padding:10px 8px;border:1px solid var(--border);border-radius:4px;font-size:15px"></select>
+            <span style="font-weight:600;color:var(--muted)">:</span>
+            <select id="edit-end-m" onchange="syncEditTime('end')" style="flex:1;padding:10px 8px;border:1px solid var(--border);border-radius:4px;font-size:15px"></select>
+          </div>
+          <input type="hidden" id="edit-ot-end">
+        </div>
+        <div class="form-group full">
+          <label>Lý do / Công việc thực hiện *</label>
+          <textarea id="edit-ot-reason" placeholder="Mô tả công việc..."></textarea>
+        </div>
+        <div class="form-group full">
+          <label>Ảnh hiện trường * <span style="font-weight:400;color:var(--muted)">(Để trống = giữ ảnh cũ)</span></label>
+          <div class="upload-zone" id="edit-upload-zone" onclick="document.getElementById('edit-file-input').click()">
+            <div class="icon">📷</div>
+            <p id="edit-upload-text">Nhấn để thay ảnh mới (tuỳ chọn)</p>
+            <p><strong>JPG, PNG, PDF</strong> — tối đa 10MB</p>
+          </div>
+          <input type="file" id="edit-file-input" accept="image/*,.pdf" style="display:none" onchange="previewEditFile(this)">
+          <img id="edit-preview-img" style="max-width:100%;max-height:160px;border-radius:4px;margin-top:8px;display:none">
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('edit-ot-modal')">Huỷ</button>
+      <button class="btn btn-accent" onclick="submitEditOT()" id="edit-submit-btn">💾 Lưu thay đổi</button>
+    </div>
+  </div>
+</div>
+
+<!-- Xác nhận xóa OT -->
+<div id="delete-ot-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h3>🗑️ Xác nhận xóa</h3>
+      <button class="close-btn" onclick="closeModal('delete-ot-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="delete-ot-msg" class="hidden"></div>
+      <p style="margin-bottom:8px">Bạn có chắc muốn <strong>xóa vĩnh viễn</strong> yêu cầu OT ngày <strong id="delete-ot-date-label"></strong>?</p>
+      <p style="color:var(--danger);font-size:13px">⚠️ Dữ liệu sẽ bị xóa hoàn toàn, không thể khôi phục.</p>
+      <input type="hidden" id="delete-ot-id">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('delete-ot-modal')">Huỷ</button>
+      <button class="btn btn-danger" onclick="doDeleteOT()" id="delete-confirm-btn">🗑️ Xác nhận xóa</button>
+    </div>
+  </div>
+</div>
+
 <script>
 function toggleLoginPwd(btn) {
   const inp = document.getElementById('inp-password');
   if (inp.type === 'password') { inp.type = 'text';     btn.textContent = '🙈'; }
   else                         { inp.type = 'password'; btn.textContent = '👁';  }
+}
+
+// ─── XÓA / SỬA OT (nhân viên) ───
+
+function confirmDeleteOT(id, dateLabel) {
+  document.getElementById('delete-ot-id').value = id;
+  document.getElementById('delete-ot-date-label').textContent = dateLabel;
+  document.getElementById('delete-ot-msg').className = 'hidden';
+  showModal('delete-ot-modal');
+}
+
+async function doDeleteOT() {
+  const id  = document.getElementById('delete-ot-id').value;
+  const btn = document.getElementById('delete-confirm-btn');
+  btn.disabled = true; btn.textContent = '⏳ Đang xóa...';
+  try {
+    await api('DELETE', '/api/overtime/' + id);
+    closeModal('delete-ot-modal');
+    renderMyRecords(); // refresh danh sach
+  } catch(e) {
+    showMsg('delete-ot-msg', 'error', e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '🗑️ Xác nhận xóa';
+  }
+}
+
+function buildEditTimeSelects(startVal, endVal) {
+  ['start','end'].forEach(id => {
+    const hSel = document.getElementById('edit-'+id+'-h');
+    const mSel = document.getElementById('edit-'+id+'-m');
+    hSel.innerHTML = Array.from({length:24},(_,i)=>
+      `<option value="${String(i).padStart(2,'0')}">${String(i).padStart(2,'0')}</option>`).join('');
+    mSel.innerHTML = ['00','15','30','45'].map(m=>`<option value="${m}">${m}</option>`).join('');
+  });
+  const [sh,sm] = (startVal||'17:30').split(':');
+  const [eh,em] = (endVal  ||'19:00').split(':');
+  document.getElementById('edit-start-h').value = sh;
+  document.getElementById('edit-start-m').value = sm||'00';
+  document.getElementById('edit-end-h').value   = eh;
+  document.getElementById('edit-end-m').value   = em||'00';
+  syncEditTime('start'); syncEditTime('end');
+}
+
+function syncEditTime(id) {
+  const h = document.getElementById('edit-'+id+'-h').value;
+  const m = document.getElementById('edit-'+id+'-m').value;
+  document.getElementById('edit-ot-'+id).value = h+':'+m;
+}
+
+function onEditDatePicked(val) {
+  if (!val) return;
+  const today = new Date().toISOString().split('T')[0];
+  const safe  = val > today ? today : val;
+  const [y,m,d] = safe.split('-');
+  document.getElementById('edit-date-display').value = d+'/'+m+'/'+y;
+  document.getElementById('edit-ot-date').value = safe;
+  // Cap nhat badge loai OT
+  const rules = getOTRules(safe);
+  document.getElementById('edit-ot-type-badge').textContent = rules.label;
+  document.getElementById('edit-ot-type-badge').className = 'badge ' + (rules.type==='weekday'?'badge-weekday':'badge-weekend');
+  document.getElementById('edit-ot-time-hint').textContent = rules.hint;
+}
+
+function previewEditFile(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const img = document.getElementById('edit-preview-img');
+  if (file.type.startsWith('image/')) {
+    img.src = URL.createObjectURL(file); img.style.display = 'block';
+  } else { img.style.display = 'none'; }
+  document.getElementById('edit-upload-text').textContent = '📎 ' + file.name;
+}
+
+async function openEditOT(id) {
+  // Lay du lieu hien tai cua OT
+  let r = null;
+  try {
+    const all = await api('GET', '/api/overtime/my');
+    r = all.find(x => x.id === id);
+  } catch(e) {}
+  if (!r) { alert('Không tìm thấy dữ liệu'); return; }
+  if (r.status !== 'pending') {
+    alert('Yêu cầu chỉnh sửa Khai báo của bạn không thể thực hiện do Admin đã phê duyệt Khai báo này');
+    return;
+  }
+
+  document.getElementById('edit-ot-id').value = id;
+  document.getElementById('edit-ot-msg').className = 'hidden';
+  document.getElementById('edit-ot-reason').value = r.reason;
+  document.getElementById('edit-preview-img').style.display = 'none';
+  document.getElementById('edit-upload-text').textContent = 'Nhấn để thay ảnh mới (tuỳ chọn)';
+  document.getElementById('edit-file-input').value = '';
+
+  // Set ngay
+  const [y,mo,d] = r.request_date.split('-');
+  document.getElementById('edit-date-display').value = d+'/'+mo+'/'+y;
+  document.getElementById('edit-ot-date').value = r.request_date;
+  document.getElementById('edit-date-picker').value = r.request_date;
+  document.getElementById('edit-date-picker').max   = new Date().toISOString().split('T')[0];
+
+  // Set loai OT badge
+  const rules = getOTRules(r.request_date);
+  document.getElementById('edit-ot-type-badge').textContent = rules.label;
+  document.getElementById('edit-ot-type-badge').className = 'badge ' + (rules.type==='weekday'?'badge-weekday':'badge-weekend');
+  document.getElementById('edit-ot-time-hint').textContent = rules.hint;
+
+  // Set gio
+  buildEditTimeSelects(r.start_time, r.end_time);
+
+  showModal('edit-ot-modal');
+}
+
+async function submitEditOT() {
+  const id     = document.getElementById('edit-ot-id').value;
+  const date   = document.getElementById('edit-ot-date').value;
+  const start  = document.getElementById('edit-ot-start').value;
+  const end    = document.getElementById('edit-ot-end').value;
+  const reason = document.getElementById('edit-ot-reason').value.trim();
+  const file   = document.getElementById('edit-file-input').files[0];
+  const btn    = document.getElementById('edit-submit-btn');
+
+  if (!date || !start || !end || !reason) {
+    showMsg('edit-ot-msg', 'error', 'Vui lòng điền đầy đủ thông tin'); return;
+  }
+
+  // Validate khung gio
+  const rules = getOTRules(date);
+  if (start < rules.minStart || start >= rules.maxEnd) {
+    showMsg('edit-ot-msg', 'error', 'Giờ bắt đầu không hợp lệ. ' + rules.hint); return;
+  }
+  if (end <= start || end > rules.maxEnd) {
+    showMsg('edit-ot-msg', 'error', 'Giờ kết thúc không hợp lệ. ' + rules.hint); return;
+  }
+  const today = new Date().toISOString().split('T')[0];
+  if (date === today) {
+    const now = new Date();
+    const nowStr = String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
+    if (end > nowStr) { showMsg('edit-ot-msg','error','Giờ kết thúc vượt quá giờ hiện tại ('+nowStr+')'); return; }
+    if (start >= nowStr) { showMsg('edit-ot-msg','error','Giờ bắt đầu chưa đến giờ hiện tại ('+nowStr+')'); return; }
+  }
+
+  btn.disabled = true; btn.textContent = '⏳ Đang lưu...';
+  try {
+    const form = new FormData();
+    form.append('request_date', date);
+    form.append('start_time', start);
+    form.append('end_time', end);
+    form.append('reason', reason);
+    if (file) form.append('image', file);
+    await fetch('/api/overtime/'+id, { method:'PUT', body:form }).then(async r => {
+      const data = await r.json();
+      if (!r.ok) throw new Error(data.error);
+    });
+    closeModal('edit-ot-modal');
+    renderMyRecords();
+  } catch(e) {
+    showMsg('edit-ot-msg', 'error', e.message);
+  } finally {
+    btn.disabled = false; btn.textContent = '💾 Lưu thay đổi';
+  }
 }
 
 // ─────────────── STATE ───────────────
@@ -1284,6 +1535,7 @@ function renderOTTable(records, canReviewFn, canCancelFn) {
   const rows = records.map(r => {
     const canReview = typeof canReviewFn === 'function' ? canReviewFn(r) : canReviewFn;
     const canCancel = typeof canCancelFn === 'function' ? canCancelFn(r) : false;
+    const canEdit   = !isManager && r.status === 'pending';
     return `<tr>
       ${isManager ? `<td><strong>${r.full_name}</strong>${r.department?`<br><small style="color:var(--muted)">${r.department}</small>`:''}</td>` : ''}
       <td>${formatDate(r.request_date)}</td>
@@ -1298,6 +1550,8 @@ function renderOTTable(records, canReviewFn, canCancelFn) {
           <button class="btn btn-outline btn-sm" onclick="viewDetail(${r.id})">👁️</button>
           ${canReview ? `<button class="btn btn-primary btn-sm" onclick="openReview(${r.id},'${esc(r.full_name||currentUser.full_name)}','${r.request_date}','${r.start_time}','${r.end_time}','${esc(r.reason)}','${r.image_path||''}')">Duyệt</button>` : ''}
           ${canCancel ? `<button class="btn btn-danger btn-sm" onclick="openCancel(${r.id},'${esc(r.full_name)}','${r.request_date}','${r.start_time}','${r.end_time}')">🚫 Huỷ</button>` : ''}
+          ${canEdit ? `<button class="btn btn-outline btn-sm" style="color:var(--accent);border-color:var(--accent)" onclick="openEditOT(${r.id})">✏️</button>` : ''}
+          ${canEdit ? `<button class="btn btn-danger btn-sm" onclick="confirmDeleteOT(${r.id},'${formatDate(r.request_date)}')">🗑️</button>` : ''}
         </div>
       </td>
     </tr>`;

@@ -393,6 +393,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_PUT(self):
         path, _ = self.get_path_and_query()
+        m = re.match(r'^/api/overtime/(\d+)$', path)
+        if m:
+            self.api_overtime_edit(int(m.group(1))); return
         m = re.match(r'^/api/manager/overtime/(\d+)$', path)
         if m:
             self.api_manager_review_overtime(int(m.group(1))); return
@@ -412,6 +415,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def do_DELETE(self):
         path, _ = self.get_path_and_query()
+        m = re.match(r'^/api/overtime/(\d+)$', path)
+        if m:
+            self.api_overtime_delete(int(m.group(1))); return
         m = re.match(r'^/api/manager/users/(\d+)$', path)
         if m:
             self.api_manager_delete_user(int(m.group(1))); return
@@ -613,6 +619,155 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    VALUES (?,?,?,?,?,?,?,?)""",
                 (sess['userId'], req_date, ot_type, start_time,
                  end_time, hours, reason, image_path)
+            )
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_overtime_delete(self, ot_id):
+        sess = self.require_auth()
+        if not sess:
+            return
+        with get_db() as db:
+            row = db.execute(
+                'SELECT * FROM overtime_requests WHERE id=? AND user_id=?',
+                (ot_id, sess['userId'])
+            ).fetchone()
+            if not row:
+                self.send_json({'error': 'Khong tim thay khai bao'}, 404)
+                return
+            if row['status'] != 'pending':
+                self.send_json({'error': 'Yeu cau huy Khai bao cua ban khong the thuc hien do Admin da phe duyet Khai bao nay'}, 400)
+                return
+            # Xoa anh neu co
+            if row['image_path']:
+                try:
+                    fpath = os.path.join(DATA_DIR, row['image_path'].lstrip('/'))
+                    if os.path.exists(fpath):
+                        os.remove(fpath)
+                except Exception:
+                    pass
+            db.execute('DELETE FROM overtime_requests WHERE id=?', (ot_id,))
+            db.execute('DELETE FROM notifications WHERE overtime_id=?', (ot_id,))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_overtime_edit(self, ot_id):
+        sess = self.require_auth()
+        if not sess:
+            return
+        with get_db() as db:
+            row = db.execute(
+                'SELECT * FROM overtime_requests WHERE id=? AND user_id=?',
+                (ot_id, sess['userId'])
+            ).fetchone()
+            if not row:
+                self.send_json({'error': 'Khong tim thay khai bao'}, 404)
+                return
+            if row['status'] != 'pending':
+                self.send_json({'error': 'Yeu cau chinh sua Khai bao cua ban khong the thuc hien do Admin da phe duyet Khai bao nay'}, 400)
+                return
+
+        ct = self.headers.get('Content-Type', '')
+        if 'multipart/form-data' in ct:
+            fields, files = self.read_multipart()
+        else:
+            fields = self.read_form()
+            files  = {}
+
+        req_date   = fields.get('request_date', '').strip()
+        start_time = fields.get('start_time', '').strip()
+        end_time   = fields.get('end_time', '').strip()
+        reason     = fields.get('reason', '').strip()
+
+        if not all([req_date, start_time, end_time, reason]):
+            self.send_json({'error': 'Vui long dien day du thong tin'}, 400)
+            return
+
+        try:
+            from datetime import date as dclass
+            y, mo, d = map(int, req_date.split('-'))
+            dow = dclass(y, mo, d).weekday()
+        except Exception:
+            self.send_json({'error': 'Ngay khong hop le'}, 400)
+            return
+
+        if dow <= 4:
+            ot_type = 'weekday'; min_start = (17,30); max_end = (23,0)
+            rule_msg = 'OT ngay thuong chi duoc tu 17:30 den 23:00'
+        elif dow == 5:
+            ot_type = 'weekend'; min_start = (13,30); max_end = (23,0)
+            rule_msg = 'OT thu 7 chi duoc tu 13:30 den 23:00'
+        else:
+            ot_type = 'weekend'; min_start = (8,0);   max_end = (23,0)
+            rule_msg = 'OT chu nhat chi duoc tu 08:00 den 23:00'
+
+        try:
+            sh, sm = map(int, start_time.split(':'))
+            eh, em = map(int, end_time.split(':'))
+        except Exception:
+            self.send_json({'error': 'Gio khong hop le'}, 400)
+            return
+
+        start_min = sh*60+sm; end_min = eh*60+em
+        min_start_min = min_start[0]*60+min_start[1]
+        max_end_min   = max_end[0]*60+max_end[1]
+
+        if start_min < min_start_min or end_min > max_end_min:
+            self.send_json({'error': rule_msg}, 400); return
+        if end_min <= start_min:
+            self.send_json({'error': 'Gio ket thuc phai sau gio bat dau'}, 400); return
+
+        now = datetime.now()
+        today_str = now.strftime('%Y-%m-%d')
+        if req_date == today_str:
+            now_min = now.hour*60+now.minute
+            now_hm  = now.strftime('%H:%M')
+            if end_min > now_min:
+                self.send_json({'error': 'Gio ket thuc (' + end_time + ') vuot qua thoi diem hien tai (' + now_hm + ')'}, 400); return
+            if start_min >= now_min:
+                self.send_json({'error': 'Gio bat dau (' + start_time + ') chua den gio hien tai (' + now_hm + ')'}, 400); return
+
+        raw_minutes = end_min - start_min
+        deduct_min = 0
+        if dow == 6:
+            lunch_s = 720; lunch_e = 810
+            deduct_min = max(0, min(end_min, lunch_e) - max(start_min, lunch_s))
+        hours = (raw_minutes - deduct_min) / 60.0
+        if hours <= 0:
+            self.send_json({'error': 'Tong gio OT phai lon hon 0'}, 400); return
+
+        # Xu ly anh moi (neu co)
+        image_path = row['image_path']  # giu anh cu mac dinh
+        if 'image' in files:
+            fitem = files['image']
+            ext = os.path.splitext(fitem.filename)[1].lower()
+            if ext not in ('.jpg','.jpeg','.png','.gif','.webp','.pdf'):
+                self.send_json({'error': 'Dinh dang file khong ho tro'}, 400); return
+            file_bytes = fitem.file.read()
+            if ext != '.pdf':
+                file_bytes, ext = compress_image(file_bytes, ext)
+            fname = str(int(datetime.now().timestamp()*1000)) + '_' + str(sess['userId']) + ext
+            fpath = os.path.join(UPLOADS_DIR, fname)
+            with open(fpath, 'wb') as f:
+                f.write(file_bytes)
+            # Xoa anh cu
+            if row['image_path']:
+                try:
+                    old = os.path.join(DATA_DIR, row['image_path'].lstrip('/'))
+                    if os.path.exists(old):
+                        os.remove(old)
+                except Exception:
+                    pass
+            image_path = '/uploads/' + fname
+
+        with get_db() as db:
+            db.execute(
+                """UPDATE overtime_requests
+                   SET request_date=?, ot_type=?, start_time=?, end_time=?,
+                       hours=?, reason=?, image_path=?
+                   WHERE id=? AND user_id=? AND status='pending'""",
+                (req_date, ot_type, start_time, end_time,
+                 hours, reason, image_path, ot_id, sess['userId'])
             )
             db.commit()
         self.send_json({'ok': True})
@@ -951,113 +1106,125 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return
             new_pw = generate_temp_password()
             db.execute('UPDATE users SET password=? WHERE id=?',
-                       (hash_password(new_pw), uid))
+                                     (hash_password(new_pw), uid))
             db.commit()
         self.send_json({'ok': True, 'new_password': new_pw, 'full_name': row['full_name']})
 
     def api_manager_cleanup_data(self):
-        """Xoa du lieu OT truoc mot thang nhat dinh (giu nguyen tai khoan)"""
         sess = self.require_manager()
         if not sess:
             return
-        body        = self.read_json()
-        before_month = body.get('before_month', '').strip()  # format: "YYYY-MM"
-        if not re.match(r'^\d{4}-\d{2}$', before_month):
-            self.send_json({'error': 'Dinh dang thang khong hop le (YYYY-MM)'}, 400)
+        body = self.read_json()
+        before_month = body.get('before_month', '')
+        if not before_month:
+            self.send_json({'error': 'Thieu truong before_month'}, 400)
             return
         with get_db() as db:
-            # Lay danh sach anh can xoa
             rows = db.execute(
-                "SELECT image_path FROM overtime_requests WHERE image_path IS NOT NULL AND strftime('%Y-%m', request_date) < ?",
+                "SELECT image_path FROM overtime_requests WHERE strftime('%Y-%m', request_date) < ?",
                 (before_month,)
             ).fetchall()
-            deleted_count = db.execute(
-                "SELECT COUNT(*) as cnt FROM overtime_requests WHERE strftime('%Y-%m', request_date) < ?",
-                (before_month,)
-            ).fetchone()['cnt']
-            # Xoa notifications lien quan
-            db.execute(
-                """DELETE FROM notifications WHERE ot_id IN
-                   (SELECT id FROM overtime_requests WHERE strftime('%Y-%m', request_date) < ?)""",
-                (before_month,)
-            )
-            # Xoa ban ghi OT
+            for r in rows:
+                if r['image_path']:
+                    try:
+                        fpath = os.path.join(DATA_DIR, r['image_path'].lstrip('/'))
+                        if os.path.exists(fpath):
+                            os.remove(fpath)
+                    except Exception:
+                        pass
             db.execute(
                 "DELETE FROM overtime_requests WHERE strftime('%Y-%m', request_date) < ?",
                 (before_month,)
             )
-            db.commit()
+            db.execute(
+                "DELETE FROM notifications WHERE overtime_id NOT IN (SELECT id FROM overtime_requests)"
+            )
             db.execute('VACUUM')
-        # Xoa file anh
-        deleted_files = 0
-        for row in rows:
-            if row['image_path']:
-                fname = os.path.basename(row['image_path'])
-                fpath = os.path.join(UPLOADS_DIR, fname)
-                try:
-                    os.remove(fpath)
-                    deleted_files += 1
-                except Exception:
-                    pass
-        self.send_json({'ok': True, 'deleted_records': deleted_count, 'deleted_files': deleted_files})
+            db.commit()
+        self.send_json({'ok': True})
 
     def api_manager_reset_all(self):
-        """Xoa toan bo du lieu: OT, thong bao, anh, tat ca NV ngoai tru admin"""
         sess = self.require_manager()
         if not sess:
             return
-        body    = self.read_json()
-        confirm = body.get('confirm', '')
-        if confirm != 'XAC_NHAN_XOA_HET':
+        body = self.read_json()
+        if body.get('confirm') != 'XAC_NHAN_XOA_HET':
             self.send_json({'error': 'Xac nhan khong dung'}, 400)
             return
-        with get_db() as db:
-            db.execute('DELETE FROM notifications')
-            db.execute('DELETE FROM overtime_requests')
-            db.execute("DELETE FROM users WHERE username != 'admin'")
-            db.commit()
-            db.execute('VACUUM')
-        # Xoa toan bo file anh
+        # Xoa tat ca anh
         for fname in os.listdir(UPLOADS_DIR):
             try:
                 os.remove(os.path.join(UPLOADS_DIR, fname))
             except Exception:
                 pass
+        with get_db() as db:
+            db.execute('DELETE FROM overtime_requests')
+            db.execute('DELETE FROM notifications')
+            db.execute('DELETE FROM users WHERE role != ?', ('manager',))
+            db.execute('VACUUM')
+            db.commit()
         self.send_json({'ok': True})
 
     def api_manager_storage(self):
         sess = self.require_manager()
         if not sess:
             return
-        total_bytes = 0
-        for dirpath, _, filenames in os.walk(DATA_DIR):
-            for fname in filenames:
-                try:
-                    total_bytes += os.path.getsize(os.path.join(dirpath, fname))
-                except OSError:
-                    pass
-        used_mb    = total_bytes / (1024 * 1024)
-        limit_mb   = 500
-        warn_mb    = 410
-        danger_mb  = 480
-        self.send_json({
-            'used_mb':    round(used_mb, 1),
-            'limit_mb':   limit_mb,
-            'warn_mb':    warn_mb,
-            'danger_mb':  danger_mb,
-            'percent':    round(used_mb / limit_mb * 100, 1),
-            'is_warning': used_mb >= warn_mb,
-            'is_danger':  used_mb >= danger_mb,
-        })
+        try:
+            db_size = os.path.getsize(DB_PATH) if os.path.exists(DB_PATH) else 0
+            uploads_size = sum(
+                os.path.getsize(os.path.join(UPLOADS_DIR, f))
+                for f in os.listdir(UPLOADS_DIR)
+                if os.path.isfile(os.path.join(UPLOADS_DIR, f))
+            ) if os.path.exists(UPLOADS_DIR) else 0
+            total_bytes = db_size + uploads_size
+            used_mb  = round(total_bytes / (1024*1024), 1)
+            limit_mb = 500
+            percent  = round(used_mb / limit_mb * 100, 1)
+            self.send_json({
+                'used_mb': used_mb,
+                'limit_mb': limit_mb,
+                'percent': percent,
+                'is_warning': used_mb >= 410,
+                'is_danger':  used_mb >= 480,
+            })
+        except Exception as e:
+            self.send_json({'error': str(e)}, 500)
 
-    # --- NOTIFICATIONS ---
 
-    def api_notifications_list(self):
-        sess = self.require_auth()
-        if not sess:
-            return
-        with get_db() as db:
-            rows = db.execute(
+class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
+    allow_reuse_address = True
+
+
+def get_local_ip():
+    import socket
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(('8.8.8.8', 80))
+        ip = s.getsockname()[0]
+        s.close()
+        return ip
+    except Exception:
+        return 'localhost'
+
+
+if __name__ == '__main__':
+    init_db()
+    ip = get_local_ip()
+    print("")
+    print("=" * 50)
+    print("  CHAM CONG OT - Server dang chay")
+    print("=" * 50)
+    print(f"  Local:   http://localhost:{PORT}")
+    print(f"  Network: http://{ip}:{PORT}")
+    print("  Nhan Ctrl+C de dung server")
+    print("=" * 50)
+    print("")
+    httpd = ThreadingHTTPServer(('', PORT), Handler)
+    try:
+        httpd.serve_forever()
+    except KeyboardInterrupt:
+        print("\nServer da dung.")
+b.execute(
                 """SELECT n.*, r.request_date, r.start_time, r.end_time, r.ot_type
                    FROM notifications n
                    JOIN overtime_requests r ON n.ot_id = r.id
