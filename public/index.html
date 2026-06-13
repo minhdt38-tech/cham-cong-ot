@@ -427,6 +427,20 @@
   </div>
 </div>
 
+<!-- Reset mật khẩu nhân viên -->
+<div id="reset-pwd-modal" class="modal-overlay hidden">
+  <div class="modal" style="max-width:420px">
+    <div class="modal-header">
+      <h3>🔑 Reset mật khẩu</h3>
+      <button class="close-btn" onclick="closeModal('reset-pwd-modal')">✕</button>
+    </div>
+    <div class="modal-body" id="reset-pwd-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('reset-pwd-modal')">Đóng</button>
+    </div>
+  </div>
+</div>
+
 <!-- Xem ảnh lớn -->
 <div id="img-modal" class="modal-overlay hidden" onclick="closeModal('img-modal')">
   <img id="img-modal-src" src="" style="max-width:90vw;max-height:90vh;border-radius:12px;box-shadow:0 20px 60px rgba(0,0,0,0.4)">
@@ -921,6 +935,7 @@ async function renderReport() {
             <select id="r-year" onchange="updateReport()">
               ${[year-1,year,year+1].map(y=>`<option value="${y}" ${y==year?'selected':''}>${y}</option>`).join('')}
             </select>
+            <button class="btn btn-success btn-sm" onclick="exportExcel(${month},${year})">📥 Xuất Excel</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -963,6 +978,7 @@ async function renderUsers() {
       <td>
         <div class="flex gap-2">
           <button class="btn btn-outline btn-sm" onclick="editUser(${u.id},'${esc(u.username)}','${esc(u.full_name)}','${u.role}','${esc(u.department||'')}')">✏️</button>
+          ${u.id !== currentUser.id ? `<button class="btn btn-outline btn-sm" style="color:var(--warning);border-color:var(--warning)" onclick="resetPassword(${u.id},'${esc(u.full_name)}')">🔑</button>` : ''}
           ${u.id !== currentUser.id ? `<button class="btn btn-danger btn-sm" onclick="deleteUser(${u.id},'${esc(u.full_name)}')">🗑️</button>` : ''}
         </div>
       </td>
@@ -1174,6 +1190,45 @@ async function deleteUser(id, name) {
   } catch(e) { alert(e.message); }
 }
 
+async function resetPassword(uid, name) {
+  if (!confirm(`Reset mật khẩu của "${name}"?\nMật khẩu mới sẽ được tạo tự động.`)) return;
+  try {
+    const res = await api('PUT', `/api/manager/users/${uid}/reset-password`);
+    set('reset-pwd-body', `
+      <div style="text-align:center;padding:8px 0 16px">
+        <div style="font-size:36px;margin-bottom:12px">🔑</div>
+        <div style="font-size:15px;margin-bottom:16px">Mật khẩu mới của <strong>${name}</strong>:</div>
+        <div style="background:#f1f5f9;border:2px dashed var(--border);border-radius:10px;padding:16px;margin-bottom:16px">
+          <span id="new-pw-text" style="font-size:24px;font-weight:700;letter-spacing:3px;font-family:monospace;color:var(--primary)">${res.new_password}</span>
+        </div>
+        <button class="btn btn-outline btn-sm" onclick="copyPw('${res.new_password}', this)">📋 Copy mật khẩu</button>
+      </div>
+      <div class="alert alert-error" style="font-size:13px;margin:0">
+        ⚠️ Ghi lại mật khẩu này ngay và gửi cho nhân viên. Đây là mật khẩu tạm thời — nhân viên nên đổi lại sau khi đăng nhập.
+      </div>
+    `);
+    showModal('reset-pwd-modal');
+  } catch(e) { alert(e.message); }
+}
+
+function copyPw(pw, btn) {
+  navigator.clipboard.writeText(pw).then(() => {
+    btn.textContent = '✅ Đã copy!';
+    setTimeout(() => { btn.textContent = '📋 Copy mật khẩu'; }, 2000);
+  }).catch(() => {
+    prompt('Copy mật khẩu này:', pw);
+  });
+}
+
+function exportExcel(month, year) {
+  const a = document.createElement('a');
+  a.href = `/api/manager/export?month=${month}&year=${year}`;
+  a.download = `cham_cong_OT_T${month}_${year}.xlsx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+}
+
 function showChangePwd() {
   document.getElementById('pwd-old').value = '';
   document.getElementById('pwd-new').value = '';
@@ -1255,7 +1310,7 @@ document.getElementById('overlay').addEventListener('click', closeSidebar);
 // Keyboard close modal
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    ['review-modal','detail-modal','user-modal','pwd-modal','img-modal'].forEach(closeModal);
+    ['review-modal','detail-modal','user-modal','pwd-modal','img-modal','reset-pwd-modal'].forEach(closeModal);
   }
 });
 

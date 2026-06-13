@@ -26,6 +26,13 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
 
+try:
+    import openpyxl
+    from openpyxl.styles import Font, PatternFill, Alignment
+    OPENPYXL_AVAILABLE = True
+except ImportError:
+    OPENPYXL_AVAILABLE = False
+
 PORT = int(os.environ.get('PORT', 3000))
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -150,6 +157,13 @@ def check_password(pw, hashed):
 
 def rows_to_list(rows):
     return [dict(r) for r in rows]
+
+
+def generate_temp_password():
+    """Tao mat khau tam thoi 8 ky tu (chu + so)"""
+    import random, string
+    chars = string.ascii_letters + string.digits
+    return ''.join(random.choices(chars, k=8))
 
 
 # --- SESSION ---
@@ -354,6 +368,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_manager_overtime_list(qs); return
         if path == '/api/manager/stats':
             self.api_manager_stats(qs); return
+        if path == '/api/manager/export':
+            self.api_manager_export(qs); return
 
         # SPA fallback
         self.send_file(os.path.join(PUBLIC_DIR, 'index.html'))
@@ -384,6 +400,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/manager/users/(\d+)$', path)
         if m:
             self.api_manager_update_user(int(m.group(1))); return
+        m = re.match(r'^/api/manager/users/(\d+)/reset-password$', path)
+        if m:
+            self.api_manager_reset_password(int(m.group(1))); return
         m = re.match(r'^/api/notifications/(\d+)/read$', path)
         if m:
             self.api_notification_mark_read(int(m.group(1))); return
@@ -739,6 +758,136 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with get_db() as db:
             rows = db.execute(sql, params).fetchall()
         self.send_json(rows_to_list(rows))
+
+    def api_manager_export(self, qs):
+        sess = self.require_manager()
+        if not sess:
+            return
+        month = qs.get('month', [None])[0]
+        year  = qs.get('year',  [None])[0]
+        sql = """SELECT r.id, u.full_name, u.department,
+                        r.request_date, r.ot_type,
+                        r.start_time, r.end_time, r.hours,
+                        r.reason, r.status, r.manager_note, r.created_at
+                 FROM overtime_requests r
+                 JOIN users u ON r.user_id = u.id
+                 WHERE 1=1"""
+        params = []
+        if month and year:
+            sql += " AND strftime('%Y-%m', r.request_date) = ?"
+            params.append(f"{year}-{month.zfill(2)}")
+        sql += ' ORDER BY r.request_date DESC, u.full_name'
+        with get_db() as db:
+            rows = db.execute(sql, params).fetchall()
+
+        label_month = f'T{month}_{year}' if month and year else 'tat_ca'
+
+        if OPENPYXL_AVAILABLE:
+            wb = openpyxl.Workbook()
+            ws = wb.active
+            ws.title = 'Cham Cong OT'
+
+            # Header style
+            hdr_fill = PatternFill('solid', fgColor='2563EB')
+            hdr_font = Font(bold=True, color='FFFFFF')
+            hdr_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+
+            headers = ['STT','Họ tên','Bộ phận','Ngày OT','Loại OT',
+                       'Giờ bắt đầu','Giờ kết thúc','Số giờ',
+                       'Lý do','Trạng thái','Ghi chú QT','Ngày gửi']
+            col_widths = [5, 22, 16, 13, 14, 13, 13, 9, 40, 14, 30, 18]
+
+            for ci, (h, w) in enumerate(zip(headers, col_widths), 1):
+                cell = ws.cell(row=1, column=ci, value=h)
+                cell.fill = hdr_fill
+                cell.font = hdr_font
+                cell.alignment = hdr_align
+                ws.column_dimensions[openpyxl.utils.get_column_letter(ci)].width = w
+            ws.row_dimensions[1].height = 30
+            ws.freeze_panes = 'A2'
+
+            status_map = {
+                'pending':   'Cho duyet',
+                'approved':  'Da duyet',
+                'rejected':  'Tu choi',
+                'cancelled': 'Da huy',
+            }
+            status_colors = {
+                'pending':   'FEF3C7',
+                'approved':  'DCFCE7',
+                'rejected':  'FEE2E2',
+                'cancelled': 'F1F5F9',
+            }
+
+            for i, r in enumerate(rows, 1):
+                ot_label = 'Ngay thuong' if r['ot_type'] == 'weekday' else 'Cuoi tuan/Le'
+                status   = r['status']
+                values   = [
+                    i, r['full_name'], r['department'] or '',
+                    r['request_date'], ot_label,
+                    r['start_time'], r['end_time'],
+                    round(r['hours'] or 0, 2),
+                    r['reason'], status_map.get(status, status),
+                    r['manager_note'] or '', r['created_at']
+                ]
+                fill = PatternFill('solid', fgColor=status_colors.get(status, 'FFFFFF')) if status in status_colors else None
+                for ci, v in enumerate(values, 1):
+                    cell = ws.cell(row=i+1, column=ci, value=v)
+                    cell.alignment = Alignment(vertical='top', wrap_text=(ci == 9))
+                    if fill and ci == 10:
+                        cell.fill = fill
+
+            # Tong ket
+            total_row = len(rows) + 3
+            ws.cell(row=total_row, column=1, value='Tong cong').font = Font(bold=True)
+            approved_hours = sum(r['hours'] or 0 for r in rows if r['status'] == 'approved')
+            ws.cell(row=total_row, column=8, value=round(approved_hours, 2)).font = Font(bold=True)
+            ws.cell(row=total_row, column=9, value=f"Tong gio OT da duyet: {approved_hours:.1f}h").font = Font(bold=True)
+
+            buf = io.BytesIO()
+            wb.save(buf)
+            data = buf.getvalue()
+            fname = f'cham_cong_OT_{label_month}.xlsx'
+            ct = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+        else:
+            # Fallback: CSV
+            import csv
+            buf = io.StringIO()
+            w = csv.writer(buf)
+            w.writerow(['STT','Ho ten','Bo phan','Ngay OT','Loai OT',
+                        'Gio bat dau','Gio ket thuc','So gio',
+                        'Ly do','Trang thai','Ghi chu QT','Ngay gui'])
+            for i, r in enumerate(rows, 1):
+                w.writerow([i, r['full_name'], r['department'] or '',
+                             r['request_date'],
+                             'Ngay thuong' if r['ot_type']=='weekday' else 'Cuoi tuan',
+                             r['start_time'], r['end_time'], r['hours'] or 0,
+                             r['reason'], r['status'], r['manager_note'] or '', r['created_at']])
+            data = buf.getvalue().encode('utf-8-sig')
+            fname = f'cham_cong_OT_{label_month}.csv'
+            ct = 'text/csv; charset=utf-8'
+
+        self.send_response(200)
+        self.send_header('Content-Type', ct)
+        self.send_header('Content-Length', len(data))
+        self.send_header('Content-Disposition', f'attachment; filename="{fname}"')
+        self.end_headers()
+        self.wfile.write(data)
+
+    def api_manager_reset_password(self, uid):
+        sess = self.require_manager()
+        if not sess:
+            return
+        with get_db() as db:
+            row = db.execute('SELECT id, full_name FROM users WHERE id=?', (uid,)).fetchone()
+            if not row:
+                self.send_json({'error': 'Khong tim thay tai khoan'}, 404)
+                return
+            new_pw = generate_temp_password()
+            db.execute('UPDATE users SET password=? WHERE id=?',
+                       (hash_password(new_pw), uid))
+            db.commit()
+        self.send_json({'ok': True, 'new_password': new_pw, 'full_name': row['full_name']})
 
     # --- NOTIFICATIONS ---
 
