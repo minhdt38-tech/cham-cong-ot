@@ -969,15 +969,29 @@ function navigate(page) {
   content.innerHTML = '<div style="text-align:center;padding:40px;color:#64748b">Đang tải...</div>';
   closeSidebar();
 
-  if (page === 'dashboard') renderDashboard();
-  else if (page === 'submit-ot') renderSubmitOT();
-  else if (page === 'my-records') renderMyRecords();
-  else if (page === 'approve') renderApprove();
-  else if (page === 'all-records') renderAllRecords();
-  else if (page === 'report') renderReport();
-  else if (page === 'users') renderUsers();
-  else if (page === 'data-mgmt') renderDataMgmt();
-  else if (page === 'docs') renderDocs();
+  const renderFn =
+    page === 'dashboard'    ? renderDashboard  :
+    page === 'submit-ot'    ? renderSubmitOT   :
+    page === 'my-records'   ? renderMyRecords  :
+    page === 'approve'      ? renderApprove    :
+    page === 'all-records'  ? renderAllRecords :
+    page === 'report'       ? renderReport     :
+    page === 'users'        ? renderUsers      :
+    page === 'data-mgmt'    ? renderDataMgmt   :
+    page === 'docs'         ? renderDocs       : null;
+
+  if (renderFn) {
+    Promise.resolve(renderFn()).catch(err => {
+      document.getElementById('content-area').innerHTML =
+        `<div style="text-align:center;padding:40px;color:var(--danger)">
+          <div style="font-size:32px;margin-bottom:12px">⚠️</div>
+          <div style="font-weight:600;margin-bottom:8px">Không thể tải trang</div>
+          <div style="font-size:13px;color:var(--muted)">${err.message || 'Lỗi không xác định'}</div>
+          <button class="btn btn-primary" style="margin-top:16px" onclick="navigate('${page}')">🔄 Thử lại</button>
+        </div>`;
+      console.error('[navigate]', page, err);
+    });
+  }
 }
 
 // ─────────────── PAGES ───────────────
