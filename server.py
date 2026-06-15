@@ -103,7 +103,34 @@ def init_db():
             FOREIGN KEY(user_id) REFERENCES users(id),
             FOREIGN KEY(ot_id)   REFERENCES overtime_requests(id)
         );
+        CREATE TABLE IF NOT EXISTS doc_categories (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            color       TEXT DEFAULT '#1B2A4A',
+            created_by  INTEGER,
+            created_at  TEXT DEFAULT (datetime('now','localtime'))
+        );
+        CREATE TABLE IF NOT EXISTS documents (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            title       TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            file_path   TEXT NOT NULL,
+            file_name   TEXT NOT NULL,
+            file_type   TEXT NOT NULL,
+            file_size   INTEGER DEFAULT 0,
+            category_id INTEGER,
+            tags        TEXT DEFAULT '',
+            uploaded_by INTEGER NOT NULL,
+            created_at  TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY(category_id) REFERENCES doc_categories(id),
+            FOREIGN KEY(uploaded_by) REFERENCES users(id)
+        );
         """)
+        # Migration: them cot can_upload_docs neu chua co
+        cols = [r[1] for r in db.execute("PRAGMA table_info(users)").fetchall()]
+        if 'can_upload_docs' not in cols:
+            db.execute("ALTER TABLE users ADD COLUMN can_upload_docs INTEGER DEFAULT 0")
         row = db.execute("SELECT id FROM users WHERE username='admin'").fetchone()
         if not row:
             pwd = hash_password('admin123')
@@ -356,6 +383,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_manager_export(qs); return
         if path == '/api/manager/storage':
             self.api_manager_storage(); return
+        if path == '/api/docs':
+            self.api_docs_list(qs); return
+        if path == '/api/docs/categories':
+            self.api_doc_categories_list(); return
+        if path == '/api/manager/doc-permissions':
+            self.api_manager_doc_permissions(); return
 
         self.send_file(os.path.join(PUBLIC_DIR, 'index.html'))
 
@@ -368,6 +401,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             '/api/overtime':                 self.api_submit_overtime,
             '/api/manager/users':            self.api_manager_create_user,
             '/api/notifications/read-all':   self.api_notifications_read_all,
+            '/api/docs/upload':              self.api_docs_upload,
+            '/api/docs/categories':          self.api_doc_categories_create,
         }
         if path in routes:
             routes[path]()
@@ -394,6 +429,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/notifications/(\d+)/read$', path)
         if m:
             self.api_notification_mark_read(int(m.group(1))); return
+        m = re.match(r'^/api/docs/categories/(\d+)$', path)
+        if m:
+            self.api_doc_categories_update(int(m.group(1))); return
+        m = re.match(r'^/api/manager/doc-permissions/(\d+)$', path)
+        if m:
+            self.api_manager_doc_permission_set(int(m.group(1))); return
         self.send_json({'error': 'Not found'}, 404)
 
     def do_DELETE(self):
@@ -408,6 +449,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_manager_cleanup_data(); return
         if path == '/api/manager/data/reset-all':
             self.api_manager_reset_all(); return
+        m = re.match(r'^/api/docs/(\d+)$', path)
+        if m:
+            self.api_docs_delete(int(m.group(1))); return
+        m = re.match(r'^/api/docs/categories/(\d+)$', path)
+        if m:
+            self.api_doc_categories_delete(int(m.group(1))); return
         self.send_json({'error': 'Not found'}, 404)
 
     # --- AUTH ---
@@ -1205,6 +1252,178 @@ class Handler(http.server.BaseHTTPRequestHandler):
             })
         except Exception as e:
             self.send_json({'error': str(e)}, 500)
+
+    # --- DOCUMENTS ---
+
+    def can_upload_docs(self, sess):
+        """Kiem tra quyen upload tai lieu: manager hoac co_upload_docs=1"""
+        if sess['role'] == 'manager':
+            return True
+        with get_db() as db:
+            row = db.execute('SELECT can_upload_docs FROM users WHERE id=?', (sess['userId'],)).fetchone()
+        return row and row['can_upload_docs'] == 1
+
+    def api_doc_categories_list(self):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            rows = db.execute(
+                'SELECT c.*, u.full_name as creator FROM doc_categories c LEFT JOIN users u ON c.created_by=u.id ORDER BY c.name'
+            ).fetchall()
+        self.send_json(rows_to_list(rows))
+
+    def api_doc_categories_create(self):
+        sess = self.require_manager()
+        if not sess: return
+        body = self.read_json()
+        name = body.get('name', '').strip()
+        desc  = body.get('description', '').strip()
+        color = body.get('color', '#1B2A4A').strip()
+        if not name:
+            self.send_json({'error': 'Ten danh muc khong duoc de trong'}, 400); return
+        with get_db() as db:
+            cur = db.execute(
+                'INSERT INTO doc_categories (name, description, color, created_by) VALUES (?,?,?,?)',
+                (name, desc, color, sess['userId'])
+            )
+            db.commit()
+        self.send_json({'ok': True, 'id': cur.lastrowid})
+
+    def api_doc_categories_update(self, cat_id):
+        sess = self.require_manager()
+        if not sess: return
+        body = self.read_json()
+        name  = body.get('name', '').strip()
+        desc  = body.get('description', '').strip()
+        color = body.get('color', '#1B2A4A').strip()
+        if not name:
+            self.send_json({'error': 'Ten danh muc khong duoc de trong'}, 400); return
+        with get_db() as db:
+            db.execute('UPDATE doc_categories SET name=?, description=?, color=? WHERE id=?',
+                       (name, desc, color, cat_id))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_doc_categories_delete(self, cat_id):
+        sess = self.require_manager()
+        if not sess: return
+        with get_db() as db:
+            cnt = db.execute('SELECT COUNT(*) FROM documents WHERE category_id=?', (cat_id,)).fetchone()[0]
+            if cnt > 0:
+                self.send_json({'error': f'Danh muc con {cnt} tai lieu, khong the xoa'}, 400); return
+            db.execute('DELETE FROM doc_categories WHERE id=?', (cat_id,))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_docs_list(self, qs):
+        sess = self.require_auth()
+        if not sess: return
+        cat_id = qs.get('category_id', [None])[0]
+        tag    = qs.get('tag', [None])[0]
+        q      = qs.get('q', [None])[0]
+        sql = """SELECT d.*, u.full_name as uploader_name, c.name as category_name, c.color as category_color
+                 FROM documents d
+                 LEFT JOIN users u ON d.uploaded_by = u.id
+                 LEFT JOIN doc_categories c ON d.category_id = c.id
+                 WHERE 1=1"""
+        params = []
+        if cat_id:
+            sql += ' AND d.category_id = ?'; params.append(int(cat_id))
+        if tag:
+            sql += ' AND (d.tags LIKE ? OR d.tags LIKE ? OR d.tags LIKE ? OR d.tags = ?)'
+            params += [f'{tag},%', f'%,{tag},%', f'%,{tag}', tag]
+        if q:
+            sql += ' AND (d.title LIKE ? OR d.description LIKE ?)'
+            params += [f'%{q}%', f'%{q}%']
+        sql += ' ORDER BY d.created_at DESC'
+        with get_db() as db:
+            rows = db.execute(sql, params).fetchall()
+        self.send_json(rows_to_list(rows))
+
+    def api_docs_upload(self):
+        sess = self.require_auth()
+        if not sess: return
+        if not self.can_upload_docs(sess):
+            self.send_json({'error': 'Ban khong co quyen upload tai lieu'}, 403); return
+        ct = self.headers.get('Content-Type', '')
+        if 'multipart/form-data' in ct:
+            fields, files = self.read_multipart()
+        else:
+            self.send_json({'error': 'Yeu cau multipart/form-data'}, 400); return
+        title   = fields.get('title', '').strip()
+        desc    = fields.get('description', '').strip()
+        cat_id  = fields.get('category_id', '').strip() or None
+        tags    = fields.get('tags', '').strip()
+        if not title:
+            self.send_json({'error': 'Tieu de khong duoc de trong'}, 400); return
+        if 'file' not in files:
+            self.send_json({'error': 'Chua chon file'}, 400); return
+        fitem = files['file']
+        orig_name = fitem.filename
+        ext = os.path.splitext(orig_name)[1].lower()
+        allowed = {'.pdf': 'pdf', '.docx': 'docx', '.xlsx': 'xlsx',
+                   '.jpg': 'image', '.jpeg': 'image', '.png': 'image'}
+        if ext not in allowed:
+            self.send_json({'error': 'Dinh dang khong ho tro (.pdf .docx .xlsx .jpg .png)'}, 400); return
+        file_bytes = fitem.file.read()
+        file_size  = len(file_bytes)
+        ts = int(datetime.now(VN_TZ).timestamp() * 1000)
+        safe_name = f'doc_{ts}_{sess["userId"]}{ext}'
+        fpath = os.path.join(UPLOADS_DIR, safe_name)
+        with open(fpath, 'wb') as f:
+            f.write(file_bytes)
+        with get_db() as db:
+            db.execute(
+                """INSERT INTO documents (title, description, file_path, file_name, file_type,
+                   file_size, category_id, tags, uploaded_by)
+                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                (title, desc, f'/uploads/{safe_name}', orig_name,
+                 allowed[ext], file_size, cat_id, tags, sess['userId'])
+            )
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_docs_delete(self, doc_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            row = db.execute('SELECT * FROM documents WHERE id=?', (doc_id,)).fetchone()
+            if not row:
+                self.send_json({'error': 'Khong tim thay tai lieu'}, 404); return
+            # Manager xoa duoc tat ca; nguoi upload xoa duoc cua minh
+            if sess['role'] != 'manager' and row['uploaded_by'] != sess['userId']:
+                self.send_json({'error': 'Khong co quyen xoa'}, 403); return
+            try:
+                fpath = os.path.join(DATA_DIR, row['file_path'].lstrip('/'))
+                if os.path.exists(fpath):
+                    os.remove(fpath)
+            except Exception:
+                pass
+            db.execute('DELETE FROM documents WHERE id=?', (doc_id,))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_manager_doc_permissions(self):
+        """Lay danh sach nhan vien va quyen upload tai lieu"""
+        sess = self.require_manager()
+        if not sess: return
+        with get_db() as db:
+            rows = db.execute(
+                """SELECT id, username, full_name, department, can_upload_docs
+                   FROM users WHERE role='employee' ORDER BY full_name"""
+            ).fetchall()
+        self.send_json(rows_to_list(rows))
+
+    def api_manager_doc_permission_set(self, uid):
+        """Cap/thu hoi quyen upload tai lieu cho nhan vien"""
+        sess = self.require_manager()
+        if not sess: return
+        body = self.read_json()
+        val  = 1 if body.get('can_upload_docs') else 0
+        with get_db() as db:
+            db.execute('UPDATE users SET can_upload_docs=? WHERE id=?', (val, uid))
+            db.commit()
+        self.send_json({'ok': True})
 
 
 class ThreadingHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
