@@ -1509,4 +1509,71 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sess = self.require_auth()
         if not sess: return
         with get_db() as db:
-            row = db
+            row = db.execute('SELECT * FROM documents WHERE id=?', (doc_id,)).fetchone()
+            if not row:
+                self.send_json({'error': 'Khong tim thay tai lieu'}, 404); return
+            if sess['role'] != 'manager' and row['uploaded_by'] != sess['userId']:
+                self.send_json({'error': 'Khong co quyen xoa'}, 403); return
+            try:
+                fp = row['file_path']
+                if fp.startswith('r2:'):
+                    r2_delete(fp[3:])
+                else:
+                    fpath = os.path.join(DATA_DIR, fp.lstrip('/'))
+                    if os.path.exists(fpath):
+                        os.remove(fpath)
+            except Exception:
+                pass
+            db.execute('DELETE FROM documents WHERE id=?', (doc_id,))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_docs_presigned_url(self, doc_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            row = db.execute('SELECT file_path, file_name FROM documents WHERE id=?', (doc_id,)).fetchone()
+        if not row:
+            self.send_json({'error': 'Khong tim thay tai lieu'}, 404); return
+        fp = row['file_path']
+        if fp.startswith('r2:'):
+            url = r2_presigned_url(fp[3:], expires=3600)
+            if not url:
+                self.send_json({'error': 'Khong the tao URL'}, 500); return
+        else:
+            url = fp
+        self.send_json({'url': url, 'file_name': row['file_name']})
+
+    def api_manager_doc_permissions(self):
+        sess = self.require_manager()
+        if not sess: return
+        with get_db() as db:
+            rows = db.execute(
+                """SELECT id, username, full_name, department, can_upload_docs
+                   FROM users WHERE role='employee' ORDER BY full_name"""
+            ).fetchall()
+        self.send_json(rows_to_list(rows))
+
+    def api_manager_doc_permission_set(self, uid):
+        sess = self.require_manager()
+        if not sess: return
+        body = self.read_json()
+        val  = 1 if body.get('can_upload_docs') else 0
+        with get_db() as db:
+            db.execute('UPDATE users SET can_upload_docs=? WHERE id=?', (val, uid))
+            db.commit()
+        self.send_json({'ok': True})
+
+def run():
+    os.chdir(PUBLIC_DIR)
+    init_db()
+    handler = Handler
+    with socketserver.TCPServer(('', PORT), handler) as httpd:
+        httpd.allow_reuse_address = True
+        print(f'Server running on port {PORT}')
+        print(f'DATA_DIR: {DATA_DIR}')
+        print(f'R2 enabled: {R2_ENABLED}')
+        httpd.serve_forever()
+
+if __name__ == '__main__':
+    run()
