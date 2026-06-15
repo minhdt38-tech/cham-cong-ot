@@ -2141,8 +2141,8 @@ async function loadDocs() {
           <span>${d.created_at ? d.created_at.slice(0,10) : ''}</span>
         </div>
         <div style="display:flex;gap:8px">
-          <button class="btn btn-sm btn-primary" style="flex:1" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${d.file_path}','${ext}')">👁 Xem</button>
-          <a class="btn btn-sm" style="flex:1;text-align:center;text-decoration:none" href="${d.file_path}" download="${d.file_name}">⬇️ Tải</a>
+          <button class="btn btn-sm btn-primary" style="flex:1" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">👁 Xem</button>
+          <button class="btn btn-sm" style="flex:1" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name)}')">⬇️ Tải</button>
           ${canDelete?`<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteDoc(${d.id},'${d.title}')">🗑</button>`:''}
         </div>
       </div>`;
@@ -2150,16 +2150,20 @@ async function loadDocs() {
   }</div>`;
 }
 
-function previewDoc(id, titleEnc, path, ext) {
+async function previewDoc(id, titleEnc, ext) {
   const title = decodeURIComponent(titleEnc);
   document.getElementById('preview-doc-title').textContent = title;
-  const dl = document.getElementById('preview-doc-download');
-  dl.href = path; dl.download = title;
   const body = document.getElementById('preview-doc-body');
+  body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">Đang tải...</div>';
+  showModal('preview-doc-modal');
+  const r = await api('GET', '/api/docs/url/' + id);
+  if (!r.url) { body.innerHTML = '<div style="padding:20px;color:var(--danger)">Không thể tải file</div>'; return; }
+  const dl = document.getElementById('preview-doc-download');
+  dl.href = r.url; dl.download = r.file_name; dl.removeAttribute('onclick');
   if (ext === 'pdf') {
-    body.innerHTML = `<iframe src="${path}" style="width:100%;height:70vh;border:none"></iframe>`;
+    body.innerHTML = `<iframe src="${r.url}" style="width:100%;height:70vh;border:none"></iframe>`;
   } else if (['jpg','jpeg','png'].includes(ext)) {
-    body.innerHTML = `<div style="text-align:center;padding:20px"><img src="${path}" style="max-width:100%;max-height:70vh;border-radius:8px"></div>`;
+    body.innerHTML = `<div style="text-align:center;padding:20px"><img src="${r.url}" style="max-width:100%;max-height:70vh;border-radius:8px"></div>`;
   } else {
     body.innerHTML = `<div style="text-align:center;padding:60px;color:var(--muted)">
       <div style="font-size:64px;margin-bottom:16px">${ext==='docx'?'📝':'📊'}</div>
@@ -2167,7 +2171,14 @@ function previewDoc(id, titleEnc, path, ext) {
       <div style="font-size:13px">Vui lòng tải xuống để xem nội dung</div>
     </div>`;
   }
-  showModal('preview-doc-modal');
+}
+
+async function downloadDoc(id, fileNameEnc) {
+  const r = await api('GET', '/api/docs/url/' + id);
+  if (!r.url) { alert('Không thể tải file'); return; }
+  const a = document.createElement('a');
+  a.href = r.url; a.download = decodeURIComponent(fileNameEnc);
+  document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
 async function deleteDoc(id, title) {
