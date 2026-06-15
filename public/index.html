@@ -1967,39 +1967,68 @@ async function renderDocs() {
     </div>
 
     <!-- Modal upload -->
-    <div id="upload-doc-modal" class="modal-overlay hidden">
-      <div class="modal-box" style="max-width:520px">
-        <div class="modal-header"><span>⬆️ Tải lên tài liệu</span><button class="modal-close" onclick="closeModal('upload-doc-modal')">✕</button></div>
-        <div id="upload-doc-msg" class="hidden"></div>
-        <div class="form-group">
-          <label>Tiêu đề tài liệu *</label>
-          <input type="text" id="doc-title" placeholder="Nhập tiêu đề..." style="width:100%">
+    <div id="upload-doc-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('upload-doc-modal')">
+      <div class="modal-box" style="max-width:560px;border-radius:12px;overflow:hidden;padding:0">
+        <!-- Header -->
+        <div style="background:var(--primary);padding:18px 20px;display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div style="color:#fff;font-weight:700;font-size:16px">📤 Tải lên tài liệu</div>
+            <div style="color:rgba(255,255,255,0.65);font-size:12px;margin-top:2px">PDF · Word · Excel · Hình ảnh – tối đa 20MB</div>
+          </div>
+          <button onclick="closeModal('upload-doc-modal')" style="background:rgba(255,255,255,0.15);border:none;color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">✕</button>
         </div>
-        <div class="form-group">
-          <label>Mô tả</label>
-          <textarea id="doc-desc" rows="2" placeholder="Mô tả ngắn về tài liệu..." style="width:100%"></textarea>
-        </div>
-        <div class="form-grid">
+        <!-- Body -->
+        <div style="padding:20px;background:var(--bg)">
+          <div id="upload-doc-msg" class="hidden" style="margin-bottom:12px"></div>
+
+          <!-- Drop zone -->
+          <div id="doc-dropzone"
+            onclick="document.getElementById('doc-file').click()"
+            ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='rgba(196,136,58,0.07)'"
+            ondragleave="this.style.borderColor='var(--border)';this.style.background=''"
+            ondrop="handleDocDrop(event)"
+            style="border:2px dashed var(--border);border-radius:10px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:16px">
+            <div style="font-size:36px;margin-bottom:8px">📂</div>
+            <div style="font-weight:600;color:var(--primary);margin-bottom:4px">Kéo thả file vào đây</div>
+            <div style="font-size:12px;color:var(--muted)">hoặc click để chọn file</div>
+            <input type="file" id="doc-file" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png" style="display:none" onchange="onDocFileChange(this)">
+          </div>
+          <!-- File đã chọn -->
+          <div id="doc-file-preview" class="hidden" style="background:var(--card-bg,#f8f9fa);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;margin-bottom:16px">
+            <span id="doc-file-icon" style="font-size:24px">📄</span>
+            <div style="flex:1;min-width:0">
+              <div id="doc-file-name" style="font-size:13px;font-weight:600;color:var(--primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+              <div id="doc-file-size" style="font-size:11px;color:var(--muted)"></div>
+            </div>
+            <button onclick="clearDocFile()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0 4px">✕</button>
+          </div>
+
           <div class="form-group">
-            <label>Danh mục</label>
-            <select id="doc-cat-select" style="width:100%">
-              <option value="">-- Không có danh mục --</option>
-              ${docCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
-            </select>
+            <label style="font-size:13px;font-weight:600;color:var(--primary)">Tiêu đề tài liệu <span style="color:var(--danger)">*</span></label>
+            <input type="text" id="doc-title" placeholder="Nhập tiêu đề tài liệu..." style="width:100%;box-sizing:border-box">
           </div>
           <div class="form-group">
-            <label>Tags <span style="color:var(--muted);font-size:11px">(phân cách bởi dấu phẩy)</span></label>
-            <input type="text" id="doc-tags" placeholder="VD: hợp đồng, mẫu, 2024">
+            <label style="font-size:13px;font-weight:600;color:var(--primary)">Mô tả</label>
+            <textarea id="doc-desc" rows="2" placeholder="Mô tả ngắn (không bắt buộc)..." style="width:100%;box-sizing:border-box;resize:vertical"></textarea>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+            <div class="form-group" style="margin-bottom:0">
+              <label style="font-size:13px;font-weight:600;color:var(--primary)">Danh mục</label>
+              <select id="doc-cat-select" style="width:100%;box-sizing:border-box">
+                <option value="">-- Không có --</option>
+                ${docCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
+              </select>
+            </div>
+            <div class="form-group" style="margin-bottom:0">
+              <label style="font-size:13px;font-weight:600;color:var(--primary)">Tags <span style="font-weight:400;color:var(--muted);font-size:11px">phân cách bằng dấu phẩy</span></label>
+              <input type="text" id="doc-tags" placeholder="hợp đồng, mẫu, 2024" style="width:100%;box-sizing:border-box">
+            </div>
           </div>
         </div>
-        <div class="form-group">
-          <label>File đính kèm * <span style="color:var(--muted);font-size:11px">(.pdf .docx .xlsx .jpg .png – tối đa 20MB)</span></label>
-          <input type="file" id="doc-file" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png"
-            style="width:100%;padding:8px;border:1px solid var(--border);border-radius:6px;font-size:13px">
-        </div>
-        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+        <!-- Footer -->
+        <div style="padding:14px 20px;background:var(--card-bg,#f8f9fa);border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end">
           <button class="btn" onclick="closeModal('upload-doc-modal')">Huỷ</button>
-          <button class="btn btn-primary" id="btn-upload-doc" onclick="submitUploadDoc()">⬆️ Tải lên</button>
+          <button class="btn btn-primary" id="btn-upload-doc" onclick="submitUploadDoc()" style="min-width:120px">⬆️ Tải lên</button>
         </div>
       </div>
     </div>
@@ -2195,7 +2224,47 @@ function showUploadModal() {
   document.getElementById('doc-tags').value = '';
   document.getElementById('doc-file').value = '';
   document.getElementById('upload-doc-msg').className = 'hidden';
+  document.getElementById('doc-file-preview').classList.add('hidden');
+  document.getElementById('doc-dropzone').style.display = '';
   showModal('upload-doc-modal');
+}
+
+function onDocFileChange(input) {
+  if (input.files && input.files[0]) showDocFilePreview(input.files[0]);
+}
+
+function handleDocDrop(e) {
+  e.preventDefault();
+  const dz = document.getElementById('doc-dropzone');
+  dz.style.borderColor = ''; dz.style.background = '';
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const allowed = ['.pdf','.docx','.xlsx','.jpg','.jpeg','.png'];
+  const ext = '.' + file.name.split('.').pop().toLowerCase();
+  if (!allowed.includes(ext)) { showMsg('upload-doc-msg','error','Định dạng không hỗ trợ'); return; }
+  const dt = new DataTransfer(); dt.items.add(file);
+  document.getElementById('doc-file').files = dt.files;
+  showDocFilePreview(file);
+}
+
+function showDocFilePreview(file) {
+  const icons = {pdf:'📕',docx:'📝',xlsx:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'};
+  const ext = file.name.split('.').pop().toLowerCase();
+  const sz = file.size > 1048576 ? (file.size/1048576).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB';
+  document.getElementById('doc-file-icon').textContent = icons[ext] || '📄';
+  document.getElementById('doc-file-name').textContent = file.name;
+  document.getElementById('doc-file-size').textContent = sz + ' · .' + ext.toUpperCase();
+  document.getElementById('doc-file-preview').classList.remove('hidden');
+  document.getElementById('doc-dropzone').style.display = 'none';
+  if (!document.getElementById('doc-title').value) {
+    document.getElementById('doc-title').value = file.name.replace(/\.[^.]+$/, '');
+  }
+}
+
+function clearDocFile() {
+  document.getElementById('doc-file').value = '';
+  document.getElementById('doc-file-preview').classList.add('hidden');
+  document.getElementById('doc-dropzone').style.display = '';
 }
 
 async function submitUploadDoc() {
