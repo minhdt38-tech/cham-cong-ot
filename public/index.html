@@ -2227,7 +2227,7 @@ async function previewDoc(id, titleEnc, ext) {
   } else {
     body.innerHTML = `<div style="text-align:center;padding:60px;color:var(--muted)">
       <div style="font-size:64px;margin-bottom:16px">${ext==='docx'?'📝':'📊'}</div>
-      <div style="font-size:16px;margin-bottom:8px">Không thể xem trước định dạng .${ext}</div>
+      <div style="font-size:16px;margin-b      <div style="font-size:16px;margin-bottom:8px">Không thể xem trước định dạng .${ext}</div>
       <div style="font-size:13px">Vui lòng tải xuống để xem nội dung</div>
     </div>`;
   }
@@ -2241,8 +2241,10 @@ async function downloadDoc(id, fileNameEnc) {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
-async function showDocPermissionsModal() {
-  const el = document.getElementById('doc-perm-list');
+</script>
+</body>
+</html>
+tElementById('doc-perm-list');
   el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">Đang tải...</div>';
   showModal('doc-perm-modal');
   const users = await api('GET', '/api/manager/doc-permissions');
