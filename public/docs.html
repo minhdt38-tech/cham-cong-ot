@@ -1,0 +1,881 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tài liệu — Vinhomes</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --primary:      #1B2A4A;
+    --primary-dark: #0F1E36;
+    --accent:       #C4883A;
+    --accent-dark:  #A3711F;
+    --accent-light: #F8EFE2;
+    --success:      #1A7A4A;
+    --danger:       #C0392B;
+    --warning:      #C4883A;
+    --bg:           #F4F2EE;
+    --card:         #FFFFFF;
+    --border:       #DDD8CF;
+    --text:         #1B2A4A;
+    --muted:        #7A7367;
+    --sidebar-bg:   #1B2A4A;
+    --sidebar-w:    248px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Be Vietnam Pro', 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 15px; line-height: 1.5; }
+
+  /* ── LOGIN ── */
+  #login-page {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    background: linear-gradient(160deg, #0F1E36 0%, #1B2A4A 55%, #2A4068 100%);
+    padding: 16px;
+  }
+  .login-card {
+    background: white; border-radius: 4px; padding: 48px 40px; width: 100%; max-width: 400px;
+    box-shadow: 0 24px 64px rgba(0,0,0,0.25);
+  }
+  .login-logo { text-align: center; margin-bottom: 28px; }
+  .login-logo .brand-mark {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 64px; height: 64px; background: var(--primary); border-radius: 4px; margin-bottom: 12px;
+  }
+  .login-logo .brand-mark span { font-size: 28px; }
+  .login-logo h1 { font-size: 20px; font-weight: 700; color: var(--primary); letter-spacing: 0.03em; text-transform: uppercase; }
+  .login-logo p { font-size: 13px; color: var(--muted); margin-top: 4px; }
+  .login-divider { height: 2px; background: linear-gradient(90deg, var(--accent), transparent); margin-bottom: 28px; }
+
+  /* ── LAYOUT ── */
+  #app { display: flex; min-height: 100vh; }
+  #sidebar {
+    width: var(--sidebar-w); background: var(--sidebar-bg); color: white;
+    display: flex; flex-direction: column; flex-shrink: 0; position: fixed;
+    top: 0; left: 0; height: 100vh; z-index: 100;
+  }
+  .sidebar-logo { padding: 22px 18px 18px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+  .sidebar-brand { display: flex; align-items: center; gap: 10px; }
+  .sidebar-brand-icon {
+    width: 36px; height: 36px; background: var(--accent); border-radius: 4px;
+    display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0;
+  }
+  .sidebar-logo h2 { font-size: 15px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: white; }
+  .sidebar-logo span { font-size: 11px; color: rgba(255,255,255,0.45); display: block; margin-top: 1px; }
+  .sidebar-nav { flex: 1; padding: 14px 0; overflow-y: auto; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px; padding: 10px 16px;
+    cursor: pointer; margin: 1px 0; font-size: 13.5px; font-weight: 400;
+    transition: all 0.15s; color: rgba(255,255,255,0.65); border-left: 3px solid transparent;
+    text-decoration: none; width: 100%; background: none; border-top: none; border-right: none; border-bottom: none;
+    font-family: inherit;
+  }
+  .nav-item:hover { background: rgba(255,255,255,0.07); color: white; border-left-color: rgba(196,136,58,0.5); }
+  .nav-item.active { background: rgba(196,136,58,0.15); color: white; border-left-color: var(--accent); font-weight: 600; }
+  .nav-item .icon { font-size: 16px; width: 20px; text-align: center; flex-shrink: 0; }
+  .nav-section {
+    font-size: 10px; color: rgba(255,255,255,0.3); text-transform: uppercase;
+    padding: 16px 16px 6px; letter-spacing: 0.08em; font-weight: 600;
+  }
+  .sidebar-footer { padding: 12px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .user-info { padding: 10px; border-radius: 4px; margin-bottom: 4px; background: rgba(255,255,255,0.05); }
+  .user-info .name { font-size: 13px; font-weight: 600; color: white; }
+  .user-info .role { font-size: 11px; color: var(--accent); margin-top: 2px; }
+
+  #main-content { margin-left: var(--sidebar-w); flex: 1; min-width: 0; }
+  .topbar {
+    background: white; border-bottom: 2px solid var(--border);
+    padding: 0 28px; height: 58px;
+    display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 50;
+  }
+  .topbar h1 { font-size: 17px; font-weight: 700; color: var(--primary); letter-spacing: 0.01em; }
+  .content-area { padding: 28px; max-width: 1200px; }
+
+  /* ── CARDS ── */
+  .card { background: white; border-radius: 4px; padding: 24px; border: 1px solid var(--border); box-shadow: 0 1px 4px rgba(0,0,0,0.04); }
+  .card h3 { font-size: 15px; font-weight: 700; margin-bottom: 18px; color: var(--primary); text-transform: uppercase; letter-spacing: 0.03em; }
+  .card h3::after { content: ''; display: block; width: 32px; height: 2px; background: var(--accent); margin-top: 6px; }
+
+  /* ── DOC CATEGORY ── */
+  .doc-cat-item { display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:6px; font-size:13px; cursor:pointer; color:var(--text); border-left:3px solid transparent; margin-bottom:2px; transition:background .15s; }
+  .doc-cat-item:hover { background:rgba(0,0,0,0.05); }
+  .doc-cat-item.active { background:var(--accent-light); color:var(--primary); font-weight:600; border-left-color:var(--accent); }
+
+  /* ── FORM ── */
+  .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
+  label { font-size: 12.5px; font-weight: 600; color: var(--primary); text-transform: uppercase; letter-spacing: 0.04em; }
+  input, select, textarea {
+    padding: 11px 14px; border: 1px solid var(--border); border-radius: 4px;
+    font-size: 14px; font-family: inherit; transition: border-color 0.15s; outline: none;
+    background: white; color: var(--text);
+  }
+  input:focus, select:focus, textarea:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(196,136,58,0.12); }
+  textarea { resize: vertical; min-height: 80px; }
+
+  /* ── BUTTONS ── */
+  .btn {
+    padding: 11px 22px; border-radius: 4px; border: 1.5px solid transparent; cursor: pointer;
+    font-size: 13.5px; font-weight: 600; font-family: inherit; letter-spacing: 0.02em;
+    transition: all 0.15s; display: inline-flex; align-items: center; gap: 7px;
+    text-transform: uppercase; text-decoration: none;
+  }
+  .btn-primary { background: var(--primary); color: white; border-color: var(--primary); }
+  .btn-primary:hover { background: var(--primary-dark); }
+  .btn-danger  { background: var(--danger); color: white; border-color: var(--danger); }
+  .btn-danger:hover  { background: #9B2D23; }
+  .btn-outline { background: white; color: var(--primary); border-color: var(--primary); }
+  .btn-outline:hover { background: var(--primary); color: white; }
+  .btn-sm { padding: 7px 14px; font-size: 12px; }
+  .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+  /* ── MODAL ── */
+  .modal-overlay {
+    position: fixed; inset: 0; background: rgba(15,30,54,0.6);
+    display: flex; align-items: center; justify-content: center; z-index: 1000; padding: 16px;
+  }
+  .modal-box { background: white; border-radius: 4px; width: 100%; max-height: 90vh; overflow-y: auto; }
+  .modal-header {
+    padding: 18px 24px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between; align-items: center;
+    background: var(--primary);
+  }
+  .modal-header h3 { font-size: 15px; font-weight: 700; color: white; text-transform: uppercase; letter-spacing: 0.04em; }
+  .modal-body { padding: 24px; }
+  .modal-footer { padding: 16px 24px; border-top: 1px solid var(--border); display: flex; justify-content: flex-end; gap: 10px; }
+  .modal-close { background: rgba(255,255,255,0.15); border: none; color: #fff; width: 30px; height: 30px; border-radius: 50%; cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+  .modal-close:hover { background: rgba(255,255,255,0.3); }
+  .close-btn { background: none; border: none; cursor: pointer; font-size: 18px; color: rgba(255,255,255,0.7); padding: 4px; }
+  .close-btn:hover { color: white; }
+
+  /* ── UTILS ── */
+  .hidden { display: none !important; }
+  .flex { display: flex; }
+  .gap-2 { gap: 8px; }
+  .items-center { align-items: center; }
+  .justify-between { justify-content: space-between; }
+  .mb-4 { margin-bottom: 16px; }
+  .alert { padding: 12px 16px; border-radius: 4px; font-size: 13.5px; margin-bottom: 16px; border-left: 4px solid; }
+  .alert-success { background: #D1FAE5; color: #065F46; border-color: var(--success); }
+  .alert-error   { background: #FEE2E2; color: #991B1B; border-color: var(--danger); }
+  .empty-state { text-align: center; padding: 48px 20px; color: var(--muted); }
+  .empty-state .icon { font-size: 40px; margin-bottom: 14px; }
+
+  /* ── RESPONSIVE ── */
+  @media (max-width: 768px) {
+    :root { --sidebar-w: 0px; }
+    #sidebar { transform: translateX(-100%); transition: transform 0.25s; width: 260px; }
+    #sidebar.open { transform: translateX(0); }
+    #main-content { margin-left: 0; }
+    .topbar { padding: 0 16px; height: 52px; }
+    .content-area { padding: 16px; }
+    #menu-btn { display: flex !important; }
+  }
+  #menu-btn { display: none; background: none; border: none; cursor: pointer; font-size: 22px; padding: 4px; color: var(--primary); }
+  #overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.45); z-index: 90; }
+  #overlay.show { display: block; }
+</style>
+</head>
+<body>
+
+<!-- ── LOGIN ── -->
+<div id="login-page">
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="brand-mark"><span>📂</span></div>
+      <h1>Tài Liệu</h1>
+      <p>Hệ thống quản lý tài liệu nội bộ</p>
+    </div>
+    <div class="login-divider"></div>
+    <div id="login-error" class="alert alert-error hidden"></div>
+    <form id="login-form">
+      <div class="form-group mb-4">
+        <label>Tên đăng nhập</label>
+        <input id="inp-username" type="text" placeholder="Nhập tên đăng nhập" required autocomplete="username">
+      </div>
+      <div class="form-group mb-4">
+        <label>Mật khẩu</label>
+        <div style="position:relative">
+          <input id="inp-password" type="password" placeholder="Nhập mật khẩu" required autocomplete="current-password" style="width:100%;padding-right:44px">
+          <button type="button" onclick="this.previousElementSibling.type=this.previousElementSibling.type==='password'?'text':'password';this.textContent=this.previousElementSibling.type==='password'?'👁':'🙈'"
+            style="position:absolute;right:0;top:0;height:100%;width:44px;background:none;border:none;cursor:pointer;font-size:18px;color:var(--muted);display:flex;align-items:center;justify-content:center;padding:0;">👁</button>
+        </div>
+      </div>
+      <button type="submit" style="width:100%;padding:13px;background:var(--primary);color:white;border:none;border-radius:4px;font-size:14px;font-weight:700;cursor:pointer;font-family:inherit;letter-spacing:0.04em;text-transform:uppercase;">
+        Đăng nhập
+      </button>
+    </form>
+  </div>
+</div>
+
+<!-- ── APP ── -->
+<div id="app" class="hidden">
+  <div id="overlay"></div>
+
+  <!-- Sidebar -->
+  <nav id="sidebar">
+    <div class="sidebar-logo">
+      <div class="sidebar-brand">
+        <div class="sidebar-brand-icon">📂</div>
+        <div>
+          <h2>Tài Liệu</h2>
+          <span>Quản lý nội bộ</span>
+        </div>
+      </div>
+    </div>
+    <div class="sidebar-nav">
+      <div class="nav-item active">
+        <span class="icon">📄</span> Kho tài liệu
+      </div>
+      <div class="nav-section">Liên kết</div>
+      <a href="/" class="nav-item" style="color:rgba(255,255,255,0.65)">
+        <span class="icon">⏱️</span> Chấm công OT
+      </a>
+    </div>
+    <div class="sidebar-footer">
+      <div class="user-info">
+        <div class="name" id="sb-fullname">—</div>
+        <div class="role" id="sb-role">—</div>
+      </div>
+      <button class="nav-item" onclick="showChangePwd()" style="width:100%;background:none;border:none;cursor:pointer;font-family:inherit;color:rgba(255,255,255,0.65)">
+        <span class="icon">🔑</span> Đổi mật khẩu
+      </button>
+      <button class="nav-item" onclick="logout()" style="width:100%;background:none;border:none;cursor:pointer;font-family:inherit;color:rgba(255,255,255,0.65)">
+        <span class="icon">🚪</span> Đăng xuất
+      </button>
+    </div>
+  </nav>
+
+  <!-- Main -->
+  <div id="main-content">
+    <div class="topbar">
+      <div style="display:flex;align-items:center;gap:12px">
+        <button id="menu-btn" onclick="toggleSidebar()">☰</button>
+        <h1 id="page-title">📄 Kho tài liệu</h1>
+      </div>
+      <div id="manager-actions" class="hidden">
+        <button class="btn btn-outline btn-sm" onclick="showDocPermissionsModal()">👥 Phân quyền upload</button>
+      </div>
+    </div>
+
+    <div class="content-area">
+      <div id="content-area">
+        <div style="text-align:center;padding:60px;color:var(--muted)">Đang tải...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── MODALS ── -->
+
+<!-- Modal upload -->
+<div id="upload-doc-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('upload-doc-modal')">
+  <div class="modal-box" style="max-width:560px;border-radius:12px;overflow:hidden;padding:0">
+    <div style="background:var(--primary);padding:18px 20px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="color:#fff;font-weight:700;font-size:16px">📤 Tải lên tài liệu</div>
+        <div style="color:rgba(255,255,255,0.65);font-size:12px;margin-top:2px">PDF · Word · Excel · Hình ảnh – tối đa 20MB</div>
+      </div>
+      <button onclick="closeModal('upload-doc-modal')" class="modal-close">✕</button>
+    </div>
+    <div style="padding:20px;background:var(--bg)">
+      <div id="upload-doc-msg" class="hidden" style="margin-bottom:12px"></div>
+      <div id="doc-dropzone"
+        onclick="document.getElementById('doc-file').click()"
+        ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='rgba(196,136,58,0.07)'"
+        ondragleave="this.style.borderColor='var(--border)';this.style.background=''"
+        ondrop="handleDocDrop(event)"
+        style="border:2px dashed var(--border);border-radius:10px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:16px">
+        <div style="font-size:36px;margin-bottom:8px">📂</div>
+        <div style="font-weight:600;color:var(--primary);margin-bottom:4px">Kéo thả file vào đây</div>
+        <div style="font-size:12px;color:var(--muted)">hoặc click để chọn file</div>
+        <input type="file" id="doc-file" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png" style="display:none" onchange="onDocFileChange(this)">
+      </div>
+      <div id="doc-file-preview" class="hidden" style="background:#f8f9fa;border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;margin-bottom:16px">
+        <span id="doc-file-icon" style="font-size:24px">📄</span>
+        <div style="flex:1;min-width:0">
+          <div id="doc-file-name" style="font-size:13px;font-weight:600;color:var(--primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
+          <div id="doc-file-size" style="font-size:11px;color:var(--muted)"></div>
+        </div>
+        <button onclick="clearDocFile()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0 4px">✕</button>
+      </div>
+      <div class="form-group">
+        <label>Tiêu đề tài liệu <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="doc-title" placeholder="Nhập tiêu đề tài liệu..." style="width:100%">
+      </div>
+      <div class="form-group">
+        <label>Mô tả</label>
+        <textarea id="doc-desc" rows="2" placeholder="Mô tả ngắn (không bắt buộc)..." style="width:100%;min-height:60px"></textarea>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Danh mục</label>
+          <select id="doc-cat-select" style="width:100%">
+            <option value="">-- Không có --</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Tags <span style="font-weight:400;color:var(--muted);font-size:10px">phân cách bằng dấu phẩy</span></label>
+          <input type="text" id="doc-tags" placeholder="hợp đồng, mẫu, 2024" style="width:100%">
+        </div>
+      </div>
+    </div>
+    <div style="padding:14px 20px;background:#f8f9fa;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeModal('upload-doc-modal')">Huỷ</button>
+      <button class="btn btn-primary" id="btn-upload-doc" onclick="submitUploadDoc()" style="min-width:120px">⬆️ Tải lên</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal preview -->
+<div id="preview-doc-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('preview-doc-modal')">
+  <div class="modal-box" style="max-width:90vw;width:900px;max-height:90vh;display:flex;flex-direction:column">
+    <div class="modal-header">
+      <h3 id="preview-doc-title">Xem tài liệu</h3>
+      <div style="display:flex;gap:8px">
+        <a id="preview-doc-download" href="#" class="btn btn-sm btn-primary" download>⬇️ Tải xuống</a>
+        <button class="modal-close" onclick="closeModal('preview-doc-modal')">✕</button>
+      </div>
+    </div>
+    <div id="preview-doc-body" style="flex:1;overflow:auto;min-height:400px"></div>
+  </div>
+</div>
+
+<!-- Modal danh mục -->
+<div id="add-cat-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('add-cat-modal')">
+  <div class="modal-box" style="max-width:420px;border-radius:12px;overflow:hidden;padding:0">
+    <div style="background:var(--primary);padding:18px 20px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div id="cat-modal-title" style="color:#fff;font-weight:700;font-size:16px">📁 Tạo danh mục mới</div>
+        <div style="color:rgba(255,255,255,0.65);font-size:12px;margin-top:2px">Phân loại tài liệu theo nhóm</div>
+      </div>
+      <button onclick="closeModal('add-cat-modal')" class="modal-close">✕</button>
+    </div>
+    <div style="padding:20px;background:var(--bg)">
+      <div id="add-cat-msg" class="hidden" style="margin-bottom:12px"></div>
+      <div style="display:flex;align-items:center;gap:12px;background:#f8f9fa;border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:16px">
+        <div id="cat-color-preview" style="width:36px;height:36px;border-radius:8px;background:#1B2A4A;flex-shrink:0;transition:background .2s"></div>
+        <div style="flex:1;min-width:0">
+          <div id="cat-name-preview" style="font-weight:700;font-size:14px;color:var(--primary)">Tên danh mục</div>
+          <div style="font-size:11px;color:var(--muted)">Xem trước hiển thị</div>
+        </div>
+      </div>
+      <div class="form-group">
+        <label>Tên danh mục <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="cat-name" placeholder="VD: Hợp đồng, Quy định, Biểu mẫu..." style="width:100%"
+          oninput="document.getElementById('cat-name-preview').textContent=this.value||'Tên danh mục'">
+      </div>
+      <div class="form-group">
+        <label>Mô tả</label>
+        <input type="text" id="cat-desc" placeholder="Mô tả ngắn (không bắt buộc)..." style="width:100%">
+      </div>
+      <div class="form-group" style="margin-bottom:0">
+        <label style="display:block;margin-bottom:10px">Màu sắc</label>
+        <div style="display:flex;gap:10px;flex-wrap:wrap" id="cat-color-picker">
+          <!-- filled by JS -->
+        </div>
+      </div>
+      <input type="hidden" id="cat-color" value="#1B2A4A">
+      <input type="hidden" id="cat-edit-id" value="">
+    </div>
+    <div style="padding:14px 20px;background:#f8f9fa;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeModal('add-cat-modal')">Huỷ</button>
+      <button class="btn btn-primary" onclick="submitCategory()" style="min-width:80px">Lưu</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal phân quyền -->
+<div id="doc-perm-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('doc-perm-modal')">
+  <div class="modal-box" style="max-width:520px;border-radius:12px;overflow:hidden;padding:0">
+    <div style="background:var(--primary);padding:18px 20px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="color:#fff;font-weight:700;font-size:16px">👥 Quyền upload tài liệu</div>
+        <div style="color:rgba(255,255,255,0.65);font-size:12px;margin-top:2px">Bật để cho phép nhân viên tải tài liệu lên</div>
+      </div>
+      <button onclick="closeModal('doc-perm-modal')" class="modal-close">✕</button>
+    </div>
+    <div style="padding:16px 20px;max-height:60vh;overflow-y:auto" id="doc-perm-list"></div>
+    <div style="padding:12px 20px;background:#f8f9fa;border-top:1px solid var(--border);text-align:right">
+      <button class="btn btn-primary" onclick="closeModal('doc-perm-modal')">Đóng</button>
+    </div>
+  </div>
+</div>
+
+<!-- Modal đổi mật khẩu -->
+<div id="pwd-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('pwd-modal')">
+  <div class="modal-box" style="max-width:420px">
+    <div class="modal-header">
+      <h3>Đổi mật khẩu</h3>
+      <button class="close-btn" onclick="closeModal('pwd-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="pwd-modal-msg" class="hidden" style="margin-bottom:12px"></div>
+      <div class="form-group"><label>Mật khẩu hiện tại</label><input id="pwd-old" type="password" style="width:100%"></div>
+      <div class="form-group"><label>Mật khẩu mới</label><input id="pwd-new" type="password" style="width:100%"></div>
+      <div class="form-group"><label>Xác nhận mật khẩu mới</label><input id="pwd-confirm" type="password" style="width:100%"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('pwd-modal')">Huỷ</button>
+      <button class="btn btn-primary" onclick="doChangePwd()">💾 Đổi mật khẩu</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ─── STATE ───
+let currentUser = null;
+let docCategories = [];
+let docActiveCategory = null;
+let docActiveTag = null;
+let docSearchQ = '';
+let canUploadDocs = false;
+
+// ─── AUTH ───
+document.getElementById('login-form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const username = document.getElementById('inp-username').value;
+  const password = document.getElementById('inp-password').value;
+  const err = document.getElementById('login-error');
+  err.classList.add('hidden');
+  try {
+    currentUser = await api('POST', '/api/login', { username, password });
+    showApp();
+  } catch(e) {
+    err.textContent = e.message;
+    err.classList.remove('hidden');
+  }
+});
+
+async function init() {
+  try {
+    currentUser = await api('GET', '/api/me');
+    showApp();
+  } catch { /* not logged in */ }
+}
+
+function showApp() {
+  document.getElementById('login-page').classList.add('hidden');
+  document.getElementById('app').classList.remove('hidden');
+  document.getElementById('sb-fullname').textContent = currentUser.full_name;
+  document.getElementById('sb-role').textContent = currentUser.role === 'manager' ? '👑 Quản lý' : '👤 Nhân viên';
+  if (currentUser.role === 'manager') {
+    document.getElementById('manager-actions').classList.remove('hidden');
+  }
+  renderDocs();
+}
+
+// ─── DOCS ───
+async function renderDocs() {
+  const me = await api('GET', '/api/me');
+  canUploadDocs = (me.role === 'manager') || (me.can_upload_docs == 1);
+
+  const cats = await api('GET', '/api/docs/categories');
+  docCategories = cats || [];
+  docActiveCategory = null; docActiveTag = null; docSearchQ = '';
+
+  // Populate category select in upload modal
+  const sel = document.getElementById('doc-cat-select');
+  sel.innerHTML = '<option value="">-- Không có --</option>' +
+    docCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+
+  // Populate color picker
+  const picker = document.getElementById('cat-color-picker');
+  picker.innerHTML = ['#1B2A4A','#C4883A','#1A7A4A','#C0392B','#2471A3','#7D3C98','#117A65','#784212'].map(c =>
+    `<div onclick="selectCatColor('${c}')" data-color="${c}" title="${c}"
+      style="width:32px;height:32px;border-radius:8px;background:${c};cursor:pointer;border:3px solid transparent;transition:all .15s;box-shadow:0 1px 3px rgba(0,0,0,0.2)"></div>`
+  ).join('');
+
+  set('content-area', `
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
+      <!-- Sidebar danh mục -->
+      <div style="width:200px;flex-shrink:0">
+        <div class="card" style="padding:12px">
+          <div style="font-weight:700;font-size:13px;color:var(--primary);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Danh mục</div>
+          <div id="doc-cat-list"></div>
+          ${currentUser.role === 'manager' ? `<button class="btn btn-sm btn-outline" style="width:100%;margin-top:10px;font-size:12px" onclick="showAddCategoryModal()">+ Thêm danh mục</button>` : ''}
+        </div>
+        <div class="card" style="padding:12px;margin-top:12px">
+          <div style="font-weight:700;font-size:13px;color:var(--primary);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Tag phổ biến</div>
+          <div id="doc-tag-cloud"></div>
+        </div>
+      </div>
+      <!-- Nội dung chính -->
+      <div style="flex:1;min-width:0">
+        <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+          <input type="text" id="doc-search" placeholder="🔍 Tìm kiếm tài liệu..." oninput="docSearch(this.value)"
+            style="flex:1;min-width:180px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit">
+          ${canUploadDocs ? `<button class="btn btn-primary" onclick="showUploadModal()">⬆️ Tải lên tài liệu</button>` : ''}
+        </div>
+        <div id="doc-list-area"></div>
+      </div>
+    </div>
+  `);
+  renderDocCategories();
+  loadDocs();
+}
+
+function renderDocCategories() {
+  const el = document.getElementById('doc-cat-list');
+  if (!el) return;
+  let html = `<div class="doc-cat-item ${docActiveCategory===null?'active':''}" onclick="filterDocCat(null)"><span>🗂️</span> Tất cả</div>`;
+  docCategories.forEach(c => {
+    html += `<div class="doc-cat-item ${docActiveCategory==c.id?'active':''}" onclick="filterDocCat(${c.id})"
+      style="${docActiveCategory==c.id?'border-left:3px solid '+c.color:''}">
+      <span style="color:${c.color}">●</span> ${c.name}
+      ${currentUser.role==='manager'?`<button onclick="event.stopPropagation();editCategory(${c.id})" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:11px;color:var(--muted)">✏️</button>`:''}
+    </div>`;
+  });
+  el.innerHTML = html;
+}
+
+function filterDocCat(id) { docActiveCategory = id; docActiveTag = null; renderDocCategories(); loadDocs(); }
+function filterDocTag(tag) { docActiveTag = (docActiveTag===tag)?null:tag; docActiveCategory=null; renderDocCategories(); loadDocs(); }
+function docSearch(q) { docSearchQ = q; loadDocs(); }
+
+async function loadDocs() {
+  const area = document.getElementById('doc-list-area');
+  if (!area) return;
+  area.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)">Đang tải...</div>';
+  const params = new URLSearchParams();
+  if (docActiveCategory) params.set('category_id', docActiveCategory);
+  if (docActiveTag) params.set('tag', docActiveTag);
+  if (docSearchQ) params.set('q', docSearchQ);
+  try {
+    const docs = await api('GET', '/api/docs?' + params.toString());
+
+    // Tag cloud
+    const tagCount = {};
+    docs.forEach(d => (d.tags||'').split(',').map(t=>t.trim()).filter(Boolean).forEach(t => tagCount[t]=(tagCount[t]||0)+1));
+    const tagCloud = document.getElementById('doc-tag-cloud');
+    if (tagCloud) {
+      tagCloud.innerHTML = Object.entries(tagCount).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([t,n]) =>
+        `<span onclick="filterDocTag('${esc(t)}')" style="display:inline-block;margin:2px;padding:3px 8px;border-radius:12px;font-size:11px;cursor:pointer;
+          background:${docActiveTag===t?'var(--accent)':'rgba(0,0,0,0.06)'};color:${docActiveTag===t?'white':'var(--muted)'}">${t} <sup>${n}</sup></span>`
+      ).join('');
+    }
+
+    if (!docs.length) {
+      area.innerHTML = `<div class="card" style="text-align:center;padding:40px;color:var(--muted)">
+        <div style="font-size:48px;margin-bottom:12px">📂</div>
+        <div>Chưa có tài liệu nào${docActiveCategory||docActiveTag||docSearchQ?' phù hợp với bộ lọc':''}</div>
+      </div>`; return;
+    }
+
+    area.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">${
+      docs.map(d => {
+        const ext = (d.file_name||'').split('.').pop().toLowerCase();
+        const icon = {pdf:'📄',docx:'📝',xlsx:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'}[ext] || '📁';
+        const sz = d.file_size > 1048576 ? (d.file_size/1048576).toFixed(1)+'MB' : Math.round(d.file_size/1024)+'KB';
+        const catBadge = d.category_name ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:${d.category_color}22;color:${d.category_color};font-weight:600">${d.category_name}</span>` : '';
+        const tags = (d.tags||'').split(',').map(t=>t.trim()).filter(Boolean).map(t =>
+          `<span onclick="filterDocTag('${esc(t)}')" style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,0.06);color:var(--muted);cursor:pointer">${t}</span>`
+        ).join('');
+        const canDelete = currentUser.role==='manager' || d.uploaded_by==currentUser.id;
+        return `<div class="card" style="padding:14px;display:flex;flex-direction:column;gap:8px;border-top:3px solid ${d.category_color||'var(--accent)'}">
+          <div style="display:flex;align-items:flex-start;gap:10px">
+            <div style="font-size:32px;line-height:1">${icon}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:14px;color:var(--primary);margin-bottom:2px;word-break:break-word">${d.title}</div>
+              ${d.description?`<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${d.description}</div>`:''}
+              <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${catBadge}</div>
+            </div>
+          </div>
+          ${tags?`<div style="display:flex;gap:4px;flex-wrap:wrap">${tags}</div>`:''}
+          <div style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px">
+            <span>📎 ${(d.file_name||'').length>25?(d.file_name||'').slice(0,22)+'...':(d.file_name||'')} · ${sz}</span>
+            <span>${d.created_at?d.created_at.slice(0,10):''}</span>
+          </div>
+          <div style="display:flex;gap:8px">
+            <button class="btn btn-sm btn-primary" style="flex:1" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">👁 Xem</button>
+            <button class="btn btn-sm btn-outline" style="flex:1" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name||'')}')">⬇️ Tải</button>
+            ${canDelete?`<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);border-width:1.5px" onclick="deleteDoc(${d.id},'${esc(d.title)}')">🗑</button>`:''}
+          </div>
+        </div>`;
+      }).join('')
+    }</div>`;
+  } catch(e) {
+    area.innerHTML = `<div class="alert alert-error">Lỗi tải tài liệu: ${e.message}</div>`;
+  }
+}
+
+async function previewDoc(id, titleEnc, ext) {
+  document.getElementById('preview-doc-title').textContent = decodeURIComponent(titleEnc);
+  const body = document.getElementById('preview-doc-body');
+  body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">Đang tải...</div>';
+  showModal('preview-doc-modal');
+  try {
+    const r = await api('GET', '/api/docs/url/' + id);
+    if (!r.url) { body.innerHTML = '<div style="padding:20px;color:var(--danger)">Không thể tải file</div>'; return; }
+    const dl = document.getElementById('preview-doc-download');
+    dl.href = r.url; dl.download = r.file_name;
+    if (ext === 'pdf') {
+      body.innerHTML = `<iframe src="${r.url}" style="width:100%;height:70vh;border:none"></iframe>`;
+    } else if (['jpg','jpeg','png'].includes(ext)) {
+      body.innerHTML = `<div style="text-align:center;padding:20px"><img src="${r.url}" style="max-width:100%;max-height:70vh;border-radius:8px"></div>`;
+    } else {
+      body.innerHTML = `<div style="text-align:center;padding:60px;color:var(--muted)">
+        <div style="font-size:64px;margin-bottom:16px">${ext==='docx'?'📝':'📊'}</div>
+        <div style="font-size:16px;margin-bottom:8px">Không thể xem trước định dạng .${ext}</div>
+        <div style="font-size:13px">Vui lòng tải xuống để xem nội dung</div>
+      </div>`;
+    }
+  } catch(e) {
+    body.innerHTML = `<div style="padding:20px;color:var(--danger)">Lỗi: ${e.message}</div>`;
+  }
+}
+
+async function downloadDoc(id, fileNameEnc) {
+  try {
+    const r = await api('GET', '/api/docs/url/' + id);
+    if (!r.url) { alert('Không thể tải file'); return; }
+    const a = document.createElement('a');
+    a.href = r.url; a.download = decodeURIComponent(fileNameEnc);
+    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+  } catch(e) { alert(e.message); }
+}
+
+async function deleteDoc(id, title) {
+  if (!confirm(`Xoá tài liệu "${title}"?`)) return;
+  try {
+    await api('DELETE', '/api/docs/' + id);
+    loadDocs();
+  } catch(e) { alert(e.message); }
+}
+
+// ─── UPLOAD ───
+function showUploadModal() {
+  document.getElementById('doc-title').value = '';
+  document.getElementById('doc-desc').value = '';
+  document.getElementById('doc-cat-select').value = '';
+  document.getElementById('doc-tags').value = '';
+  document.getElementById('doc-file').value = '';
+  document.getElementById('upload-doc-msg').className = 'hidden';
+  document.getElementById('doc-file-preview').classList.add('hidden');
+  document.getElementById('doc-dropzone').style.display = '';
+  showModal('upload-doc-modal');
+}
+
+function onDocFileChange(input) {
+  if (input.files && input.files[0]) showDocFilePreview(input.files[0]);
+}
+
+function handleDocDrop(e) {
+  e.preventDefault();
+  const dz = document.getElementById('doc-dropzone');
+  dz.style.borderColor = ''; dz.style.background = '';
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const allowed = ['.pdf','.docx','.xlsx','.jpg','.jpeg','.png'];
+  const ext = '.' + file.name.split('.').pop().toLowerCase();
+  if (!allowed.includes(ext)) { showMsg('upload-doc-msg','error','Định dạng không hỗ trợ'); return; }
+  const dt = new DataTransfer(); dt.items.add(file);
+  document.getElementById('doc-file').files = dt.files;
+  showDocFilePreview(file);
+}
+
+function showDocFilePreview(file) {
+  const icons = {pdf:'📕',docx:'📝',xlsx:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'};
+  const ext = file.name.split('.').pop().toLowerCase();
+  const sz = file.size > 1048576 ? (file.size/1048576).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB';
+  document.getElementById('doc-file-icon').textContent = icons[ext] || '📄';
+  document.getElementById('doc-file-name').textContent = file.name;
+  document.getElementById('doc-file-size').textContent = sz + ' · .' + ext.toUpperCase();
+  document.getElementById('doc-file-preview').classList.remove('hidden');
+  document.getElementById('doc-dropzone').style.display = 'none';
+  if (!document.getElementById('doc-title').value) {
+    document.getElementById('doc-title').value = file.name.replace(/\.[^.]+$/, '');
+  }
+}
+
+function clearDocFile() {
+  document.getElementById('doc-file').value = '';
+  document.getElementById('doc-file-preview').classList.add('hidden');
+  document.getElementById('doc-dropzone').style.display = '';
+}
+
+async function submitUploadDoc() {
+  const title = document.getElementById('doc-title').value.trim();
+  const desc  = document.getElementById('doc-desc').value.trim();
+  const catId = document.getElementById('doc-cat-select').value;
+  const tags  = document.getElementById('doc-tags').value.trim();
+  const file  = document.getElementById('doc-file').files[0];
+  const btn   = document.getElementById('btn-upload-doc');
+  if (!title) { showMsg('upload-doc-msg','error','Vui lòng nhập tiêu đề'); return; }
+  if (!file)  { showMsg('upload-doc-msg','error','Vui lòng chọn file'); return; }
+  if (file.size > 20*1024*1024) { showMsg('upload-doc-msg','error','File tối đa 20MB'); return; }
+  const fd = new FormData();
+  fd.append('title', title); fd.append('description', desc);
+  fd.append('category_id', catId); fd.append('tags', tags);
+  fd.append('file', file);
+  btn.disabled = true; btn.textContent = '⏳ Đang tải...';
+  try {
+    const r = await fetch('/api/docs/upload', {method:'POST', body: fd});
+    const d = await r.json();
+    if (d.ok) { closeModal('upload-doc-modal'); loadDocs(); }
+    else { showMsg('upload-doc-msg','error', d.error || 'Lỗi upload'); }
+  } catch(e) { showMsg('upload-doc-msg','error','Lỗi kết nối'); }
+  btn.disabled = false; btn.textContent = '⬆️ Tải lên';
+}
+
+// ─── CATEGORIES ───
+function selectCatColor(color) {
+  document.getElementById('cat-color').value = color;
+  document.getElementById('cat-color-preview').style.background = color;
+  document.querySelectorAll('#cat-color-picker div[data-color]').forEach(el => {
+    el.style.border = el.dataset.color === color ? '3px solid #333' : '3px solid transparent';
+  });
+}
+
+function showAddCategoryModal() {
+  document.getElementById('cat-modal-title').textContent = '📁 Tạo danh mục mới';
+  document.getElementById('cat-name').value = '';
+  document.getElementById('cat-desc').value = '';
+  document.getElementById('cat-edit-id').value = '';
+  document.getElementById('cat-name-preview').textContent = 'Tên danh mục';
+  selectCatColor('#1B2A4A');
+  document.getElementById('add-cat-msg').className = 'hidden';
+  showModal('add-cat-modal');
+}
+
+function editCategory(id) {
+  const c = docCategories.find(x => x.id == id);
+  if (!c) return;
+  document.getElementById('cat-modal-title').textContent = '✏️ Chỉnh sửa danh mục';
+  document.getElementById('cat-name').value = c.name;
+  document.getElementById('cat-desc').value = c.description || '';
+  document.getElementById('cat-edit-id').value = id;
+  document.getElementById('cat-name-preview').textContent = c.name;
+  selectCatColor(c.color || '#1B2A4A');
+  document.getElementById('add-cat-msg').className = 'hidden';
+  showModal('add-cat-modal');
+}
+
+async function submitCategory() {
+  const name   = document.getElementById('cat-name').value.trim();
+  const desc   = document.getElementById('cat-desc').value.trim();
+  const color  = document.getElementById('cat-color').value;
+  const editId = document.getElementById('cat-edit-id').value;
+  if (!name) { showMsg('add-cat-msg','error','Tên danh mục không được để trống'); return; }
+  try {
+    const url    = editId ? `/api/docs/categories/${editId}` : '/api/docs/categories';
+    const method = editId ? 'PUT' : 'POST';
+    await api(method, url, {name, description: desc, color});
+    closeModal('add-cat-modal');
+    const cats = await api('GET', '/api/docs/categories');
+    docCategories = cats || [];
+    // Update category select
+    const sel = document.getElementById('doc-cat-select');
+    if (sel) sel.innerHTML = '<option value="">-- Không có --</option>' + docCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
+    renderDocCategories();
+    loadDocs();
+  } catch(e) { showMsg('add-cat-msg','error', e.message || 'Lỗi lưu danh mục'); }
+}
+
+// ─── PERMISSIONS ───
+async function showDocPermissionsModal() {
+  const listEl = document.getElementById('doc-perm-list');
+  listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">Đang tải...</div>';
+  showModal('doc-perm-modal');
+  try {
+    const users = await api('GET', '/api/manager/doc-permissions');
+    if (!users.length) { listEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted)">Chưa có nhân viên</div>'; return; }
+    listEl.innerHTML = users.map(u => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <div style="font-weight:600;font-size:14px">${esc(u.full_name)}</div>
+          <div style="font-size:12px;color:var(--muted)">@${esc(u.username)}${u.department?' · '+esc(u.department):''}</div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" ${u.can_upload_docs?'checked':''} onchange="setDocPermission(${u.id},this.checked,this)"
+            style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+          <span style="font-size:13px;color:var(--muted)">${u.can_upload_docs?'Được phép':'Không'}</span>
+        </label>
+      </div>`).join('');
+  } catch(e) {
+    listEl.innerHTML = `<div style="padding:16px;color:var(--danger)">${e.message}</div>`;
+  }
+}
+
+async function setDocPermission(uid, val, checkbox) {
+  try {
+    await api('PUT', `/api/manager/doc-permissions/${uid}`, { can_upload_docs: val });
+    const span = checkbox.nextElementSibling;
+    if (span) span.textContent = val ? 'Được phép' : 'Không';
+  } catch(e) {
+    alert(e.message);
+    checkbox.checked = !val;
+  }
+}
+
+// ─── PASSWORD ───
+function showChangePwd() {
+  document.getElementById('pwd-old').value = '';
+  document.getElementById('pwd-new').value = '';
+  document.getElementById('pwd-confirm').value = '';
+  const msg = document.getElementById('pwd-modal-msg');
+  msg.className = 'hidden'; msg.textContent = '';
+  showModal('pwd-modal');
+}
+
+async function doChangePwd() {
+  const old_password  = document.getElementById('pwd-old').value;
+  const new_password  = document.getElementById('pwd-new').value;
+  const confirm       = document.getElementById('pwd-confirm').value;
+  const msg           = document.getElementById('pwd-modal-msg');
+  msg.className = 'hidden';
+  if (new_password !== confirm) {
+    msg.textContent = 'Mật khẩu xác nhận không khớp';
+    msg.className = 'alert alert-error'; return;
+  }
+  try {
+    await api('POST', '/api/change-password', { old_password, new_password });
+    msg.textContent = '✅ Đổi mật khẩu thành công!';
+    msg.className = 'alert alert-success';
+    setTimeout(() => closeModal('pwd-modal'), 1500);
+  } catch(e) {
+    msg.textContent = e.message;
+    msg.className = 'alert alert-error';
+  }
+}
+
+// ─── UTILITIES ───
+async function api(method, url, body) {
+  const opts = { method, headers: {} };
+  if (body) { opts.headers['Content-Type'] = 'application/json'; opts.body = JSON.stringify(body); }
+  const r = await fetch(url, opts);
+  const data = await r.json();
+  if (!r.ok) throw new Error(data.error || 'Lỗi không xác định');
+  return data;
+}
+function set(id, html) { const el = document.getElementById(id); if(el) el.innerHTML = html; }
+function esc(s) { return String(s||'').replace(/'/g,"&#39;").replace(/"/g,'&quot;'); }
+function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+function showMsg(id, type, msg) {
+  const el = document.getElementById(id);
+  el.className = `alert alert-${type}`;
+  el.textContent = msg;
+}
+async function logout() {
+  try { await api('POST', '/api/logout'); } catch {}
+  location.reload();
+}
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('overlay').classList.toggle('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+document.getElementById('overlay').addEventListener('click', closeSidebar);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') ['upload-doc-modal','preview-doc-modal','add-cat-modal','doc-perm-modal','pwd-modal'].forEach(closeModal);
+});
+
+// ─── START ───
+init();
+</script>
+</body>
+</html>

@@ -453,6 +453,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if path == '/api/manager/doc-permissions':
             self.api_manager_doc_permissions(); return
 
+        if path == '/docs':
+            self.send_file(os.path.join(PUBLIC_DIR, 'docs.html'))
+            return
+
         self.send_file(os.path.join(PUBLIC_DIR, 'index.html'))
 
     def do_POST(self):

@@ -938,20 +938,20 @@ function buildNav() {
     { page: 'approve', icon: '✅', label: 'Duyệt OT' },
     { page: 'all-records', icon: '📋', label: 'Tất cả chấm công' },
     { page: 'report', icon: '📈', label: 'Báo cáo' },
-    { page: 'docs', icon: '📂', label: 'Tài liệu' },
     { page: 'users', icon: '👥', label: 'Quản lý nhân viên' },
     { page: 'data-mgmt', icon: '🗄️', label: 'Quản lý dữ liệu' },
   ] : [
     { page: 'dashboard', icon: '📊', label: 'Tổng quan' },
     { page: 'submit-ot', icon: '⏰', label: 'Khai báo OT' },
     { page: 'my-records', icon: '📋', label: 'Lịch sử của tôi' },
-    { page: 'docs', icon: '📂', label: 'Tài liệu' },
   ];
   nav.innerHTML = items.map(i =>
     `<div class="nav-item" onclick="navigate('${i.page}')" data-page="${i.page}">
       <span class="icon">${i.icon}</span> ${i.label}
     </div>`
-  ).join('');
+  ).join('') + `<a href="/docs" class="nav-item" style="color:rgba(255,255,255,0.65);text-decoration:none">
+    <span class="icon">📂</span> Tài liệu
+  </a>`;
 }
 
 function navigate(page) {
@@ -962,7 +962,7 @@ function navigate(page) {
     dashboard: 'Tổng quan', 'submit-ot': 'Khai báo OT',
     'my-records': 'Lịch sử của tôi', approve: 'Duyệt OT',
     'all-records': 'Tất cả chấm công', report: 'Báo cáo',
-    docs: 'Tài liệu', users: 'Quản lý nhân viên', 'data-mgmt': 'Quản lý dữ liệu'
+    users: 'Quản lý nhân viên', 'data-mgmt': 'Quản lý dữ liệu'
   };
   document.getElementById('page-title').textContent = titles[page] || page;
   const content = document.getElementById('content-area');
@@ -977,8 +977,7 @@ function navigate(page) {
     page === 'all-records'  ? renderAllRecords :
     page === 'report'       ? renderReport     :
     page === 'users'        ? renderUsers      :
-    page === 'data-mgmt'    ? renderDataMgmt   :
-    page === 'docs'         ? renderDocs       : null;
+    page === 'data-mgmt'    ? renderDataMgmt   : null;
 
   if (renderFn) {
     Promise.resolve(renderFn()).catch(err => {
@@ -1990,309 +1989,8 @@ function localDateStr() {
   return n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0') + '-' + String(n.getDate()).padStart(2,'0');
 }
 
-// ===================== TÀI LIỆU =====================
+// (Tài liệu đã chuyển sang /docs — xem public/docs.html)
 
-let docCategories = [];
-let docActiveCategory = null;
-let docActiveTag = null;
-let docSearchQ = '';
-let canUploadDocs = false;
-
-async function renderDocs() {
-  // Kiem tra quyen upload
-  const me = await api('GET', '/api/me');
-  canUploadDocs = (me.role === 'manager') || (me.can_upload_docs == 1);
-
-  const cats = await api('GET', '/api/docs/categories');
-  docCategories = cats || [];
-  docActiveCategory = null; docActiveTag = null; docSearchQ = '';
-
-  const isManager = currentUser.role === 'manager';
-  set('content-area', `
-    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
-      <!-- Sidebar danh muc -->
-      <div style="width:200px;flex-shrink:0">
-        <div class="card" style="padding:12px">
-          <div style="font-weight:700;font-size:13px;color:var(--primary);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Danh mục</div>
-          <div id="doc-cat-list"></div>
-          ${isManager ? `<button class="btn btn-sm" style="width:100%;margin-top:10px;font-size:12px" onclick="showAddCategoryModal()">+ Thêm danh mục</button>` : ''}
-        </div>
-        <div class="card" style="padding:12px;margin-top:12px">
-          <div style="font-weight:700;font-size:13px;color:var(--primary);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Tag phổ biến</div>
-          <div id="doc-tag-cloud"></div>
-        </div>
-
-      </div>
-
-      <!-- Noi dung chinh -->
-      <div style="flex:1;min-width:0">
-        <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
-          <input type="text" id="doc-search" placeholder="🔍 Tìm kiếm tài liệu..." oninput="docSearch(this.value)"
-            style="flex:1;min-width:180px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit">
-          ${canUploadDocs ? `<button class="btn btn-primary" onclick="showUploadModal()">⬆️ Tải lên tài liệu</button>` : ''}
-        </div>
-        <div id="doc-list-area"></div>
-      </div>
-    </div>
-
-    <!-- Modal upload -->
-    <div id="upload-doc-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('upload-doc-modal')">
-      <div class="modal-box" style="max-width:560px;border-radius:12px;overflow:hidden;padding:0">
-        <!-- Header -->
-        <div style="background:var(--primary);padding:18px 20px;display:flex;align-items:center;justify-content:space-between">
-          <div>
-            <div style="color:#fff;font-weight:700;font-size:16px">📤 Tải lên tài liệu</div>
-            <div style="color:rgba(255,255,255,0.65);font-size:12px;margin-top:2px">PDF · Word · Excel · Hình ảnh – tối đa 20MB</div>
-          </div>
-          <button onclick="closeModal('upload-doc-modal')" style="background:rgba(255,255,255,0.15);border:none;color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">✕</button>
-        </div>
-        <!-- Body -->
-        <div style="padding:20px;background:var(--bg)">
-          <div id="upload-doc-msg" class="hidden" style="margin-bottom:12px"></div>
-
-          <!-- Drop zone -->
-          <div id="doc-dropzone"
-            onclick="document.getElementById('doc-file').click()"
-            ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='rgba(196,136,58,0.07)'"
-            ondragleave="this.style.borderColor='var(--border)';this.style.background=''"
-            ondrop="handleDocDrop(event)"
-            style="border:2px dashed var(--border);border-radius:10px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:16px">
-            <div style="font-size:36px;margin-bottom:8px">📂</div>
-            <div style="font-weight:600;color:var(--primary);margin-bottom:4px">Kéo thả file vào đây</div>
-            <div style="font-size:12px;color:var(--muted)">hoặc click để chọn file</div>
-            <input type="file" id="doc-file" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png" style="display:none" onchange="onDocFileChange(this)">
-          </div>
-          <!-- File đã chọn -->
-          <div id="doc-file-preview" class="hidden" style="background:var(--card-bg,#f8f9fa);border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;margin-bottom:16px">
-            <span id="doc-file-icon" style="font-size:24px">📄</span>
-            <div style="flex:1;min-width:0">
-              <div id="doc-file-name" style="font-size:13px;font-weight:600;color:var(--primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
-              <div id="doc-file-size" style="font-size:11px;color:var(--muted)"></div>
-            </div>
-            <button onclick="clearDocFile()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0 4px">✕</button>
-          </div>
-
-          <div class="form-group">
-            <label style="font-size:13px;font-weight:600;color:var(--primary)">Tiêu đề tài liệu <span style="color:var(--danger)">*</span></label>
-            <input type="text" id="doc-title" placeholder="Nhập tiêu đề tài liệu..." style="width:100%;box-sizing:border-box">
-          </div>
-          <div class="form-group">
-            <label style="font-size:13px;font-weight:600;color:var(--primary)">Mô tả</label>
-            <textarea id="doc-desc" rows="2" placeholder="Mô tả ngắn (không bắt buộc)..." style="width:100%;box-sizing:border-box;resize:vertical"></textarea>
-          </div>
-          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-            <div class="form-group" style="margin-bottom:0">
-              <label style="font-size:13px;font-weight:600;color:var(--primary)">Danh mục</label>
-              <select id="doc-cat-select" style="width:100%;box-sizing:border-box">
-                <option value="">-- Không có --</option>
-                ${docCategories.map(c => `<option value="${c.id}">${c.name}</option>`).join('')}
-              </select>
-            </div>
-            <div class="form-group" style="margin-bottom:0">
-              <label style="font-size:13px;font-weight:600;color:var(--primary)">Tags <span style="font-weight:400;color:var(--muted);font-size:11px">phân cách bằng dấu phẩy</span></label>
-              <input type="text" id="doc-tags" placeholder="hợp đồng, mẫu, 2024" style="width:100%;box-sizing:border-box">
-            </div>
-          </div>
-        </div>
-        <!-- Footer -->
-        <div style="padding:14px 20px;background:var(--card-bg,#f8f9fa);border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end">
-          <button class="btn" onclick="closeModal('upload-doc-modal')">Huỷ</button>
-          <button class="btn btn-primary" id="btn-upload-doc" onclick="submitUploadDoc()" style="min-width:120px">⬆️ Tải lên</button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal preview -->
-    <div id="preview-doc-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('preview-doc-modal')">
-      <div class="modal-box" style="max-width:90vw;width:900px;max-height:90vh;display:flex;flex-direction:column">
-        <div class="modal-header">
-          <span id="preview-doc-title">Xem tài liệu</span>
-          <div style="display:flex;gap:8px">
-            <a id="preview-doc-download" href="#" class="btn btn-sm btn-primary" download>⬇️ Tải xuống</a>
-            <button class="modal-close" onclick="closeModal('preview-doc-modal')">✕</button>
-          </div>
-        </div>
-        <div id="preview-doc-body" style="flex:1;overflow:auto;min-height:400px"></div>
-      </div>
-    </div>
-
-    <!-- Modal them danh muc -->
-    <div id="add-cat-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('add-cat-modal')">
-      <div class="modal-box" style="max-width:420px;border-radius:12px;overflow:hidden;padding:0">
-        <div style="background:var(--primary);padding:18px 20px;display:flex;align-items:center;justify-content:space-between">
-          <div>
-            <div id="cat-modal-title" style="color:#fff;font-weight:700;font-size:16px">📁 Tạo danh mục mới</div>
-            <div style="color:rgba(255,255,255,0.65);font-size:12px;margin-top:2px">Phân loại tài liệu theo nhóm</div>
-          </div>
-          <button onclick="closeModal('add-cat-modal')" style="background:rgba(255,255,255,0.15);border:none;color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">✕</button>
-        </div>
-        <div style="padding:20px;background:var(--bg)">
-          <div id="add-cat-msg" class="hidden" style="margin-bottom:12px"></div>
-          <!-- Preview màu + tên -->
-          <div style="display:flex;align-items:center;gap:12px;background:var(--card-bg,#f8f9fa);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:16px">
-            <div id="cat-color-preview" style="width:36px;height:36px;border-radius:8px;background:#1B2A4A;flex-shrink:0;transition:background .2s"></div>
-            <div style="flex:1;min-width:0">
-              <div id="cat-name-preview" style="font-weight:700;font-size:14px;color:var(--primary)">Tên danh mục</div>
-              <div style="font-size:11px;color:var(--muted)">Xem trước hiển thị</div>
-            </div>
-          </div>
-          <div class="form-group">
-            <label style="font-size:13px;font-weight:600;color:var(--primary)">Tên danh mục <span style="color:var(--danger)">*</span></label>
-            <input type="text" id="cat-name" placeholder="VD: Hợp đồng, Quy định, Biểu mẫu..." style="width:100%;box-sizing:border-box"
-              oninput="document.getElementById('cat-name-preview').textContent=this.value||'Tên danh mục'">
-          </div>
-          <div class="form-group" style="margin-bottom:16px">
-            <label style="font-size:13px;font-weight:600;color:var(--primary)">Mô tả</label>
-            <input type="text" id="cat-desc" placeholder="Mô tả ngắn (không bắt buộc)..." style="width:100%;box-sizing:border-box">
-          </div>
-          <div class="form-group" style="margin-bottom:0">
-            <label style="font-size:13px;font-weight:600;color:var(--primary);display:block;margin-bottom:10px">Màu sắc</label>
-            <div style="display:flex;gap:10px;flex-wrap:wrap" id="cat-color-picker">
-              ${['#1B2A4A','#C4883A','#1A7A4A','#C0392B','#2471A3','#7D3C98','#117A65','#784212'].map(c =>
-                `<div onclick="selectCatColor('${c}')" data-color="${c}" title="${c}"
-                  style="width:32px;height:32px;border-radius:8px;background:${c};cursor:pointer;border:3px solid transparent;transition:all .15s;box-shadow:0 1px 3px rgba(0,0,0,0.2)"></div>`
-              ).join('')}
-            </div>
-          </div>
-          <input type="hidden" id="cat-color" value="#1B2A4A">
-          <input type="hidden" id="cat-edit-id" value="">
-        </div>
-        <div style="padding:14px 20px;background:var(--card-bg,#f8f9fa);border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end">
-          <button class="btn" onclick="closeModal('add-cat-modal')">Huỷ</button>
-          <button class="btn btn-primary" onclick="submitCategory()" style="min-width:80px">Lưu</button>
-        </div>
-      </div>
-    </div>
-
-  `);
-  renderDocCategories();
-  loadDocs();
-}
-
-function renderDocCategories() {
-  const el = document.getElementById('doc-cat-list');
-  if (!el) return;
-  let html = `<div class="doc-cat-item ${docActiveCategory===null?'active':''}" onclick="filterDocCat(null)">
-    <span>🗂️</span> Tất cả
-  </div>`;
-  docCategories.forEach(c => {
-    html += `<div class="doc-cat-item ${docActiveCategory==c.id?'active':''}" onclick="filterDocCat(${c.id})"
-      style="${docActiveCategory==c.id?'border-left:3px solid '+c.color:''}">
-      <span style="color:${c.color}">●</span> ${c.name}
-      ${currentUser.role==='manager'?`<button onclick="event.stopPropagation();editCategory(${c.id})" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:11px;color:var(--muted)">✏️</button>`:''}
-    </div>`;
-  });
-  el.innerHTML = html;
-}
-
-function filterDocCat(id) {
-  docActiveCategory = id; docActiveTag = null;
-  renderDocCategories(); loadDocs();
-}
-
-function filterDocTag(tag) {
-  docActiveTag = (docActiveTag === tag) ? null : tag;
-  docActiveCategory = null;
-  renderDocCategories(); loadDocs();
-}
-
-function docSearch(q) {
-  docSearchQ = q; loadDocs();
-}
-
-async function loadDocs() {
-  const area = document.getElementById('doc-list-area');
-  if (!area) return;
-  area.innerHTML = '<div style="text-align:center;padding:30px;color:var(--muted)">Đang tải...</div>';
-  const params = new URLSearchParams();
-  if (docActiveCategory) params.set('category_id', docActiveCategory);
-  if (docActiveTag) params.set('tag', docActiveTag);
-  if (docSearchQ) params.set('q', docSearchQ);
-  const docs = await api('GET', '/api/docs?' + params.toString());
-  if (!docs || docs.error) { area.innerHTML = '<div class="alert-error">Lỗi tải tài liệu</div>'; return; }
-
-  // Thu thap tags
-  const tagCount = {};
-  docs.forEach(d => (d.tags||'').split(',').map(t=>t.trim()).filter(Boolean).forEach(t => tagCount[t] = (tagCount[t]||0)+1));
-  const tagCloud = document.getElementById('doc-tag-cloud');
-  if (tagCloud) {
-    tagCloud.innerHTML = Object.entries(tagCount).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([t,n]) =>
-      `<span onclick="filterDocTag('${t}')" style="display:inline-block;margin:2px;padding:3px 8px;border-radius:12px;font-size:11px;cursor:pointer;
-        background:${docActiveTag===t?'var(--accent)':'rgba(0,0,0,0.06)'};color:${docActiveTag===t?'white':'var(--muted)'}">${t} <sup>${n}</sup></span>`
-    ).join('');
-  }
-
-  if (!docs.length) {
-    area.innerHTML = `<div class="card" style="text-align:center;padding:40px;color:var(--muted)">
-      <div style="font-size:48px;margin-bottom:12px">📂</div>
-      <div>Chưa có tài liệu nào${docActiveCategory||docActiveTag||docSearchQ?' phù hợp với bộ lọc':''}</div>
-    </div>`; return;
-  }
-
-  area.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">${
-    docs.map(d => {
-      const ext = d.file_name.split('.').pop().toLowerCase();
-      const icon = {pdf:'📄',docx:'📝',xlsx:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'}[ext] || '📁';
-      const sz = d.file_size > 1048576 ? (d.file_size/1048576).toFixed(1)+'MB' : Math.round(d.file_size/1024)+'KB';
-      const catBadge = d.category_name ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:${d.category_color}22;color:${d.category_color};font-weight:600">${d.category_name}</span>` : '';
-      const tags = (d.tags||'').split(',').map(t=>t.trim()).filter(Boolean).map(t =>
-        `<span onclick="filterDocTag('${t}')" style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,0.06);color:var(--muted);cursor:pointer">${t}</span>`
-      ).join('');
-      const canDelete = currentUser.role==='manager' || d.uploaded_by==currentUser.id;
-      return `<div class="card" style="padding:14px;display:flex;flex-direction:column;gap:8px;border-top:3px solid ${d.category_color||'var(--accent)'}">
-        <div style="display:flex;align-items:flex-start;gap:10px">
-          <div style="font-size:32px;line-height:1">${icon}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-weight:600;font-size:14px;color:var(--primary);margin-bottom:2px;word-break:break-word">${d.title}</div>
-            ${d.description?`<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${d.description}</div>`:''}
-            <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${catBadge}</div>
-          </div>
-        </div>
-        ${tags?`<div style="display:flex;gap:4px;flex-wrap:wrap">${tags}</div>`:''}
-        <div style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px">
-          <span>📎 ${d.file_name.length>25?d.file_name.slice(0,22)+'...':d.file_name} · ${sz}</span>
-          <span>${d.created_at ? d.created_at.slice(0,10) : ''}</span>
-        </div>
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-sm btn-primary" style="flex:1" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">👁 Xem</button>
-          <button class="btn btn-sm" style="flex:1" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name)}')">⬇️ Tải</button>
-          ${canDelete?`<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger)" onclick="deleteDoc(${d.id},'${d.title}')">🗑</button>`:''}
-        </div>
-      </div>`;
-    }).join('')
-  }</div>`;
-}
-
-async function previewDoc(id, titleEnc, ext) {
-  const title = decodeURIComponent(titleEnc);
-  document.getElementById('preview-doc-title').textContent = title;
-  const body = document.getElementById('preview-doc-body');
-  body.innerHTML = '<div style="text-align:center;padding:40px;color:var(--muted)">Đang tải...</div>';
-  showModal('preview-doc-modal');
-  const r = await api('GET', '/api/docs/url/' + id);
-  if (!r.url) { body.innerHTML = '<div style="padding:20px;color:var(--danger)">Không thể tải file</div>'; return; }
-  const dl = document.getElementById('preview-doc-download');
-  dl.href = r.url; dl.download = r.file_name; dl.removeAttribute('onclick');
-  if (ext === 'pdf') {
-    body.innerHTML = `<iframe src="${r.url}" style="width:100%;height:70vh;border:none"></iframe>`;
-  } else if (['jpg','jpeg','png'].includes(ext)) {
-    body.innerHTML = `<div style="text-align:center;padding:20px"><img src="${r.url}" style="max-width:100%;max-height:70vh;border-radius:8px"></div>`;
-  } else {
-    body.innerHTML = `<div style="text-align:center;padding:60px;color:var(--muted)">
-      <div style="font-size:64px;margin-bottom:16px">${ext==='docx'?'📝':'📊'}</div>
-      <div style="font-size:16px;margin-bottom:8px">Không thể xem trước định dạng .${ext}</div>
-      <div style="font-size:13px">Vui lòng tải xuống để xem nội dung</div>
-    </div>`;
-  }
-}
-
-async function downloadDoc(id, fileNameEnc) {
-  const r = await api('GET', '/api/docs/url/' + id);
-  if (!r.url) { alert('Không thể tải file'); return; }
-  const a = document.createElement('a');
-  a.href = r.url; a.download = decodeURIComponent(fileNameEnc);
-  document.body.appendChild(a); a.click(); document.body.removeChild(a);
-}
 
 // ─── UTILITIES ───
 function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
