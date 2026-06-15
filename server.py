@@ -1519,7 +1519,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 def run():
     os.chdir(PUBLIC_DIR)
     init_db()
-    handler = ChamCongHandler
+    handler = Handler
     with socketserver.TCPServer(('', PORT), handler) as httpd:
         httpd.allow_reuse_address = True
         print(f'Server running on port {PORT}')
@@ -1529,33 +1529,4 @@ def run():
 
 if __name__ == '__main__':
     run()
-ess = True
 
-
-def get_local_ip():
-    import socket
-    try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(('8.8.8.8', 80))
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
-    except Exception:
-        return 'localhost'
-
-
-if __name__ == '__main__':
-    init_db()
-    ip = get_local_ip()
-    print("")
-    print("=" * 50)
-    print("  CHAM CONG OT - Server dang chay")
-    print(f"  Local:   http://localhost:{PORT}")
-    print(f"  Network: http://{ip}:{PORT}")
-    print("  Nhan Ctrl+C de dung server")
-    print("=" * 50)
-    httpd = ThreadingHTTPServer(('', PORT), Handler)
-    try:
-        httpd.serve_forever()
-    except KeyboardInterrupt:
-        print("\nServer da dung.")
