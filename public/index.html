@@ -1420,7 +1420,7 @@ async function renderApprove() {
     `);
   }
   window.loadApprove = load;
-  load('pending');
+  await load('pending');
 }
 
 async function renderAllRecords() {
@@ -1753,6 +1753,44 @@ async function deleteUser(id, name) {
   } catch(e) { alert(e.message); }
 }
 
+async function showDocPermissionsModal() {
+  const listEl = document.getElementById('doc-perm-list');
+  listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">Đang tải...</div>';
+  showModal('doc-perm-modal');
+  try {
+    const users = await api('GET', '/api/manager/doc-permissions');
+    if (!users.length) {
+      listEl.innerHTML = '<div style="padding:16px;color:var(--muted);text-align:center">Chưa có nhân viên nào</div>';
+      return;
+    }
+    listEl.innerHTML = users.map(u => `
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+        <div>
+          <div style="font-weight:600;font-size:14px">${esc(u.full_name)}</div>
+          <div style="font-size:12px;color:var(--muted)">@${esc(u.username)}${u.department?' · '+esc(u.department):''}</div>
+        </div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" ${u.can_upload_docs?'checked':''} onchange="setDocPermission(${u.id},this.checked,this)"
+            style="width:18px;height:18px;cursor:pointer">
+          <span style="font-size:13px;color:var(--muted)">${u.can_upload_docs?'Được phép':'Không'}</span>
+        </label>
+      </div>`).join('');
+  } catch(e) {
+    listEl.innerHTML = `<div style="padding:16px;color:var(--danger)">${e.message}</div>`;
+  }
+}
+
+async function setDocPermission(uid, val, checkbox) {
+  try {
+    await api('PUT', `/api/manager/doc-permissions/${uid}`, { can_upload_docs: val });
+    const span = checkbox.nextElementSibling;
+    if (span) span.textContent = val ? 'Được phép' : 'Không';
+  } catch(e) {
+    alert(e.message);
+    checkbox.checked = !val; // revert
+  }
+}
+
 async function resetPassword(uid, name) {
   if (!confirm(`Reset mật khẩu của "${name}"?\nMật khẩu mới sẽ được tạo tự động.`)) return;
   try {
@@ -1946,6 +1984,7 @@ async function api(method, url, body) {
 }
 
 function set(id, html) { const el = document.getElementById(id); if(el) el.innerHTML = html; }
+function esc(s) { return String(s||'').replace(/'/g,"&#39;").replace(/"/g,'&quot;'); }
 function localDateStr() {
   const n = new Date();
   return n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0') + '-' + String(n.getDate()).padStart(2,'0');
