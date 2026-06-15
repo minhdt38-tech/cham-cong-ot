@@ -470,6 +470,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_doc_categories_list(); return
         if path == '/api/docs/types':
             self.api_doc_types_list(); return
+        if path == '/api/docs/storage':
+            self.api_docs_storage(); return
         m = re.match(r'^/api/docs/url/(\d+)$', path)
         if m:
             self.api_docs_presigned_url(int(m.group(1))); return
@@ -1569,8 +1571,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if ext not in allowed:
                     self.send_json({'error': 'Dinh dang khong ho tro (.pdf .docx .xlsx .jpg .png)'}, 400); return
                 file_bytes = fitem.file.read()
-                if len(file_bytes) > 20 * 1024 * 1024:
-                    self.send_json({'error': 'File toi da 20MB'}, 400); return
+                # No size limit — storage tracked separately
                 ts = int(datetime.now(VN_TZ).timestamp() * 1000)
                 safe_name = f'doc_{ts}_{sess["userId"]}{ext}'
                 ct_map = {'.pdf':'application/pdf',
@@ -1647,6 +1648,25 @@ class Handler(http.server.BaseHTTPRequestHandler):
         else:
             url = fp
         self.send_json({'url': url, 'file_name': row['file_name']})
+
+    # --- DOC STORAGE ---
+
+    def api_docs_storage(self):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            row = db.execute(
+                'SELECT COALESCE(SUM(file_size),0) as total_bytes, COUNT(*) as file_count FROM documents'
+            ).fetchone()
+        total_bytes = row['total_bytes']
+        file_count  = row['file_count']
+        limit_bytes = 1 * 1024 * 1024 * 1024 * 1024  # 1 TB
+        self.send_json({
+            'used_bytes':  total_bytes,
+            'limit_bytes': limit_bytes,
+            'file_count':  file_count,
+            'percent':     round(total_bytes / limit_bytes * 100, 4)
+        })
 
     # --- DOC TYPES ---
 

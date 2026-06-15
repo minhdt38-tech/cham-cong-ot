@@ -233,6 +233,20 @@
       </a>
     </div>
     <div class="sidebar-footer">
+      <!-- Thanh dung lượng -->
+      <div id="storage-bar-wrap" style="padding:10px 4px 6px;border-bottom:1px solid rgba(255,255,255,0.08);margin-bottom:6px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px">
+          <span style="font-size:10.5px;color:rgba(255,255,255,0.45);text-transform:uppercase;letter-spacing:.06em;font-weight:600">💾 Dung lượng</span>
+          <span id="storage-bar-label" style="font-size:11px;color:rgba(255,255,255,0.6)">—</span>
+        </div>
+        <div style="background:rgba(255,255,255,0.1);border-radius:99px;height:5px;overflow:hidden">
+          <div id="storage-bar-fill" style="height:100%;border-radius:99px;background:var(--accent);width:0%;transition:width .5s ease"></div>
+        </div>
+        <div style="display:flex;justify-content:space-between;margin-top:4px">
+          <span id="storage-bar-used" style="font-size:10px;color:rgba(255,255,255,0.35)">0 B đã dùng</span>
+          <span style="font-size:10px;color:rgba(255,255,255,0.25)">/ 1 TB</span>
+        </div>
+      </div>
       <div class="user-info">
         <div class="name" id="sb-fullname">—</div>
         <div class="role" id="sb-role">—</div>
@@ -274,7 +288,7 @@
     <div style="background:var(--primary);padding:18px 20px;display:flex;align-items:center;justify-content:space-between">
       <div>
         <div style="color:#fff;font-weight:700;font-size:16px">📤 Tải lên tài liệu</div>
-        <div style="color:rgba(255,255,255,0.65);font-size:12px;margin-top:2px">PDF · Word · Excel · Hình ảnh – tối đa 20MB</div>
+        <div style="color:rgba(255,255,255,0.65);font-size:12px;margin-top:2px">PDF · Word · Excel · Hình ảnh</div>
       </div>
       <button onclick="closeModal('upload-doc-modal')" class="modal-close">✕</button>
     </div>
@@ -761,6 +775,7 @@ async function loadDocs() {
   try {
     const docs = await api('GET', '/api/docs?' + params.toString());
     allDocs = docs || [];
+    loadStorageBar();
 
     // Tag cloud
     const tagCount = {};
@@ -942,7 +957,7 @@ async function submitUploadDoc() {
   const btn   = document.getElementById('btn-upload-doc');
   if (!title) { showMsg('upload-doc-msg','error','Vui lòng nhập tiêu đề'); return; }
   if (!file)  { showMsg('upload-doc-msg','error','Vui lòng chọn file'); return; }
-  if (file.size > 20*1024*1024) { showMsg('upload-doc-msg','error','File tối đa 20MB'); return; }
+  // No size limit
   const fd = new FormData();
   fd.append('title', title); fd.append('description', desc);
   fd.append('category_id', catId); fd.append('tags', tags);
@@ -1043,7 +1058,7 @@ async function submitEditDoc() {
   const btn   = document.getElementById('btn-edit-doc');
   if (!title) { showMsg('edit-doc-msg','error','Tiêu đề không được trống'); return; }
   const file = document.getElementById('edit-doc-file').files[0];
-  if (file && file.size > 20*1024*1024) { showMsg('edit-doc-msg','error','File tối đa 20MB'); return; }
+  // No size limit
   btn.disabled = true; btn.textContent = '⏳ Đang lưu...';
   try {
     if (file) {
@@ -1137,6 +1152,30 @@ async function submitCategory() {
     renderDocCategories();
     loadDocs();
   } catch(e) { showMsg('add-cat-msg','error', e.message || 'Lỗi lưu danh mục'); }
+}
+
+// ─── STORAGE BAR ───
+function fmtBytes(b) {
+  if (b >= 1099511627776) return (b/1099511627776).toFixed(2) + ' TB';
+  if (b >= 1073741824)    return (b/1073741824).toFixed(2) + ' GB';
+  if (b >= 1048576)       return (b/1048576).toFixed(1) + ' MB';
+  if (b >= 1024)          return (b/1024).toFixed(0) + ' KB';
+  return b + ' B';
+}
+
+async function loadStorageBar() {
+  try {
+    const s = await api('GET', '/api/docs/storage');
+    const pct = Math.min(s.percent, 100);
+    // Colour: green → yellow → red
+    const fill = pct > 85 ? '#e74c3c' : pct > 60 ? '#f39c12' : 'var(--accent)';
+    const el = document.getElementById('storage-bar-fill');
+    if (el) { el.style.width = pct + '%'; el.style.background = fill; }
+    const lbl = document.getElementById('storage-bar-label');
+    if (lbl) lbl.textContent = pct.toFixed(2) + '%';
+    const used = document.getElementById('storage-bar-used');
+    if (used) used.textContent = fmtBytes(s.used_bytes) + ' / ' + s.file_count + ' tệp';
+  } catch(e) { /* silent */ }
 }
 
 // ─── DOC TYPES ───
