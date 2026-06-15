@@ -445,6 +445,23 @@
   </div>
 </div>
 
+<!-- Modal phân quyền upload tài liệu (dùng chung cho Users + Docs) -->
+<div id="doc-perm-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('doc-perm-modal')">
+  <div class="modal-box" style="max-width:520px;border-radius:12px;overflow:hidden;padding:0">
+    <div style="background:var(--primary);padding:18px 20px;display:flex;align-items:center;justify-content:space-between">
+      <div>
+        <div style="color:#fff;font-weight:700;font-size:16px">📂 Quyền upload tài liệu</div>
+        <div style="color:rgba(255,255,255,0.65);font-size:12px;margin-top:2px">Bật để cho phép nhân viên tải tài liệu lên hệ thống</div>
+      </div>
+      <button onclick="closeModal('doc-perm-modal')" style="background:rgba(255,255,255,0.15);border:none;color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">✕</button>
+    </div>
+    <div style="padding:16px 20px;max-height:60vh;overflow-y:auto" id="doc-perm-list"></div>
+    <div style="padding:12px 20px;background:var(--card-bg,#f8f9fa);border-top:1px solid var(--border);text-align:right">
+      <button class="btn btn-primary" onclick="closeModal('doc-perm-modal')">Đóng</button>
+    </div>
+  </div>
+</div>
+
 <!-- Thêm/Sửa nhân viên -->
 <div id="user-modal" class="modal-overlay hidden">
   <div class="modal">
@@ -1515,7 +1532,10 @@ async function renderUsers() {
     <div class="card">
       <div class="flex justify-between items-center mb-4">
         <h3>👥 Danh sách nhân viên (${users.length})</h3>
-        <button class="btn btn-primary" onclick="addUser()">+ Thêm nhân viên</button>
+        <div style="display:flex;gap:8px">
+          <button class="btn" onclick="showDocPermissionsModal()" style="font-size:13px">📂 Quyền upload tài liệu</button>
+          <button class="btn btn-primary" onclick="addUser()">+ Thêm nhân viên</button>
+        </div>
       </div>
       <div class="table-wrap">
         <table>
@@ -1948,11 +1968,7 @@ async function renderDocs() {
           <div style="font-weight:700;font-size:13px;color:var(--primary);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Tag phổ biến</div>
           <div id="doc-tag-cloud"></div>
         </div>
-        ${isManager ? `
-        <div class="card" style="padding:12px;margin-top:12px">
-          <div style="font-weight:700;font-size:13px;color:var(--primary);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Phân quyền</div>
-          <button class="btn btn-sm" style="width:100%;font-size:12px" onclick="showDocPermissionsModal()">⚙️ Quyền upload</button>
-        </div>` : ''}
+
       </div>
 
       <!-- Noi dung chinh -->
@@ -2048,38 +2064,53 @@ async function renderDocs() {
     </div>
 
     <!-- Modal them danh muc -->
-    <div id="add-cat-modal" class="modal-overlay hidden">
-      <div class="modal-box" style="max-width:400px">
-        <div class="modal-header"><span>📁 Danh mục tài liệu</span><button class="modal-close" onclick="closeModal('add-cat-modal')">✕</button></div>
-        <div id="add-cat-msg" class="hidden"></div>
-        <div class="form-group"><label>Tên danh mục *</label><input type="text" id="cat-name" style="width:100%"></div>
-        <div class="form-group"><label>Mô tả</label><input type="text" id="cat-desc" style="width:100%"></div>
-        <div class="form-group">
-          <label>Màu sắc</label>
-          <div style="display:flex;gap:8px;flex-wrap:wrap" id="cat-color-picker">
-            ${['#1B2A4A','#C4883A','#1A7A4A','#C0392B','#2471A3','#7D3C98','#117A65','#784212'].map(c =>
-              `<div onclick="selectCatColor('${c}')" data-color="${c}"
-                style="width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;border:3px solid transparent"></div>`
-            ).join('')}
+    <div id="add-cat-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('add-cat-modal')">
+      <div class="modal-box" style="max-width:420px;border-radius:12px;overflow:hidden;padding:0">
+        <div style="background:var(--primary);padding:18px 20px;display:flex;align-items:center;justify-content:space-between">
+          <div>
+            <div id="cat-modal-title" style="color:#fff;font-weight:700;font-size:16px">📁 Tạo danh mục mới</div>
+            <div style="color:rgba(255,255,255,0.65);font-size:12px;margin-top:2px">Phân loại tài liệu theo nhóm</div>
+          </div>
+          <button onclick="closeModal('add-cat-modal')" style="background:rgba(255,255,255,0.15);border:none;color:#fff;width:30px;height:30px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center">✕</button>
+        </div>
+        <div style="padding:20px;background:var(--bg)">
+          <div id="add-cat-msg" class="hidden" style="margin-bottom:12px"></div>
+          <!-- Preview màu + tên -->
+          <div style="display:flex;align-items:center;gap:12px;background:var(--card-bg,#f8f9fa);border:1px solid var(--border);border-radius:8px;padding:12px 14px;margin-bottom:16px">
+            <div id="cat-color-preview" style="width:36px;height:36px;border-radius:8px;background:#1B2A4A;flex-shrink:0;transition:background .2s"></div>
+            <div style="flex:1;min-width:0">
+              <div id="cat-name-preview" style="font-weight:700;font-size:14px;color:var(--primary)">Tên danh mục</div>
+              <div style="font-size:11px;color:var(--muted)">Xem trước hiển thị</div>
+            </div>
+          </div>
+          <div class="form-group">
+            <label style="font-size:13px;font-weight:600;color:var(--primary)">Tên danh mục <span style="color:var(--danger)">*</span></label>
+            <input type="text" id="cat-name" placeholder="VD: Hợp đồng, Quy định, Biểu mẫu..." style="width:100%;box-sizing:border-box"
+              oninput="document.getElementById('cat-name-preview').textContent=this.value||'Tên danh mục'">
+          </div>
+          <div class="form-group" style="margin-bottom:16px">
+            <label style="font-size:13px;font-weight:600;color:var(--primary)">Mô tả</label>
+            <input type="text" id="cat-desc" placeholder="Mô tả ngắn (không bắt buộc)..." style="width:100%;box-sizing:border-box">
+          </div>
+          <div class="form-group" style="margin-bottom:0">
+            <label style="font-size:13px;font-weight:600;color:var(--primary);display:block;margin-bottom:10px">Màu sắc</label>
+            <div style="display:flex;gap:10px;flex-wrap:wrap" id="cat-color-picker">
+              ${['#1B2A4A','#C4883A','#1A7A4A','#C0392B','#2471A3','#7D3C98','#117A65','#784212'].map(c =>
+                `<div onclick="selectCatColor('${c}')" data-color="${c}" title="${c}"
+                  style="width:32px;height:32px;border-radius:8px;background:${c};cursor:pointer;border:3px solid transparent;transition:all .15s;box-shadow:0 1px 3px rgba(0,0,0,0.2)"></div>`
+              ).join('')}
+            </div>
           </div>
           <input type="hidden" id="cat-color" value="#1B2A4A">
           <input type="hidden" id="cat-edit-id" value="">
         </div>
-        <div style="display:flex;gap:10px;justify-content:flex-end;margin-top:16px">
+        <div style="padding:14px 20px;background:var(--card-bg,#f8f9fa);border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end">
           <button class="btn" onclick="closeModal('add-cat-modal')">Huỷ</button>
-          <button class="btn btn-primary" onclick="submitCategory()">Lưu</button>
+          <button class="btn btn-primary" onclick="submitCategory()" style="min-width:80px">Lưu</button>
         </div>
       </div>
     </div>
 
-    <!-- Modal phan quyen -->
-    <div id="doc-perm-modal" class="modal-overlay hidden">
-      <div class="modal-box" style="max-width:500px">
-        <div class="modal-header"><span>⚙️ Phân quyền upload tài liệu</span><button class="modal-close" onclick="closeModal('doc-perm-modal')">✕</button></div>
-        <p style="font-size:13px;color:var(--muted);margin-bottom:12px">Bật để cho phép nhân viên upload tài liệu lên hệ thống.</p>
-        <div id="doc-perm-list"></div>
-      </div>
-    </div>
   `);
   renderDocCategories();
   loadDocs();
@@ -2210,6 +2241,35 @@ async function downloadDoc(id, fileNameEnc) {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
+async function showDocPermissionsModal() {
+  const el = document.getElementById('doc-perm-list');
+  el.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">Đang tải...</div>';
+  showModal('doc-perm-modal');
+  const users = await api('GET', '/api/manager/doc-permissions');
+  el.innerHTML = users.map(u => `
+    <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
+      <div>
+        <div style="font-weight:600;font-size:14px;color:var(--primary)">${u.full_name}</div>
+        <div style="font-size:12px;color:var(--muted)">${u.department || u.username}</div>
+      </div>
+      <label style="display:flex;align-items:center;gap:8px;cursor:pointer;font-size:13px;color:var(--muted)">
+        <span>${u.can_upload_docs ? '<span style="color:var(--success);font-weight:600">Được phép</span>' : 'Chưa cho phép'}</span>
+        <input type="checkbox" ${u.can_upload_docs ? 'checked' : ''}
+          onchange="setDocPermission(${u.id}, this.checked, this)"
+          style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
+      </label>
+    </div>`).join('');
+}
+
+async function setDocPermission(uid, val, checkbox) {
+  const row = checkbox.closest('div[style*="space-between"]');
+  const label = row.querySelector('span:first-child');
+  const r = await api('PUT', `/api/manager/doc-permissions/${uid}`, {can_upload_docs: val});
+  if (r.ok) {
+    label.innerHTML = val ? '<span style="color:var(--success);font-weight:600">Được phép</span>' : 'Chưa cho phép';
+  } else { checkbox.checked = !val; alert(r.error || 'Lỗi'); }
+}
+
 async function deleteDoc(id, title) {
   if (!confirm('Xoá tài liệu "' + title + '"?')) return;
   const r = await api('DELETE', '/api/docs/' + id);
@@ -2221,180 +2281,4 @@ function showUploadModal() {
   document.getElementById('doc-title').value = '';
   document.getElementById('doc-desc').value = '';
   document.getElementById('doc-cat-select').value = '';
-  document.getElementById('doc-tags').value = '';
-  document.getElementById('doc-file').value = '';
-  document.getElementById('upload-doc-msg').className = 'hidden';
-  document.getElementById('doc-file-preview').classList.add('hidden');
-  document.getElementById('doc-dropzone').style.display = '';
-  showModal('upload-doc-modal');
-}
-
-function onDocFileChange(input) {
-  if (input.files && input.files[0]) showDocFilePreview(input.files[0]);
-}
-
-function handleDocDrop(e) {
-  e.preventDefault();
-  const dz = document.getElementById('doc-dropzone');
-  dz.style.borderColor = ''; dz.style.background = '';
-  const file = e.dataTransfer.files[0];
-  if (!file) return;
-  const allowed = ['.pdf','.docx','.xlsx','.jpg','.jpeg','.png'];
-  const ext = '.' + file.name.split('.').pop().toLowerCase();
-  if (!allowed.includes(ext)) { showMsg('upload-doc-msg','error','Định dạng không hỗ trợ'); return; }
-  const dt = new DataTransfer(); dt.items.add(file);
-  document.getElementById('doc-file').files = dt.files;
-  showDocFilePreview(file);
-}
-
-function showDocFilePreview(file) {
-  const icons = {pdf:'📕',docx:'📝',xlsx:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'};
-  const ext = file.name.split('.').pop().toLowerCase();
-  const sz = file.size > 1048576 ? (file.size/1048576).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB';
-  document.getElementById('doc-file-icon').textContent = icons[ext] || '📄';
-  document.getElementById('doc-file-name').textContent = file.name;
-  document.getElementById('doc-file-size').textContent = sz + ' · .' + ext.toUpperCase();
-  document.getElementById('doc-file-preview').classList.remove('hidden');
-  document.getElementById('doc-dropzone').style.display = 'none';
-  if (!document.getElementById('doc-title').value) {
-    document.getElementById('doc-title').value = file.name.replace(/\.[^.]+$/, '');
-  }
-}
-
-function clearDocFile() {
-  document.getElementById('doc-file').value = '';
-  document.getElementById('doc-file-preview').classList.add('hidden');
-  document.getElementById('doc-dropzone').style.display = '';
-}
-
-async function submitUploadDoc() {
-  const title = document.getElementById('doc-title').value.trim();
-  const desc  = document.getElementById('doc-desc').value.trim();
-  const catId = document.getElementById('doc-cat-select').value;
-  const tags  = document.getElementById('doc-tags').value.trim();
-  const file  = document.getElementById('doc-file').files[0];
-  const btn   = document.getElementById('btn-upload-doc');
-  if (!title) { showMsg('upload-doc-msg','error','Vui lòng nhập tiêu đề'); return; }
-  if (!file)  { showMsg('upload-doc-msg','error','Vui lòng chọn file'); return; }
-  if (file.size > 20*1024*1024) { showMsg('upload-doc-msg','error','File tối đa 20MB'); return; }
-  const fd = new FormData();
-  fd.append('title', title); fd.append('description', desc);
-  fd.append('category_id', catId); fd.append('tags', tags);
-  fd.append('file', file);
-  btn.disabled = true; btn.textContent = '⏳ Đang tải...';
-  try {
-    const r = await fetch('/api/docs/upload', {method:'POST', body: fd});
-    const d = await r.json();
-    if (d.ok) { closeModal('upload-doc-modal'); loadDocs(); }
-    else { showMsg('upload-doc-msg','error', d.error || 'Lỗi upload'); }
-  } catch(e) { showMsg('upload-doc-msg','error','Lỗi kết nối'); }
-  btn.disabled = false; btn.textContent = '⬆️ Tải lên';
-}
-
-function selectCatColor(color) {
-  document.getElementById('cat-color').value = color;
-  document.querySelectorAll('#cat-color-picker div[data-color]').forEach(el => {
-    el.style.border = el.dataset.color === color ? '3px solid #333' : '3px solid transparent';
-  });
-}
-
-function showAddCategoryModal() {
-  document.getElementById('cat-name').value = '';
-  document.getElementById('cat-desc').value = '';
-  document.getElementById('cat-edit-id').value = '';
-  selectCatColor('#1B2A4A');
-  document.getElementById('add-cat-msg').className = 'hidden';
-  showModal('add-cat-modal');
-}
-
-function editCategory(id) {
-  const c = docCategories.find(x => x.id == id);
-  if (!c) return;
-  document.getElementById('cat-name').value = c.name;
-  document.getElementById('cat-desc').value = c.description || '';
-  document.getElementById('cat-edit-id').value = id;
-  selectCatColor(c.color || '#1B2A4A');
-  document.getElementById('add-cat-msg').className = 'hidden';
-  showModal('add-cat-modal');
-}
-
-async function submitCategory() {
-  const name  = document.getElementById('cat-name').value.trim();
-  const desc  = document.getElementById('cat-desc').value.trim();
-  const color = document.getElementById('cat-color').value;
-  const editId = document.getElementById('cat-edit-id').value;
-  if (!name) { showMsg('add-cat-msg','error','Tên danh mục không được để trống'); return; }
-  const url    = editId ? `/api/docs/categories/${editId}` : '/api/docs/categories';
-  const method = editId ? 'PUT' : 'POST';
-  const r = await api(method, url, {name, description: desc, color});
-  if (r.ok) {
-    closeModal('add-cat-modal');
-    const cats = await api('GET', '/api/docs/categories');
-    docCategories = cats || [];
-    renderDocCategories();
-    loadDocs();
-  } else { showMsg('add-cat-msg','error', r.error || 'Lỗi lưu danh mục'); }
-}
-
-async function showDocPermissionsModal() {
-  const users = await api('GET', '/api/manager/doc-permissions');
-  const el = document.getElementById('doc-perm-list');
-  el.innerHTML = users.map(u => `
-    <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
-      <div>
-        <div style="font-weight:600;font-size:14px">${u.full_name}</div>
-        <div style="font-size:12px;color:var(--muted)">@${u.username}${u.department?' · '+u.department:''}</div>
-      </div>
-      <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
-        <input type="checkbox" ${u.can_upload_docs?'checked':''} onchange="setDocPermission(${u.id},this.checked)"
-          style="width:16px;height:16px;accent-color:var(--accent)">
-        <span style="font-size:12px;color:var(--muted)">Upload</span>
-      </label>
-    </div>`).join('');
-  showModal('doc-perm-modal');
-}
-
-async function setDocPermission(uid, val) {
-  await api('PUT', `/api/manager/doc-permissions/${uid}`, {can_upload_docs: val});
-}
-function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
-function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
-function showMsg(id, type, msg) {
-  const el = document.getElementById(id);
-  el.className = `alert alert-${type}`;
-  el.textContent = msg;
-}
-function esc(s) { return String(s).replace(/'/g,"&#39;").replace(/"/g,'&quot;'); }
-function formatDate(d) {
-  if (!d) return '';
-  const [y,m,day] = d.split('-');
-  const dow = ['CN','T2','T3','T4','T5','T6','T7'][new Date(d).getDay()];
-  return `${dow} ${day}/${m}/${y}`;
-}
-
-async function logout() {
-  await api('POST', '/api/logout');
-  location.reload();
-}
-
-function toggleSidebar() {
-  document.getElementById('sidebar').classList.toggle('open');
-  document.getElementById('overlay').classList.toggle('show');
-}
-function closeSidebar() {
-  document.getElementById('sidebar').classList.remove('open');
-  document.getElementById('overlay').classList.remove('show');
-}
-document.getElementById('overlay').addEventListener('click', closeSidebar);
-
-// Keyboard close modal
-document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') {
-    ['review-modal','detail-modal','user-modal','pwd-modal','img-modal','reset-pwd-modal'].forEach(closeModal);
-  }
-});
-
-init();
-</script>
-</body>
-</html>
+  document.getElementById('doc-tags').value = '
