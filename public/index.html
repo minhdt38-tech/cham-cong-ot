@@ -1927,10 +1927,10 @@ let canUploadDocs = false;
 
 async function renderDocs() {
   // Kiem tra quyen upload
-  const me = await api('/api/me');
+  const me = await api('GET', '/api/me');
   canUploadDocs = (me.role === 'manager') || (me.can_upload_docs == 1);
 
-  const [cats] = await Promise.all([api('/api/docs/categories')]);
+  const cats = await api('GET', '/api/docs/categories');
   docCategories = cats || [];
   docActiveCategory = null; docActiveTag = null; docSearchQ = '';
 
@@ -2095,7 +2095,7 @@ async function loadDocs() {
   if (docActiveCategory) params.set('category_id', docActiveCategory);
   if (docActiveTag) params.set('tag', docActiveTag);
   if (docSearchQ) params.set('q', docSearchQ);
-  const docs = await api('/api/docs?' + params.toString());
+  const docs = await api('GET', '/api/docs?' + params.toString());
   if (!docs || docs.error) { area.innerHTML = '<div class="alert-error">Lỗi tải tài liệu</div>'; return; }
 
   // Thu thap tags
@@ -2172,7 +2172,7 @@ function previewDoc(id, titleEnc, path, ext) {
 
 async function deleteDoc(id, title) {
   if (!confirm('Xoá tài liệu "' + title + '"?')) return;
-  const r = await api('/api/docs/' + id, {method:'DELETE'});
+  const r = await api('DELETE', '/api/docs/' + id);
   if (r.ok) loadDocs();
   else alert(r.error || 'Lỗi khi xoá');
 }
@@ -2246,10 +2246,10 @@ async function submitCategory() {
   if (!name) { showMsg('add-cat-msg','error','Tên danh mục không được để trống'); return; }
   const url    = editId ? `/api/docs/categories/${editId}` : '/api/docs/categories';
   const method = editId ? 'PUT' : 'POST';
-  const r = await api(url, {method, body: JSON.stringify({name, description: desc, color})});
+  const r = await api(method, url, {name, description: desc, color});
   if (r.ok) {
     closeModal('add-cat-modal');
-    const cats = await api('/api/docs/categories');
+    const cats = await api('GET', '/api/docs/categories');
     docCategories = cats || [];
     renderDocCategories();
     loadDocs();
@@ -2257,7 +2257,7 @@ async function submitCategory() {
 }
 
 async function showDocPermissionsModal() {
-  const users = await api('/api/manager/doc-permissions');
+  const users = await api('GET', '/api/manager/doc-permissions');
   const el = document.getElementById('doc-perm-list');
   el.innerHTML = users.map(u => `
     <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
@@ -2275,7 +2275,7 @@ async function showDocPermissionsModal() {
 }
 
 async function setDocPermission(uid, val) {
-  await api(`/api/manager/doc-permissions/${uid}`, {method:'PUT', body: JSON.stringify({can_upload_docs: val})});
+  await api('PUT', `/api/manager/doc-permissions/${uid}`, {can_upload_docs: val});
 }
 function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
