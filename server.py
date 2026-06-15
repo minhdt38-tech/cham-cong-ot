@@ -187,10 +187,16 @@ def init_db():
             FOREIGN KEY(uploaded_by) REFERENCES users(id)
         );
         """)
-        # Migration: them cot can_upload_docs neu chua co
+        # Migrations
         cols = [r[1] for r in db.execute("PRAGMA table_info(users)").fetchall()]
         if 'can_upload_docs' not in cols:
             db.execute("ALTER TABLE users ADD COLUMN can_upload_docs INTEGER DEFAULT 0")
+        doc_cols = [r[1] for r in db.execute("PRAGMA table_info(documents)").fetchall()]
+        if 'notes' not in doc_cols:
+            db.execute("ALTER TABLE documents ADD COLUMN notes TEXT DEFAULT ''")
+        cat_cols = [r[1] for r in db.execute("PRAGMA table_info(doc_categories)").fetchall()]
+        if 'parent_id' not in cat_cols:
+            db.execute("ALTER TABLE doc_categories ADD COLUMN parent_id INTEGER DEFAULT NULL")
         row = db.execute("SELECT id FROM users WHERE username='admin'").fetchone()
         if not row:
             pwd = hash_password('admin123')
@@ -496,6 +502,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/notifications/(\d+)/read$', path)
         if m:
             self.api_notification_mark_read(int(m.group(1))); return
+        m = re.match(r'^/api/docs/(\d+)$', path)
+        if m:
+            self.api_docs_update(int(m.group(1))); return
         m = re.match(r'^/api/docs/categories/(\d+)$', path)
         if m:
             self.api_doc_categories_update(int(m.group(1))); return
@@ -1343,15 +1352,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sess = self.require_manager()
         if not sess: return
         body = self.read_json()
-        name = body.get('name', '').strip()
-        desc  = body.get('description', '').strip()
-        color = body.get('color', '#1B2A4A').strip()
+        name      = body.get('name', '').strip()
+        desc      = body.get('description', '').strip()
+        color     = body.get('color', '#1B2A4A').strip()
+        parent_id = body.get('parent_id') or None
+        if parent_id: parent_id = int(parent_id)
         if not name:
             self.send_json({'error': 'Ten danh muc khong duoc de trong'}, 400); return
         with get_db() as db:
             cur = db.execute(
-                'INSERT INTO doc_categories (name, description, color, created_by) VALUES (?,?,?,?)',
-                (name, desc, color, sess['userId'])
+                'INSERT INTO doc_categories (name, description, color, parent_id, created_by) VALUES (?,?,?,?,?)',
+                (name, desc, color, parent_id, sess['userId'])
             )
             db.commit()
         self.send_json({'ok': True, 'id': cur.lastrowid})
@@ -1360,14 +1371,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sess = self.require_manager()
         if not sess: return
         body = self.read_json()
-        name  = body.get('name', '').strip()
-        desc  = body.get('description', '').strip()
-        color = body.get('color', '#1B2A4A').strip()
+        name      = body.get('name', '').strip()
+        desc      = body.get('description', '').strip()
+        color     = body.get('color', '#1B2A4A').strip()
+        parent_id = body.get('parent_id') or None
+        if parent_id: parent_id = int(parent_id)
+        if parent_id == cat_id: parent_id = None  # prevent self-reference
         if not name:
             self.send_json({'error': 'Ten danh muc khong duoc de trong'}, 400); return
         with get_db() as db:
-            db.execute('UPDATE doc_categories SET name=?, description=?, color=? WHERE id=?',
-                       (name, desc, color, cat_id))
+            db.execute('UPDATE doc_categories SET name=?, description=?, color=?, parent_id=? WHERE id=?',
+                       (name, desc, color, parent_id, cat_id))
             db.commit()
         self.send_json({'ok': True})
 
@@ -1375,6 +1389,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sess = self.require_manager()
         if not sess: return
         with get_db() as db:
+            child_cnt = db.execute('SELECT COUNT(*) FROM doc_categories WHERE parent_id=?', (cat_id,)).fetchone()[0]
+            if child_cnt > 0:
+                self.send_json({'error': f'Danh muc co {child_cnt} danh muc con, vui long xoa con truoc'}, 400); return
             cnt = db.execute('SELECT COUNT(*) FROM documents WHERE category_id=?', (cat_id,)).fetchone()[0]
             if cnt > 0:
                 self.send_json({'error': f'Danh muc con {cnt} tai lieu, khong the xoa'}, 400); return
@@ -1395,7 +1412,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                  WHERE 1=1"""
         params = []
         if cat_id:
-            sql += ' AND d.category_id = ?'; params.append(int(cat_id))
+            # Include documents in this category AND any direct child categories
+            sql += ' AND d.category_id IN (SELECT id FROM doc_categories WHERE id=? OR parent_id=?)'
+            params += [int(cat_id), int(cat_id)]
         if tag:
             sql += ' AND (d.tags LIKE ? OR d.tags LIKE ? OR d.tags LIKE ? OR d.tags = ?)'
             params += [f'{tag},%', f'%,{tag},%', f'%,{tag}', tag]
@@ -1451,7 +1470,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 f.write(file_bytes)
             file_path = f'/uploads/{safe_name}'
         with get_db() as db:
-            db.execute(
+            cur = db.execute(
                 """INSERT INTO documents (title, description, file_path, file_name, file_type,
                    file_size, category_id, tags, uploaded_by)
                    VALUES (?,?,?,?,?,?,?,?,?)""",
@@ -1459,78 +1478,35 @@ class Handler(http.server.BaseHTTPRequestHandler):
                  allowed[ext], file_size, cat_id, tags, sess['userId'])
             )
             db.commit()
+            new_id = cur.lastrowid
+        self.send_json({'ok': True, 'id': new_id})
+
+    def api_docs_update(self, doc_id):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        with get_db() as db:
+            row = db.execute('SELECT uploaded_by FROM documents WHERE id=?', (doc_id,)).fetchone()
+            if not row:
+                self.send_json({'error': 'Khong tim thay tai lieu'}, 404); return
+            if sess['role'] != 'manager' and row['uploaded_by'] != sess['userId']:
+                self.send_json({'error': 'Khong co quyen chinh sua'}, 403); return
+            fields, params = [], []
+            if 'notes' in body:
+                fields.append('notes=?'); params.append(body['notes'])
+            if 'title' in body and body['title'].strip():
+                fields.append('title=?'); params.append(body['title'].strip())
+            if 'tags' in body:
+                fields.append('tags=?'); params.append(body['tags'].strip())
+            if not fields:
+                self.send_json({'ok': True}); return
+            params.append(doc_id)
+            db.execute(f"UPDATE documents SET {', '.join(fields)} WHERE id=?", params)
+            db.commit()
         self.send_json({'ok': True})
 
     def api_docs_delete(self, doc_id):
         sess = self.require_auth()
         if not sess: return
         with get_db() as db:
-            row = db.execute('SELECT * FROM documents WHERE id=?', (doc_id,)).fetchone()
-            if not row:
-                self.send_json({'error': 'Khong tim thay tai lieu'}, 404); return
-            if sess['role'] != 'manager' and row['uploaded_by'] != sess['userId']:
-                self.send_json({'error': 'Khong co quyen xoa'}, 403); return
-            try:
-                fp = row['file_path']
-                if fp.startswith('r2:'):
-                    r2_delete(fp[3:])
-                else:
-                    fpath = os.path.join(DATA_DIR, fp.lstrip('/'))
-                    if os.path.exists(fpath):
-                        os.remove(fpath)
-            except Exception:
-                pass
-            db.execute('DELETE FROM documents WHERE id=?', (doc_id,))
-            db.commit()
-        self.send_json({'ok': True})
-
-    def api_docs_presigned_url(self, doc_id):
-        sess = self.require_auth()
-        if not sess: return
-        with get_db() as db:
-            row = db.execute('SELECT file_path, file_name FROM documents WHERE id=?', (doc_id,)).fetchone()
-        if not row:
-            self.send_json({'error': 'Khong tim thay tai lieu'}, 404); return
-        fp = row['file_path']
-        if fp.startswith('r2:'):
-            url = r2_presigned_url(fp[3:], expires=3600)
-            if not url:
-                self.send_json({'error': 'Khong the tao URL'}, 500); return
-        else:
-            url = fp
-        self.send_json({'url': url, 'file_name': row['file_name']})
-
-    def api_manager_doc_permissions(self):
-        sess = self.require_manager()
-        if not sess: return
-        with get_db() as db:
-            rows = db.execute(
-                """SELECT id, username, full_name, department, can_upload_docs
-                   FROM users WHERE role='employee' ORDER BY full_name"""
-            ).fetchall()
-        self.send_json(rows_to_list(rows))
-
-    def api_manager_doc_permission_set(self, uid):
-        sess = self.require_manager()
-        if not sess: return
-        body = self.read_json()
-        val  = 1 if body.get('can_upload_docs') else 0
-        with get_db() as db:
-            db.execute('UPDATE users SET can_upload_docs=? WHERE id=?', (val, uid))
-            db.commit()
-        self.send_json({'ok': True})
-
-def run():
-    os.chdir(PUBLIC_DIR)
-    init_db()
-    handler = Handler
-    with socketserver.TCPServer(('', PORT), handler) as httpd:
-        httpd.allow_reuse_address = True
-        print(f'Server running on port {PORT}')
-        print(f'DATA_DIR: {DATA_DIR}')
-        print(f'R2 enabled: {R2_ENABLED}')
-        httpd.serve_forever()
-
-if __name__ == '__main__':
-    run()
-
+            row = db
