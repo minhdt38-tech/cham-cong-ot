@@ -171,6 +171,13 @@ def init_db():
             created_by  INTEGER,
             created_at  TEXT DEFAULT (datetime('now','localtime'))
         );
+        CREATE TABLE IF NOT EXISTS doc_types (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            name        TEXT NOT NULL,
+            description TEXT DEFAULT '',
+            created_by  INTEGER,
+            created_at  TEXT DEFAULT (datetime('now','localtime'))
+        );
         CREATE TABLE IF NOT EXISTS documents (
             id          INTEGER PRIMARY KEY AUTOINCREMENT,
             title       TEXT NOT NULL,
@@ -194,6 +201,14 @@ def init_db():
         doc_cols = [r[1] for r in db.execute("PRAGMA table_info(documents)").fetchall()]
         if 'notes' not in doc_cols:
             db.execute("ALTER TABLE documents ADD COLUMN notes TEXT DEFAULT ''")
+        if 'doc_number' not in doc_cols:
+            db.execute("ALTER TABLE documents ADD COLUMN doc_number TEXT DEFAULT ''")
+        if 'issued_date' not in doc_cols:
+            db.execute("ALTER TABLE documents ADD COLUMN issued_date TEXT DEFAULT NULL")
+        if 'issuer' not in doc_cols:
+            db.execute("ALTER TABLE documents ADD COLUMN issuer TEXT DEFAULT ''")
+        if 'doc_type_id' not in doc_cols:
+            db.execute("ALTER TABLE documents ADD COLUMN doc_type_id INTEGER DEFAULT NULL")
         cat_cols = [r[1] for r in db.execute("PRAGMA table_info(doc_categories)").fetchall()]
         if 'parent_id' not in cat_cols:
             db.execute("ALTER TABLE doc_categories ADD COLUMN parent_id INTEGER DEFAULT NULL")
@@ -453,6 +468,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_docs_list(qs); return
         if path == '/api/docs/categories':
             self.api_doc_categories_list(); return
+        if path == '/api/docs/types':
+            self.api_doc_types_list(); return
         m = re.match(r'^/api/docs/url/(\d+)$', path)
         if m:
             self.api_docs_presigned_url(int(m.group(1))); return
@@ -476,6 +493,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             '/api/notifications/read-all':   self.api_notifications_read_all,
             '/api/docs/upload':              self.api_docs_upload,
             '/api/docs/categories':          self.api_doc_categories_create,
+            '/api/docs/types':               self.api_doc_types_create,
         }
         if path in routes:
             routes[path]()
@@ -508,6 +526,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/docs/categories/(\d+)$', path)
         if m:
             self.api_doc_categories_update(int(m.group(1))); return
+        m = re.match(r'^/api/docs/types/(\d+)$', path)
+        if m:
+            self.api_doc_types_update(int(m.group(1))); return
         m = re.match(r'^/api/manager/doc-permissions/(\d+)$', path)
         if m:
             self.api_manager_doc_permission_set(int(m.group(1))); return
@@ -531,6 +552,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/docs/categories/(\d+)$', path)
         if m:
             self.api_doc_categories_delete(int(m.group(1))); return
+        m = re.match(r'^/api/docs/types/(\d+)$', path)
+        if m:
+            self.api_doc_types_delete(int(m.group(1))); return
         self.send_json({'error': 'Not found'}, 404)
 
     # --- AUTH ---
@@ -1402,26 +1426,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def api_docs_list(self, qs):
         sess = self.require_auth()
         if not sess: return
-        cat_id = qs.get('category_id', [None])[0]
-        tag    = qs.get('tag', [None])[0]
-        q      = qs.get('q', [None])[0]
-        sql = """SELECT d.*, u.full_name as uploader_name, c.name as category_name, c.color as category_color
+        cat_id      = qs.get('category_id', [None])[0]
+        tag         = qs.get('tag', [None])[0]
+        q           = qs.get('q', [None])[0]
+        doc_type_id = qs.get('doc_type_id', [None])[0]
+        issuer_f    = qs.get('issuer', [None])[0]
+        sql = """SELECT d.*, u.full_name as uploader_name,
+                        c.name as category_name, c.color as category_color,
+                        t.name as doc_type_name
                  FROM documents d
                  LEFT JOIN users u ON d.uploaded_by = u.id
                  LEFT JOIN doc_categories c ON d.category_id = c.id
+                 LEFT JOIN doc_types t ON d.doc_type_id = t.id
                  WHERE 1=1"""
         params = []
         if cat_id:
-            # Include documents in this category AND any direct child categories
             sql += ' AND d.category_id IN (SELECT id FROM doc_categories WHERE id=? OR parent_id=?)'
             params += [int(cat_id), int(cat_id)]
+        if doc_type_id:
+            sql += ' AND d.doc_type_id=?'
+            params.append(int(doc_type_id))
+        if issuer_f:
+            sql += ' AND d.issuer LIKE ?'
+            params.append(f'%{issuer_f}%')
         if tag:
             sql += ' AND (d.tags LIKE ? OR d.tags LIKE ? OR d.tags LIKE ? OR d.tags = ?)'
             params += [f'{tag},%', f'%,{tag},%', f'%,{tag}', tag]
         if q:
-            sql += ' AND (d.title LIKE ? OR d.description LIKE ?)'
-            params += [f'%{q}%', f'%{q}%']
-        sql += ' ORDER BY d.created_at DESC'
+            sql += ' AND (d.title LIKE ? OR d.description LIKE ? OR d.doc_number LIKE ? OR d.issuer LIKE ?)'
+            params += [f'%{q}%', f'%{q}%', f'%{q}%', f'%{q}%']
+        sql += ' ORDER BY d.issued_date DESC NULLS LAST, d.created_at DESC'
         with get_db() as db:
             rows = db.execute(sql, params).fetchall()
         self.send_json(rows_to_list(rows))
@@ -1436,10 +1470,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             fields, files = self.read_multipart()
         else:
             self.send_json({'error': 'Yeu cau multipart/form-data'}, 400); return
-        title   = fields.get('title', '').strip()
-        desc    = fields.get('description', '').strip()
-        cat_id  = fields.get('category_id', '').strip() or None
-        tags    = fields.get('tags', '').strip()
+        title       = fields.get('title', '').strip()
+        desc        = fields.get('description', '').strip()
+        cat_id      = fields.get('category_id', '').strip() or None
+        tags        = fields.get('tags', '').strip()
+        doc_number  = fields.get('doc_number', '').strip()
+        issued_date = fields.get('issued_date', '').strip() or None
+        issuer      = fields.get('issuer', '').strip()
+        doc_type_id = fields.get('doc_type_id', '').strip() or None
         if not title:
             self.send_json({'error': 'Tieu de khong duoc de trong'}, 400); return
         if 'file' not in files:
@@ -1472,10 +1510,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with get_db() as db:
             cur = db.execute(
                 """INSERT INTO documents (title, description, file_path, file_name, file_type,
-                   file_size, category_id, tags, uploaded_by)
-                   VALUES (?,?,?,?,?,?,?,?,?)""",
+                   file_size, category_id, tags, uploaded_by,
+                   doc_number, issued_date, issuer, doc_type_id)
+                   VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (title, desc, file_path, orig_name,
-                 allowed[ext], file_size, cat_id, tags, sess['userId'])
+                 allowed[ext], file_size, cat_id, tags, sess['userId'],
+                 doc_number, issued_date, issuer, doc_type_id)
             )
             db.commit()
             new_id = cur.lastrowid
@@ -1498,6 +1538,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 fields.append('title=?'); params.append(body['title'].strip())
             if 'tags' in body:
                 fields.append('tags=?'); params.append(body['tags'].strip())
+            if 'doc_number' in body:
+                fields.append('doc_number=?'); params.append(body['doc_number'])
+            if 'issued_date' in body:
+                fields.append('issued_date=?'); params.append(body['issued_date'] or None)
+            if 'issuer' in body:
+                fields.append('issuer=?'); params.append(body['issuer'])
+            if 'doc_type_id' in body:
+                fields.append('doc_type_id=?'); params.append(body['doc_type_id'] or None)
             if not fields:
                 self.send_json({'ok': True}); return
             params.append(doc_id)
@@ -1543,6 +1591,52 @@ class Handler(http.server.BaseHTTPRequestHandler):
         else:
             url = fp
         self.send_json({'url': url, 'file_name': row['file_name']})
+
+    # --- DOC TYPES ---
+
+    def api_doc_types_list(self):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            rows = db.execute('SELECT * FROM doc_types ORDER BY name').fetchall()
+        self.send_json(rows_to_list(rows))
+
+    def api_doc_types_create(self):
+        sess = self.require_manager()
+        if not sess: return
+        body = self.read_json()
+        name = body.get('name', '').strip()
+        if not name:
+            self.send_json({'error': 'Ten loai van ban khong duoc de trong'}, 400); return
+        with get_db() as db:
+            db.execute('INSERT INTO doc_types (name, description, created_by) VALUES (?,?,?)',
+                       (name, body.get('description', '').strip(), sess['userId']))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_doc_types_update(self, type_id):
+        sess = self.require_manager()
+        if not sess: return
+        body = self.read_json()
+        name = body.get('name', '').strip()
+        if not name:
+            self.send_json({'error': 'Ten loai van ban khong duoc de trong'}, 400); return
+        with get_db() as db:
+            db.execute('UPDATE doc_types SET name=?, description=? WHERE id=?',
+                       (name, body.get('description', '').strip(), type_id))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_doc_types_delete(self, type_id):
+        sess = self.require_manager()
+        if not sess: return
+        with get_db() as db:
+            cnt = db.execute('SELECT COUNT(*) FROM documents WHERE doc_type_id=?', (type_id,)).fetchone()[0]
+            if cnt > 0:
+                self.send_json({'error': f'Loai van ban co {cnt} tai lieu, khong the xoa'}, 400); return
+            db.execute('DELETE FROM doc_types WHERE id=?', (type_id,))
+            db.commit()
+        self.send_json({'ok': True})
 
     def api_manager_doc_permissions(self):
         sess = self.require_manager()

@@ -319,6 +319,32 @@
           <input type="text" id="doc-tags" placeholder="hợp đồng, mẫu, 2024" style="width:100%">
         </div>
       </div>
+      <div style="border-top:1px dashed var(--border);margin:14px 0 12px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--muted);white-space:nowrap;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Thông tin văn bản</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Số văn bản</label>
+          <input type="text" id="doc-number" placeholder="VD: 123/2024/QĐ-VH" style="width:100%">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Ngày ban hành</label>
+          <input type="date" id="doc-issued-date" style="width:100%">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Cơ quan ban hành</label>
+          <input type="text" id="doc-issuer" placeholder="VD: Hội đồng quản trị" style="width:100%">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Loại văn bản</label>
+          <select id="doc-type-select" style="width:100%">
+            <option value="">-- Không phân loại --</option>
+          </select>
+        </div>
+      </div>
     </div>
     <div style="padding:14px 20px;background:#f8f9fa;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end">
       <button class="btn btn-outline" onclick="closeModal('upload-doc-modal')">Huỷ</button>
@@ -434,6 +460,32 @@
   </div>
 </div>
 
+<!-- Modal Loại văn bản -->
+<div id="doc-types-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('doc-types-modal')">
+  <div class="modal-box" style="max-width:480px">
+    <div class="modal-header">
+      <h3>📋 Loại văn bản</h3>
+      <button class="close-btn" onclick="closeModal('doc-types-modal')">✕</button>
+    </div>
+    <div class="modal-body">
+      <div id="doc-types-msg" class="hidden" style="margin-bottom:12px"></div>
+      <div id="doc-types-list" style="margin-bottom:16px"></div>
+      <div style="border-top:1px solid var(--border);padding-top:14px">
+        <div style="font-size:12px;font-weight:600;color:var(--primary);margin-bottom:8px">Thêm / sửa loại văn bản</div>
+        <input type="hidden" id="edit-type-id">
+        <div style="display:flex;gap:8px">
+          <input type="text" id="type-name-input" placeholder="Tên loại văn bản..." style="flex:1">
+          <button class="btn btn-primary btn-sm" onclick="submitDocType()" id="btn-save-type">➕ Thêm</button>
+          <button class="btn btn-outline btn-sm hidden" onclick="cancelEditType()" id="btn-cancel-type">Huỷ</button>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal('doc-types-modal')">Đóng</button>
+    </div>
+  </div>
+</div>
+
 <!-- Modal đổi mật khẩu -->
 <div id="pwd-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('pwd-modal')">
   <div class="modal-box" style="max-width:420px">
@@ -458,8 +510,10 @@
 // ─── STATE ───
 let currentUser = null;
 let docCategories = [];
+let docTypes = [];
 let docActiveCategory = null;
 let docActiveTag = null;
+let docActiveType = null;
 let docSearchQ = '';
 let canUploadDocs = false;
 
@@ -502,12 +556,18 @@ async function renderDocs() {
   const me = await api('GET', '/api/me');
   canUploadDocs = (me.role === 'manager') || (me.can_upload_docs == 1);
 
-  const cats = await api('GET', '/api/docs/categories');
+  const [cats, types] = await Promise.all([
+    api('GET', '/api/docs/categories'),
+    api('GET', '/api/docs/types')
+  ]);
   docCategories = cats || [];
+  docTypes = types || [];
   docActiveCategory = null; docActiveTag = null; docSearchQ = '';
+  docActiveType = null;
 
-  // Populate category selects
+  // Populate selects
   populateCategorySelects();
+  populateTypeSelect();
 
   // Populate color picker
   const picker = document.getElementById('cat-color-picker');
@@ -518,12 +578,19 @@ async function renderDocs() {
 
   set('content-area', `
     <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap">
-      <!-- Sidebar danh mục -->
+      <!-- Sidebar lọc -->
       <div style="width:200px;flex-shrink:0">
         <div class="card" style="padding:12px">
           <div style="font-weight:700;font-size:13px;color:var(--primary);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Danh mục</div>
           <div id="doc-cat-list"></div>
           ${currentUser.role === 'manager' ? `<button class="btn btn-sm btn-outline" style="width:100%;margin-top:10px;font-size:12px" onclick="showAddCategoryModal()">+ Thêm danh mục</button>` : ''}
+        </div>
+        <div class="card" style="padding:12px;margin-top:12px">
+          <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+            <div style="font-weight:700;font-size:13px;color:var(--primary);text-transform:uppercase;letter-spacing:.05em">Loại văn bản</div>
+            ${currentUser.role === 'manager' ? `<button onclick="showDocTypesModal()" title="Quản lý loại văn bản" style="background:none;border:none;cursor:pointer;font-size:15px;color:var(--muted);padding:0">⚙️</button>` : ''}
+          </div>
+          <div id="doc-type-list"></div>
         </div>
         <div class="card" style="padding:12px;margin-top:12px">
           <div style="font-weight:700;font-size:13px;color:var(--primary);margin-bottom:10px;text-transform:uppercase;letter-spacing:.05em">Tag phổ biến</div>
@@ -533,7 +600,7 @@ async function renderDocs() {
       <!-- Nội dung chính -->
       <div style="flex:1;min-width:0">
         <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
-          <input type="text" id="doc-search" placeholder="🔍 Tìm kiếm tài liệu..." oninput="docSearch(this.value)"
+          <input type="text" id="doc-search" placeholder="🔍 Tìm tiêu đề, số VB, cơ quan..." oninput="docSearch(this.value)"
             style="flex:1;min-width:180px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit">
           ${canUploadDocs ? `<button class="btn btn-primary" onclick="showUploadModal()">⬆️ Tải lên tài liệu</button>` : ''}
         </div>
@@ -542,6 +609,7 @@ async function renderDocs() {
     </div>
   `);
   renderDocCategories();
+  renderDocTypes();
   loadDocs();
 }
 
@@ -609,8 +677,9 @@ function renderDocCategories() {
   el.innerHTML = html;
 }
 
-function filterDocCat(id) { docActiveCategory = id; docActiveTag = null; renderDocCategories(); loadDocs(); }
-function filterDocTag(tag) { docActiveTag = (docActiveTag===tag)?null:tag; docActiveCategory=null; renderDocCategories(); loadDocs(); }
+function filterDocCat(id) { docActiveCategory = id; docActiveTag = null; docActiveType = null; renderDocCategories(); renderDocTypes(); loadDocs(); }
+function filterDocType(id) { docActiveType = (docActiveType==id)?null:id; docActiveCategory=null; docActiveTag=null; renderDocCategories(); renderDocTypes(); loadDocs(); }
+function filterDocTag(tag) { docActiveTag = (docActiveTag===tag)?null:tag; docActiveCategory=null; docActiveType=null; renderDocCategories(); renderDocTypes(); loadDocs(); }
 function docSearch(q) { docSearchQ = q; loadDocs(); }
 
 async function loadDocs() {
@@ -620,6 +689,7 @@ async function loadDocs() {
   const params = new URLSearchParams();
   if (docActiveCategory) params.set('category_id', docActiveCategory);
   if (docActiveTag) params.set('tag', docActiveTag);
+  if (docActiveType) params.set('doc_type_id', docActiveType);
   if (docSearchQ) params.set('q', docSearchQ);
   try {
     const docs = await api('GET', '/api/docs?' + params.toString());
@@ -642,34 +712,45 @@ async function loadDocs() {
       </div>`; return;
     }
 
-    area.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:14px">${
+    area.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">${
       docs.map(d => {
         const ext = (d.file_name||'').split('.').pop().toLowerCase();
         const icon = {pdf:'📄',docx:'📝',xlsx:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'}[ext] || '📁';
         const sz = d.file_size > 1048576 ? (d.file_size/1048576).toFixed(1)+'MB' : Math.round(d.file_size/1024)+'KB';
-        const catBadge = d.category_name ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:${d.category_color}22;color:${d.category_color};font-weight:600">${d.category_name}</span>` : '';
+        const catBadge = d.category_name ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:${d.category_color}22;color:${d.category_color};font-weight:600">${esc(d.category_name)}</span>` : '';
+        const typeBadge = d.doc_type_name ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:rgba(36,113,163,0.1);color:#2471A3;font-weight:600">📋 ${esc(d.doc_type_name)}</span>` : '';
         const tags = (d.tags||'').split(',').map(t=>t.trim()).filter(Boolean).map(t =>
-          `<span onclick="filterDocTag('${esc(t)}')" style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,0.06);color:var(--muted);cursor:pointer">${t}</span>`
+          `<span onclick="filterDocTag('${esc(t)}')" style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,0.06);color:var(--muted);cursor:pointer">${esc(t)}</span>`
         ).join('');
         const canDelete = currentUser.role==='manager' || d.uploaded_by==currentUser.id;
         const notesHtml = d.notes ? `
           <div style="background:#fffbf0;border:1px solid #f0e4c0;border-radius:6px;padding:8px 10px;font-size:12px;color:#6b5d3f;line-height:1.5;white-space:pre-wrap;word-break:break-word">
             📝 ${esc(d.notes)}
           </div>` : '';
+        // Metadata văn bản
+        const metaRows = [];
+        if (d.doc_number) metaRows.push(`<span>🔢 <b>Số VB:</b> ${esc(d.doc_number)}</span>`);
+        if (d.issued_date) metaRows.push(`<span>📅 <b>Ban hành:</b> ${d.issued_date}</span>`);
+        if (d.issuer) metaRows.push(`<span>🏛️ <b>Cơ quan:</b> ${esc(d.issuer)}</span>`);
+        const metaHtml = metaRows.length ? `
+          <div style="background:#f0f4f8;border:1px solid #dce4ee;border-radius:6px;padding:7px 10px;font-size:11.5px;color:#2c3e50;display:flex;flex-direction:column;gap:3px">
+            ${metaRows.join('')}
+          </div>` : '';
         return `<div class="card" style="padding:14px;display:flex;flex-direction:column;gap:8px;border-top:3px solid ${d.category_color||'var(--accent)'}">
           <div style="display:flex;align-items:flex-start;gap:10px">
             <div style="font-size:32px;line-height:1">${icon}</div>
             <div style="flex:1;min-width:0">
-              <div style="font-weight:600;font-size:14px;color:var(--primary);margin-bottom:2px;word-break:break-word">${d.title}</div>
-              ${d.description?`<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${d.description}</div>`:''}
-              <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${catBadge}</div>
+              <div style="font-weight:600;font-size:14px;color:var(--primary);margin-bottom:2px;word-break:break-word">${esc(d.title)}</div>
+              ${d.description?`<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${esc(d.description)}</div>`:''}
+              <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${catBadge}${typeBadge}</div>
             </div>
           </div>
+          ${metaHtml}
           ${tags?`<div style="display:flex;gap:4px;flex-wrap:wrap">${tags}</div>`:''}
           ${notesHtml}
           <div style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px">
-            <span>📎 ${(d.file_name||'').length>25?(d.file_name||'').slice(0,22)+'...':(d.file_name||'')} · ${sz}</span>
-            <span>${d.created_at?d.created_at.slice(0,10):''}</span>
+            <span>📎 ${esc((d.file_name||'').length>25?(d.file_name||'').slice(0,22)+'...':(d.file_name||''))} · ${sz}</span>
+            <span>${d.uploader_name||''} · ${d.created_at?d.created_at.slice(0,10):''}</span>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn btn-sm btn-primary" style="flex:1;min-width:60px" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">👁 Xem</button>
@@ -736,6 +817,10 @@ function showUploadModal() {
   document.getElementById('doc-cat-select').value = '';
   document.getElementById('doc-tags').value = '';
   document.getElementById('doc-file').value = '';
+  document.getElementById('doc-number').value = '';
+  document.getElementById('doc-issued-date').value = '';
+  document.getElementById('doc-issuer').value = '';
+  document.getElementById('doc-type-select').value = '';
   document.getElementById('upload-doc-msg').className = 'hidden';
   document.getElementById('doc-file-preview').classList.add('hidden');
   document.getElementById('doc-dropzone').style.display = '';
@@ -781,10 +866,14 @@ function clearDocFile() {
 }
 
 async function submitUploadDoc() {
-  const title = document.getElementById('doc-title').value.trim();
-  const desc  = document.getElementById('doc-desc').value.trim();
-  const catId = document.getElementById('doc-cat-select').value;
-  const tags  = document.getElementById('doc-tags').value.trim();
+  const title      = document.getElementById('doc-title').value.trim();
+  const desc       = document.getElementById('doc-desc').value.trim();
+  const catId      = document.getElementById('doc-cat-select').value;
+  const tags       = document.getElementById('doc-tags').value.trim();
+  const docNumber  = document.getElementById('doc-number').value.trim();
+  const issuedDate = document.getElementById('doc-issued-date').value;
+  const issuer     = document.getElementById('doc-issuer').value.trim();
+  const docTypeId  = document.getElementById('doc-type-select').value;
   const file  = document.getElementById('doc-file').files[0];
   const btn   = document.getElementById('btn-upload-doc');
   if (!title) { showMsg('upload-doc-msg','error','Vui lòng nhập tiêu đề'); return; }
@@ -793,6 +882,8 @@ async function submitUploadDoc() {
   const fd = new FormData();
   fd.append('title', title); fd.append('description', desc);
   fd.append('category_id', catId); fd.append('tags', tags);
+  fd.append('doc_number', docNumber); fd.append('issued_date', issuedDate);
+  fd.append('issuer', issuer); fd.append('doc_type_id', docTypeId);
   fd.append('file', file);
   btn.disabled = true; btn.textContent = '⏳ Đang tải...';
   try {
@@ -884,6 +975,98 @@ async function submitCategory() {
     renderDocCategories();
     loadDocs();
   } catch(e) { showMsg('add-cat-msg','error', e.message || 'Lỗi lưu danh mục'); }
+}
+
+// ─── DOC TYPES ───
+function populateTypeSelect() {
+  const sel = document.getElementById('doc-type-select');
+  if (!sel) return;
+  let opts = '<option value="">-- Không phân loại --</option>';
+  docTypes.forEach(t => { opts += `<option value="${t.id}">${esc(t.name)}</option>`; });
+  sel.innerHTML = opts;
+}
+
+function renderDocTypes() {
+  const el = document.getElementById('doc-type-list');
+  if (!el) return;
+  let html = `<div class="doc-cat-item ${docActiveType===null?'active':''}" onclick="filterDocType(null)"><span>🗂️</span> Tất cả</div>`;
+  docTypes.forEach(t => {
+    const active = docActiveType == t.id;
+    html += `<div class="doc-cat-item ${active?'active':''}" onclick="filterDocType(${t.id})"><span>📋</span> ${esc(t.name)}</div>`;
+  });
+  if (!docTypes.length) html += `<div style="font-size:12px;color:rgba(255,255,255,0.4);padding:6px 4px">Chưa có loại nào</div>`;
+  el.innerHTML = html;
+}
+
+async function showDocTypesModal() {
+  showModal('doc-types-modal');
+  await refreshDocTypesList();
+}
+
+async function refreshDocTypesList() {
+  const el = document.getElementById('doc-types-list');
+  el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--muted)">Đang tải...</div>';
+  try {
+    docTypes = await api('GET', '/api/docs/types');
+    if (!docTypes.length) {
+      el.innerHTML = '<div style="text-align:center;padding:16px;color:var(--muted);font-size:13px">Chưa có loại văn bản nào</div>';
+    } else {
+      el.innerHTML = docTypes.map(t => `
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border)">
+          <span style="font-size:14px;font-weight:500">📋 ${esc(t.name)}</span>
+          <div style="display:flex;gap:6px">
+            <button class="btn btn-sm btn-outline" style="padding:4px 8px;font-size:12px" onclick="startEditType(${t.id},'${esc(t.name)}')">✏️</button>
+            <button class="btn btn-sm" style="padding:4px 8px;font-size:12px;color:var(--danger);border-color:var(--danger)" onclick="deleteDocType(${t.id},'${esc(t.name)}')">🗑</button>
+          </div>
+        </div>`).join('');
+    }
+    populateTypeSelect();
+    renderDocTypes();
+  } catch(e) {
+    el.innerHTML = `<div style="padding:16px;color:var(--danger)">${e.message}</div>`;
+  }
+}
+
+function startEditType(id, name) {
+  document.getElementById('edit-type-id').value = id;
+  document.getElementById('type-name-input').value = name;
+  document.getElementById('btn-save-type').textContent = '💾 Lưu';
+  document.getElementById('btn-cancel-type').classList.remove('hidden');
+  document.getElementById('type-name-input').focus();
+}
+
+function cancelEditType() {
+  document.getElementById('edit-type-id').value = '';
+  document.getElementById('type-name-input').value = '';
+  document.getElementById('btn-save-type').textContent = '➕ Thêm';
+  document.getElementById('btn-cancel-type').classList.add('hidden');
+}
+
+async function submitDocType() {
+  const id   = document.getElementById('edit-type-id').value;
+  const name = document.getElementById('type-name-input').value.trim();
+  const msg  = document.getElementById('doc-types-msg');
+  msg.className = 'hidden';
+  if (!name) { showMsg('doc-types-msg','error','Nhập tên loại văn bản'); return; }
+  try {
+    if (id) {
+      await api('PUT', `/api/docs/types/${id}`, { name });
+    } else {
+      await api('POST', '/api/docs/types', { name });
+    }
+    cancelEditType();
+    await refreshDocTypesList();
+  } catch(e) {
+    showMsg('doc-types-msg','error', e.message || 'Lỗi lưu');
+  }
+}
+
+async function deleteDocType(id, name) {
+  if (!confirm(`Xoá loại văn bản "${name}"?`)) return;
+  try {
+    await api('DELETE', `/api/docs/types/${id}`);
+    await refreshDocTypesList();
+  } catch(e) { showMsg('doc-types-msg','error', e.message || 'Lỗi xoá'); }
 }
 
 // ─── PERMISSIONS ───
@@ -985,7 +1168,7 @@ function closeSidebar() {
 }
 document.getElementById('overlay').addEventListener('click', closeSidebar);
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') ['upload-doc-modal','preview-doc-modal','add-cat-modal','doc-perm-modal','pwd-modal','notes-doc-modal'].forEach(closeModal);
+  if (e.key === 'Escape') ['upload-doc-modal','preview-doc-modal','add-cat-modal','doc-perm-modal','pwd-modal','notes-doc-modal','doc-types-modal'].forEach(closeModal);
 });
 
 // ─── START ───
