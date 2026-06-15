@@ -679,7 +679,7 @@ function syncEditTime(id) {
 
 function onEditDatePicked(val) {
   if (!val) return;
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStr();
   const safe  = val > today ? today : val;
   const [y,m,d] = safe.split('-');
   document.getElementById('edit-date-display').value = d+'/'+m+'/'+y;
@@ -726,7 +726,7 @@ async function openEditOT(id) {
   document.getElementById('edit-date-display').value = d+'/'+mo+'/'+y;
   document.getElementById('edit-ot-date').value = r.request_date;
   document.getElementById('edit-date-picker').value = r.request_date;
-  document.getElementById('edit-date-picker').max   = new Date().toISOString().split('T')[0];
+  document.getElementById('edit-date-picker').max   = localDateStr();
 
   // Set loai OT badge
   const rules = getOTRules(r.request_date);
@@ -761,7 +761,7 @@ async function submitEditOT() {
   if (end <= start || end > rules.maxEnd) {
     showMsg('edit-ot-msg', 'error', 'Giờ kết thúc không hợp lệ. ' + rules.hint); return;
   }
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStr();
   if (date === today) {
     const now = new Date();
     const nowStr = String(now.getHours()).padStart(2,'0')+':'+String(now.getMinutes()).padStart(2,'0');
@@ -1051,7 +1051,7 @@ function initDatePicker(todayStr) {
 
 function onDatePicked(val) {
   if (!val) return;
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStr();
   const safe  = val > today ? today : val;
   const [y,m,d] = safe.split('-');
   document.getElementById('ot-date-display').value = d+'/'+m+'/'+y;
@@ -1159,7 +1159,7 @@ function updateHoursPreview() {
 }
 
 function renderSubmitOT() {
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStr();
   set('content-area', `
     <div class="card" style="max-width:600px">
       <h3>📝 Khai báo làm thêm giờ</h3>
@@ -1288,7 +1288,7 @@ async function submitOT() {
   }
 
   // Khong duoc khai bao vuot qua thoi diem hien tai (neu chon ngay hom nay)
-  const today = new Date().toISOString().split('T')[0];
+  const today = localDateStr();
   if (date === today) {
     const now = new Date();
     const nowStr = String(now.getHours()).padStart(2,'0') + ':' + String(now.getMinutes()).padStart(2,'0');
@@ -1906,6 +1906,10 @@ async function api(method, url, body) {
 }
 
 function set(id, html) { const el = document.getElementById(id); if(el) el.innerHTML = html; }
+function localDateStr() {
+  const n = new Date();
+  return n.getFullYear() + '-' + String(n.getMonth()+1).padStart(2,'0') + '-' + String(n.getDate()).padStart(2,'0');
+}
 function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
 function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
 function showMsg(id, type, msg) {
