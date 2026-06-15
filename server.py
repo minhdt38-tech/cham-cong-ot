@@ -1524,32 +1524,88 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def api_docs_update(self, doc_id):
         sess = self.require_auth()
         if not sess: return
-        body = self.read_json()
+        ct = self.headers.get('Content-Type', '')
+        if 'multipart/form-data' in ct:
+            fields, files = self.read_multipart()
+        else:
+            fields = self.read_json()
+            files = {}
         with get_db() as db:
-            row = db.execute('SELECT uploaded_by FROM documents WHERE id=?', (doc_id,)).fetchone()
+            row = db.execute('SELECT * FROM documents WHERE id=?', (doc_id,)).fetchone()
             if not row:
                 self.send_json({'error': 'Khong tim thay tai lieu'}, 404); return
             if sess['role'] != 'manager' and row['uploaded_by'] != sess['userId']:
                 self.send_json({'error': 'Khong co quyen chinh sua'}, 403); return
-            fields, params = [], []
-            if 'notes' in body:
-                fields.append('notes=?'); params.append(body['notes'])
-            if 'title' in body and body['title'].strip():
-                fields.append('title=?'); params.append(body['title'].strip())
-            if 'tags' in body:
-                fields.append('tags=?'); params.append(body['tags'].strip())
-            if 'doc_number' in body:
-                fields.append('doc_number=?'); params.append(body['doc_number'])
-            if 'issued_date' in body:
-                fields.append('issued_date=?'); params.append(body['issued_date'] or None)
-            if 'issuer' in body:
-                fields.append('issuer=?'); params.append(body['issuer'])
-            if 'doc_type_id' in body:
-                fields.append('doc_type_id=?'); params.append(body['doc_type_id'] or None)
-            if not fields:
+            upd, params = [], []
+            # Text fields
+            for key, col in [('title','title'), ('description','description'),
+                              ('doc_number','doc_number'), ('issuer','issuer'),
+                              ('tags','tags'), ('notes','notes')]:
+                if key in fields:
+                    val = fields[key].strip() if isinstance(fields[key], str) else fields[key]
+                    if key == 'title' and not val:
+                        self.send_json({'error': 'Tieu de khong duoc de trong'}, 400); return
+                    upd.append(f'{col}=?'); params.append(val)
+            # Date field (nullable)
+            if 'issued_date' in fields:
+                val = (fields['issued_date'] or '').strip() or None
+                upd.append('issued_date=?'); params.append(val)
+            # FK fields (nullable int)
+            for key, col in [('doc_type_id','doc_type_id'), ('category_id','category_id')]:
+                if key in fields:
+                    raw = fields[key]
+                    try:
+                        val = int(raw) if raw else None
+                    except (ValueError, TypeError):
+                        val = None
+                    upd.append(f'{col}=?'); params.append(val)
+            # File replacement
+            if 'file' in files:
+                fitem = files['file']
+                orig_name = fitem.filename
+                ext = os.path.splitext(orig_name)[1].lower()
+                allowed = {'.pdf': 'pdf', '.docx': 'docx', '.xlsx': 'xlsx',
+                           '.jpg': 'image', '.jpeg': 'image', '.png': 'image'}
+                if ext not in allowed:
+                    self.send_json({'error': 'Dinh dang khong ho tro (.pdf .docx .xlsx .jpg .png)'}, 400); return
+                file_bytes = fitem.file.read()
+                if len(file_bytes) > 20 * 1024 * 1024:
+                    self.send_json({'error': 'File toi da 20MB'}, 400); return
+                ts = int(datetime.now(VN_TZ).timestamp() * 1000)
+                safe_name = f'doc_{ts}_{sess["userId"]}{ext}'
+                ct_map = {'.pdf':'application/pdf',
+                          '.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                          '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                          '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png'}
+                content_type = ct_map.get(ext, 'application/octet-stream')
+                # Delete old file
+                try:
+                    old_fp = row['file_path']
+                    if old_fp.startswith('r2:'):
+                        r2_delete(old_fp[3:])
+                    else:
+                        fpath = os.path.join(DATA_DIR, old_fp.lstrip('/'))
+                        if os.path.exists(fpath):
+                            os.remove(fpath)
+                except Exception:
+                    pass
+                # Save new file
+                if R2_ENABLED:
+                    ok = r2_upload(file_bytes, safe_name, content_type)
+                    if not ok:
+                        self.send_json({'error': 'Loi upload len cloud storage'}, 500); return
+                    new_fp = f'r2:{safe_name}'
+                else:
+                    fpath = os.path.join(UPLOADS_DIR, safe_name)
+                    with open(fpath, 'wb') as f:
+                        f.write(file_bytes)
+                    new_fp = f'/uploads/{safe_name}'
+                upd.extend(['file_path=?', 'file_name=?', 'file_type=?', 'file_size=?'])
+                params.extend([new_fp, orig_name, allowed[ext], len(file_bytes)])
+            if not upd:
                 self.send_json({'ok': True}); return
             params.append(doc_id)
-            db.execute(f"UPDATE documents SET {', '.join(fields)} WHERE id=?", params)
+            db.execute(f"UPDATE documents SET {', '.join(upd)} WHERE id=?", params)
             db.commit()
         self.send_json({'ok': True})
 

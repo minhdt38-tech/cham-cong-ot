@@ -434,29 +434,95 @@
   </div>
 </div>
 
-<!-- Modal ghi chú tài liệu -->
-<div id="notes-doc-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('notes-doc-modal')">
-  <div class="modal-box" style="max-width:520px">
-    <div class="modal-header">
+<!-- Modal chỉnh sửa tài liệu -->
+<div id="edit-doc-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('edit-doc-modal')">
+  <div class="modal-box" style="max-width:600px;border-radius:12px;overflow:hidden;padding:0">
+    <div style="background:var(--primary);padding:18px 20px;display:flex;align-items:center;justify-content:space-between">
       <div>
-        <h3>📝 Ghi chú tài liệu</h3>
-        <div id="notes-doc-subtitle" style="font-size:12px;color:rgba(255,255,255,0.6);margin-top:3px;font-weight:400;text-transform:none;letter-spacing:0"></div>
+        <div style="color:#fff;font-weight:700;font-size:16px">✏️ Chỉnh sửa tài liệu</div>
+        <div id="edit-doc-subtitle" style="color:rgba(255,255,255,0.6);font-size:12px;margin-top:2px"></div>
       </div>
-      <button class="close-btn" onclick="closeModal('notes-doc-modal')">✕</button>
+      <button onclick="closeModal('edit-doc-modal')" class="modal-close">✕</button>
     </div>
-    <div class="modal-body">
-      <div id="notes-doc-msg" class="hidden" style="margin-bottom:12px"></div>
-      <div class="form-group" style="margin-bottom:0">
-        <label>Nội dung ghi chú</label>
-        <textarea id="notes-doc-content" rows="6" placeholder="Nhập ghi chú, lưu ý, hướng dẫn sử dụng tài liệu..." style="width:100%;min-height:140px"></textarea>
+    <div style="padding:20px;background:var(--bg);max-height:70vh;overflow-y:auto">
+      <div id="edit-doc-msg" class="hidden" style="margin-bottom:12px"></div>
+      <input type="hidden" id="edit-doc-id">
+      <div class="form-group">
+        <label>Tiêu đề <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="edit-doc-title" style="width:100%">
       </div>
-      <div style="font-size:12px;color:var(--muted);margin-top:8px">Ghi chú sẽ hiển thị trên thẻ tài liệu để dễ tham khảo nhanh.</div>
+      <div class="form-group">
+        <label>Mô tả</label>
+        <textarea id="edit-doc-desc" rows="2" style="width:100%;min-height:56px"></textarea>
+      </div>
+      <div style="border-top:1px dashed var(--border);margin:14px 0 12px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--muted);white-space:nowrap;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Thông tin văn bản</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Số văn bản</label>
+          <input type="text" id="edit-doc-number" placeholder="VD: 123/2024/QĐ-VH" style="width:100%">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Ngày ban hành</label>
+          <input type="date" id="edit-doc-issued-date" style="width:100%">
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Cơ quan ban hành</label>
+          <input type="text" id="edit-doc-issuer" placeholder="VD: Hội đồng quản trị" style="width:100%">
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Loại văn bản</label>
+          <select id="edit-doc-type" style="width:100%">
+            <option value="">-- Không phân loại --</option>
+          </select>
+        </div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px">
+        <div class="form-group" style="margin-bottom:0">
+          <label>Danh mục</label>
+          <select id="edit-doc-cat" style="width:100%">
+            <option value="">-- Không có --</option>
+          </select>
+        </div>
+        <div class="form-group" style="margin-bottom:0">
+          <label>Tags <span style="font-weight:400;color:var(--muted);font-size:10px">phân cách bằng dấu phẩy</span></label>
+          <input type="text" id="edit-doc-tags" placeholder="hợp đồng, mẫu, 2024" style="width:100%">
+        </div>
+      </div>
+      <div style="border-top:1px dashed var(--border);margin:14px 0 12px;display:flex;align-items:center;gap:8px">
+        <span style="font-size:11px;color:var(--muted);white-space:nowrap;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Thay thế tệp</span>
+        <div style="flex:1;height:1px;background:var(--border)"></div>
+        <span style="font-size:10px;color:var(--muted);font-style:italic">không bắt buộc</span>
+      </div>
+      <div style="background:#f8f9fa;border:1px solid var(--border);border-radius:8px;padding:10px 14px;margin-bottom:10px;font-size:12px;color:var(--muted)">
+        📎 Tệp hiện tại: <span id="edit-current-file" style="font-weight:600;color:var(--primary)"></span>
+      </div>
+      <div id="edit-doc-dropzone"
+        onclick="document.getElementById('edit-doc-file').click()"
+        ondragover="event.preventDefault();this.style.borderColor='var(--accent)'"
+        ondragleave="this.style.borderColor='var(--border)'"
+        ondrop="handleEditDocDrop(event)"
+        style="border:2px dashed var(--border);border-radius:8px;padding:16px;text-align:center;cursor:pointer;transition:all .2s">
+        <div style="font-size:11px;color:var(--muted)">Kéo thả hoặc <span style="color:var(--accent);font-weight:600">click</span> để chọn tệp mới thay thế</div>
+        <input type="file" id="edit-doc-file" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png" style="display:none" onchange="onEditDocFileChange(this)">
+      </div>
+      <div id="edit-doc-file-preview" class="hidden" style="background:#f8f9fa;border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;margin-top:8px">
+        <span id="edit-doc-file-icon" style="font-size:24px">📄</span>
+        <div style="flex:1;min-width:0">
+          <div id="edit-doc-file-name" style="font-size:13px;font-weight:600;color:var(--primary)"></div>
+          <div id="edit-doc-file-size" style="font-size:11px;color:var(--muted)"></div>
+        </div>
+        <button onclick="clearEditDocFile()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px">✕</button>
+      </div>
     </div>
-    <div class="modal-footer">
-      <button class="btn btn-outline" onclick="closeModal('notes-doc-modal')">Đóng</button>
-      <button class="btn btn-primary" onclick="submitNotes()">💾 Lưu ghi chú</button>
+    <div style="padding:14px 20px;background:#f8f9fa;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end">
+      <button class="btn btn-outline" onclick="closeModal('edit-doc-modal')">Huỷ</button>
+      <button class="btn btn-primary" id="btn-edit-doc" onclick="submitEditDoc()" style="min-width:140px">💾 Lưu thay đổi</button>
     </div>
-    <input type="hidden" id="notes-doc-id">
   </div>
 </div>
 
@@ -511,6 +577,7 @@
 let currentUser = null;
 let docCategories = [];
 let docTypes = [];
+let allDocs = [];
 let docActiveCategory = null;
 let docActiveTag = null;
 let docActiveType = null;
@@ -693,6 +760,7 @@ async function loadDocs() {
   if (docSearchQ) params.set('q', docSearchQ);
   try {
     const docs = await api('GET', '/api/docs?' + params.toString());
+    allDocs = docs || [];
 
     // Tag cloud
     const tagCount = {};
@@ -723,10 +791,7 @@ async function loadDocs() {
           `<span onclick="filterDocTag('${esc(t)}')" style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,0.06);color:var(--muted);cursor:pointer">${esc(t)}</span>`
         ).join('');
         const canDelete = currentUser.role==='manager' || d.uploaded_by==currentUser.id;
-        const notesHtml = d.notes ? `
-          <div style="background:#fffbf0;border:1px solid #f0e4c0;border-radius:6px;padding:8px 10px;font-size:12px;color:#6b5d3f;line-height:1.5;white-space:pre-wrap;word-break:break-word">
-            📝 ${esc(d.notes)}
-          </div>` : '';
+        const canEdit   = currentUser.role==='manager' || d.uploaded_by==currentUser.id;
         // Metadata văn bản
         const metaRows = [];
         if (d.doc_number) metaRows.push(`<span>🔢 <b>Số VB:</b> ${esc(d.doc_number)}</span>`);
@@ -747,15 +812,14 @@ async function loadDocs() {
           </div>
           ${metaHtml}
           ${tags?`<div style="display:flex;gap:4px;flex-wrap:wrap">${tags}</div>`:''}
-          ${notesHtml}
           <div style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px">
             <span>📎 ${esc((d.file_name||'').length>25?(d.file_name||'').slice(0,22)+'...':(d.file_name||''))} · ${sz}</span>
-            <span>${d.uploader_name||''} · ${d.created_at?d.created_at.slice(0,10):''}</span>
+            <span>${esc(d.uploader_name||'')} · ${d.created_at?d.created_at.slice(0,10):''}</span>
           </div>
           <div style="display:flex;gap:6px;flex-wrap:wrap">
             <button class="btn btn-sm btn-primary" style="flex:1;min-width:60px" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">👁 Xem</button>
             <button class="btn btn-sm btn-outline" style="flex:1;min-width:60px" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name||'')}')">⬇️ Tải</button>
-            <button class="btn btn-sm btn-outline" title="${d.notes?'Sửa ghi chú':'Thêm ghi chú'}" onclick="editNotes(${d.id},'${esc(d.notes||'')}','${esc(d.title)}')" style="padding:7px 10px">${d.notes?'📝':'📋'}</button>
+            ${canEdit?`<button class="btn btn-sm btn-outline" title="Chỉnh sửa tài liệu" onclick="editDoc(${d.id})" style="padding:7px 10px">✏️</button>`:''}
             ${canDelete?`<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);border-width:1.5px;padding:7px 10px" onclick="deleteDoc(${d.id},'${esc(d.title)}')">🗑</button>`:''}
           </div>
         </div>`;
@@ -892,32 +956,130 @@ async function submitUploadDoc() {
     if (d.ok) {
       closeModal('upload-doc-modal');
       await loadDocs();
-      // Auto-open notes modal for the new doc
-      if (d.id) editNotes(d.id, '', title);
     } else { showMsg('upload-doc-msg','error', d.error || 'Lỗi upload'); }
   } catch(e) { showMsg('upload-doc-msg','error','Lỗi kết nối'); }
   btn.disabled = false; btn.textContent = '⬆️ Tải lên';
 }
 
-// ─── NOTES ───
-function editNotes(docId, currentNotes, docTitle) {
-  document.getElementById('notes-doc-id').value = docId;
-  document.getElementById('notes-doc-content').value = currentNotes || '';
-  document.getElementById('notes-doc-subtitle').textContent = docTitle || '';
-  document.getElementById('notes-doc-msg').className = 'hidden';
-  showModal('notes-doc-modal');
+// ─── EDIT DOC ───
+function populateEditSelects() {
+  // Populate category select in edit modal
+  const catSel = document.getElementById('edit-doc-cat');
+  if (catSel) {
+    const { roots, children } = buildCategoryTree();
+    let opts = '<option value="">-- Không có --</option>';
+    roots.forEach(r => {
+      opts += `<option value="${r.id}">${esc(r.name)}</option>`;
+      children(r.id).forEach(c => { opts += `<option value="${c.id}">　└ ${esc(c.name)}</option>`; });
+    });
+    catSel.innerHTML = opts;
+  }
+  // Populate type select in edit modal
+  const typeSel = document.getElementById('edit-doc-type');
+  if (typeSel) {
+    let opts = '<option value="">-- Không phân loại --</option>';
+    docTypes.forEach(t => { opts += `<option value="${t.id}">${esc(t.name)}</option>`; });
+    typeSel.innerHTML = opts;
+  }
 }
 
-async function submitNotes() {
-  const docId   = document.getElementById('notes-doc-id').value;
-  const notes   = document.getElementById('notes-doc-content').value.trim();
+function editDoc(id) {
+  const d = allDocs.find(x => x.id == id);
+  if (!d) return;
+  populateEditSelects();
+  document.getElementById('edit-doc-id').value = id;
+  document.getElementById('edit-doc-subtitle').textContent = d.file_name || '';
+  document.getElementById('edit-doc-title').value = d.title || '';
+  document.getElementById('edit-doc-desc').value = d.description || '';
+  document.getElementById('edit-doc-number').value = d.doc_number || '';
+  document.getElementById('edit-doc-issued-date').value = d.issued_date || '';
+  document.getElementById('edit-doc-issuer').value = d.issuer || '';
+  document.getElementById('edit-doc-type').value = d.doc_type_id || '';
+  document.getElementById('edit-doc-cat').value = d.category_id || '';
+  document.getElementById('edit-doc-tags').value = d.tags || '';
+  document.getElementById('edit-current-file').textContent = d.file_name || '';
+  document.getElementById('edit-doc-file').value = '';
+  document.getElementById('edit-doc-file-preview').classList.add('hidden');
+  document.getElementById('edit-doc-dropzone').style.borderColor = '';
+  document.getElementById('edit-doc-msg').className = 'hidden';
+  showModal('edit-doc-modal');
+}
+
+function onEditDocFileChange(input) {
+  if (input.files && input.files[0]) showEditDocFilePreview(input.files[0]);
+}
+
+function handleEditDocDrop(e) {
+  e.preventDefault();
+  document.getElementById('edit-doc-dropzone').style.borderColor = '';
+  const file = e.dataTransfer.files[0];
+  if (!file) return;
+  const allowed = ['.pdf','.docx','.xlsx','.jpg','.jpeg','.png'];
+  const ext = '.' + file.name.split('.').pop().toLowerCase();
+  if (!allowed.includes(ext)) { showMsg('edit-doc-msg','error','Định dạng không hỗ trợ'); return; }
+  const dt = new DataTransfer(); dt.items.add(file);
+  document.getElementById('edit-doc-file').files = dt.files;
+  showEditDocFilePreview(file);
+}
+
+function showEditDocFilePreview(file) {
+  const icons = {pdf:'📕',docx:'📝',xlsx:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'};
+  const ext = file.name.split('.').pop().toLowerCase();
+  const sz = file.size > 1048576 ? (file.size/1048576).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB';
+  document.getElementById('edit-doc-file-icon').textContent = icons[ext] || '📄';
+  document.getElementById('edit-doc-file-name').textContent = file.name;
+  document.getElementById('edit-doc-file-size').textContent = sz + ' · .' + ext.toUpperCase();
+  document.getElementById('edit-doc-file-preview').classList.remove('hidden');
+}
+
+function clearEditDocFile() {
+  document.getElementById('edit-doc-file').value = '';
+  document.getElementById('edit-doc-file-preview').classList.add('hidden');
+}
+
+async function submitEditDoc() {
+  const id    = document.getElementById('edit-doc-id').value;
+  const title = document.getElementById('edit-doc-title').value.trim();
+  const btn   = document.getElementById('btn-edit-doc');
+  if (!title) { showMsg('edit-doc-msg','error','Tiêu đề không được trống'); return; }
+  const file = document.getElementById('edit-doc-file').files[0];
+  if (file && file.size > 20*1024*1024) { showMsg('edit-doc-msg','error','File tối đa 20MB'); return; }
+  btn.disabled = true; btn.textContent = '⏳ Đang lưu...';
   try {
-    await api('PUT', `/api/docs/${docId}`, { notes });
-    closeModal('notes-doc-modal');
+    if (file) {
+      // multipart — gửi tệp mới + metadata
+      const fd = new FormData();
+      fd.append('title', title);
+      fd.append('description', document.getElementById('edit-doc-desc').value.trim());
+      fd.append('doc_number',  document.getElementById('edit-doc-number').value.trim());
+      fd.append('issued_date', document.getElementById('edit-doc-issued-date').value);
+      fd.append('issuer',      document.getElementById('edit-doc-issuer').value.trim());
+      fd.append('doc_type_id', document.getElementById('edit-doc-type').value);
+      fd.append('category_id', document.getElementById('edit-doc-cat').value);
+      fd.append('tags',        document.getElementById('edit-doc-tags').value.trim());
+      fd.append('file', file);
+      const r = await fetch(`/api/docs/${id}`, {method:'PUT', body: fd});
+      const data = await r.json();
+      if (!data.ok) throw new Error(data.error || 'Lỗi lưu');
+    } else {
+      // JSON — chỉ cập nhật metadata
+      await api('PUT', `/api/docs/${id}`, {
+        title,
+        description: document.getElementById('edit-doc-desc').value.trim(),
+        doc_number:  document.getElementById('edit-doc-number').value.trim(),
+        issued_date: document.getElementById('edit-doc-issued-date').value || null,
+        issuer:      document.getElementById('edit-doc-issuer').value.trim(),
+        doc_type_id: document.getElementById('edit-doc-type').value || null,
+        category_id: document.getElementById('edit-doc-cat').value || null,
+        tags:        document.getElementById('edit-doc-tags').value.trim(),
+      });
+    }
+    closeModal('edit-doc-modal');
     loadDocs();
   } catch(e) {
-    showMsg('notes-doc-msg', 'error', e.message || 'Lỗi lưu ghi chú');
+    showMsg('edit-doc-msg','error', e.message || 'Lỗi lưu');
   }
+  btn.disabled = false; btn.textContent = '💾 Lưu thay đổi';
 }
 
 // ─── CATEGORIES ───
@@ -1168,7 +1330,7 @@ function closeSidebar() {
 }
 document.getElementById('overlay').addEventListener('click', closeSidebar);
 document.addEventListener('keydown', e => {
-  if (e.key === 'Escape') ['upload-doc-modal','preview-doc-modal','add-cat-modal','doc-perm-modal','pwd-modal','notes-doc-modal','doc-types-modal'].forEach(closeModal);
+  if (e.key === 'Escape') ['upload-doc-modal','preview-doc-modal','add-cat-modal','doc-perm-modal','pwd-modal','edit-doc-modal','doc-types-modal'].forEach(closeModal);
 });
 
 // ─── START ───
