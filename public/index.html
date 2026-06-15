@@ -2294,6 +2294,40 @@ async function downloadDoc(id, fileNameEnc) {
   document.body.appendChild(a); a.click(); document.body.removeChild(a);
 }
 
+// ─── UTILITIES ───
+function showModal(id) { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+function showMsg(id, type, msg) {
+  const el = document.getElementById(id);
+  el.className = `alert alert-${type}`;
+  el.textContent = msg;
+}
+function formatDate(d) {
+  if (!d) return '';
+  const [y,m,day] = d.split('-');
+  const dow = ['CN','T2','T3','T4','T5','T6','T7'][new Date(d).getDay()];
+  return `${dow} ${day}/${m}/${y}`;
+}
+async function logout() {
+  await api('POST', '/api/logout');
+  location.reload();
+}
+function toggleSidebar() {
+  document.getElementById('sidebar').classList.toggle('open');
+  document.getElementById('overlay').classList.toggle('show');
+}
+function closeSidebar() {
+  document.getElementById('sidebar').classList.remove('open');
+  document.getElementById('overlay').classList.remove('show');
+}
+document.getElementById('overlay').addEventListener('click', closeSidebar);
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    ['review-modal','detail-modal','user-modal','pwd-modal','img-modal','reset-pwd-modal',
+     'doc-perm-modal','upload-doc-modal','preview-doc-modal','add-cat-modal'].forEach(closeModal);
+  }
+});
+
 // ─── KHỞI ĐỘNG ───
 init();
 
