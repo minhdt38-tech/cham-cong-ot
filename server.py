@@ -576,14 +576,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json({'error': 'Khong the dat chinh no lam cha'}, 400); return
         with get_db() as db:
             if parent_id:
-                # Prevent circular: parent_id must not be a child of cat_id
-                child = db.execute('SELECT id FROM doc_categories WHERE parent_id=?', (cat_id,)).fetchall()
-                if any(r[0] == parent_id for r in child):
+                # Prevent circular: recursively collect all descendants of cat_id
+                def get_descendants(anc_id):
+                    kids = [r[0] for r in db.execute(
+                        'SELECT id FROM doc_categories WHERE parent_id=?', (anc_id,)).fetchall()]
+                    result = list(kids)
+                    for k in kids:
+                        result.extend(get_descendants(k))
+                    return result
+                if parent_id in get_descendants(cat_id):
                     self.send_json({'error': 'Khong the tao vong lap danh muc'}, 400); return
-                # Enforce max 2 levels: target must be a root (no parent itself)
-                target = db.execute('SELECT parent_id FROM doc_categories WHERE id=?', (parent_id,)).fetchone()
-                if target and target[0]:
-                    self.send_json({'error': 'Chi ho tro 2 cap danh muc'}, 400); return
             db.execute('UPDATE doc_categories SET parent_id=? WHERE id=?', (parent_id, cat_id))
             db.commit()
         self.send_json({'ok': True})

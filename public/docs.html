@@ -722,119 +722,98 @@ function buildCategoryTree() {
 }
 
 function populateCategorySelects(excludeId) {
-  // Upload modal category select (flat list with indentation)
+  // Recursive option builder
+  const excluded = excludeId ? new Set([excludeId, ...catGetAllDescendants(excludeId)]) : new Set();
+  function buildOpts(parentId, depth, forParentSel) {
+    let opts = '';
+    const prefix = '　'.repeat(depth) + (depth > 0 ? '└ ' : '');
+    docCategories.filter(c => (c.parent_id || null) == (parentId || null)).forEach(c => {
+      if (forParentSel && excluded.has(c.id)) return;
+      opts += `<option value="${c.id}">${prefix}${c.name}</option>`;
+      opts += buildOpts(c.id, depth + 1, forParentSel);
+    });
+    return opts;
+  }
+  // Upload modal — category of document
   const sel = document.getElementById('doc-cat-select');
-  if (sel) {
-    const { roots, children } = buildCategoryTree();
-    let opts = '<option value="">-- Không có --</option>';
-    roots.forEach(r => {
-      opts += `<option value="${r.id}">${r.name}</option>`;
-      children(r.id).forEach(c => { opts += `<option value="${c.id}">　└ ${c.name}</option>`; });
-    });
-    sel.innerHTML = opts;
-  }
-  // Parent category select in category modal
+  if (sel) sel.innerHTML = '<option value="">-- Không có --</option>' + buildOpts(null, 0, false);
+  // Category modal — parent selector (exclude self & descendants)
   const pSel = document.getElementById('cat-parent-id');
-  if (pSel) {
-    const { roots, children } = buildCategoryTree();
-    let opts = '<option value="">-- Danh mục gốc --</option>';
-    roots.filter(r => r.id != excludeId).forEach(r => {
-      // Only allow top-level parents (no grandchildren to keep it 2-level)
-      const alreadyParent = docCategories.some(c => c.parent_id == r.id);
-      if (!alreadyParent || r.id == excludeId) return; // skip if already has children unless editing that one
-      opts += `<option value="${r.id}">${r.name}</option>`;
-    });
-    // Actually allow any root as parent
-    pSel.innerHTML = '<option value="">-- Danh mục gốc --</option>';
-    roots.filter(r => r.id != excludeId).forEach(r => {
-      pSel.innerHTML += `<option value="${r.id}">${r.name}</option>`;
-    });
-  }
+  if (pSel) pSel.innerHTML = '<option value="">-- Danh mục gốc --</option>' + buildOpts(null, 0, true);
 }
 
 /* ── Category tree state ── */
-let catExpanded = {};   // {id: bool} — true = expanded (default)
+let catExpanded = {};   // {id: bool} — default true (expanded)
 let catDragging = null; // id being dragged
+
+/* Collect all descendant IDs of a category (recursive) */
+function catGetAllDescendants(id) {
+  const result = [];
+  const queue = [id];
+  while (queue.length) {
+    const cur = queue.shift();
+    docCategories.filter(c => c.parent_id == cur).forEach(c => {
+      result.push(c.id); queue.push(c.id);
+    });
+  }
+  return result;
+}
+
+/* Recursively build HTML for a subtree rooted at parentId */
+function renderCatSubtree(parentId, isManager, depth) {
+  const kids = docCategories.filter(c => (c.parent_id || null) == (parentId || null));
+  if (!kids.length) return '';
+  const wrapClass = depth === 0 ? 'cat-tree-wrap' : 'cat-children';
+  const draggable = isManager ? 'draggable="true"' : '';
+  let html = `<div class="${wrapClass}">`;
+  kids.forEach(c => {
+    const active  = docActiveCategory == c.id;
+    const subkids = docCategories.filter(x => x.parent_id == c.id);
+    const hasKids = subkids.length > 0;
+    const expanded = catExpanded[c.id] !== false;
+    html += `
+      <div class="cat-tree-row" data-cat-id="${c.id}" ${draggable}
+           ondragstart="catDragStart(event,${c.id})"
+           ondragend="catDragEnd(event)"
+           ondragover="catDragOver(event,${c.id})"
+           ondragleave="catDragLeave(event,${c.id})"
+           ondrop="catDrop(event,${c.id})">
+        <div class="cat-tree-item ${active?'active':''}" onclick="filterDocCat(${c.id})">
+          ${hasKids
+            ? `<button class="cat-tree-toggle" onclick="event.stopPropagation();toggleCatExpand(${c.id})">${expanded?'▼':'▶'}</button>`
+            : `<span style="width:16px;flex-shrink:0;display:inline-block"></span>`}
+          <span class="cat-tree-icon" style="color:${c.color}">${expanded&&hasKids?'📂':'📁'}</span>
+          <span class="cat-tree-name" title="${esc(c.name)}">${esc(c.name)}</span>
+          ${hasKids?`<span class="cat-tree-badge">${subkids.length}</span>`:''}
+          ${isManager?`<button class="cat-action-btn" onclick="event.stopPropagation();editCategory(${c.id})">✏️</button>`:''}
+        </div>
+        ${hasKids && expanded ? renderCatSubtree(c.id, isManager, depth+1) : ''}
+      </div>`;
+  });
+  html += `</div>`;
+  return html;
+}
 
 function renderDocCategories() {
   const el = document.getElementById('doc-cat-list');
   if (!el) return;
-  const roots = docCategories.filter(c => !c.parent_id);
-  const getChildren = id => docCategories.filter(c => c.parent_id == id);
   const isManager = currentUser && currentUser.role === 'manager';
   const allActive = docActiveCategory === null;
-
-  // "Tất cả" header row — also a drop zone to promote to root
   let html = `
     <div class="cat-tree-row" id="cat-drop-root"
          ondragover="catDragOver(event,'root')"
          ondragleave="catDragLeave(event,'root')"
          ondrop="catDrop(event,null)">
       <div class="cat-tree-item ${allActive?'active':''}" onclick="filterDocCat(null)"
-           style="margin-bottom:2px;font-weight:600">
+           style="font-weight:600">
         <span class="cat-tree-icon">🗂️</span>
         <span class="cat-tree-name">Tất cả</span>
         <span class="cat-tree-badge">${docCategories.length}</span>
       </div>
     </div>
     <div style="height:1px;background:var(--border);margin:3px 0 5px"></div>
-    <div class="cat-tree-wrap" id="cat-tree-roots">
   `;
-
-  roots.forEach(r => {
-    const rActive = docActiveCategory == r.id;
-    const childList = getChildren(r.id);
-    const hasKids = childList.length > 0;
-    const expanded = catExpanded[r.id] !== false; // default open
-    const draggable = isManager ? 'draggable="true"' : '';
-
-    html += `
-      <div class="cat-tree-row" data-cat-id="${r.id}" ${draggable}
-           ondragstart="catDragStart(event,${r.id})"
-           ondragend="catDragEnd(event)"
-           ondragover="catDragOver(event,${r.id})"
-           ondragleave="catDragLeave(event,${r.id})"
-           ondrop="catDrop(event,${r.id})">
-        <div class="cat-tree-item ${rActive?'active':''}"
-             onclick="filterDocCat(${r.id})">
-          ${hasKids
-            ? `<button class="cat-tree-toggle" onclick="event.stopPropagation();toggleCatExpand(${r.id})">${expanded?'▼':'▶'}</button>`
-            : `<span style="width:16px;flex-shrink:0;display:inline-block"></span>`}
-          <span class="cat-tree-icon" style="color:${r.color}">${expanded&&hasKids?'📂':'📁'}</span>
-          <span class="cat-tree-name" title="${esc(r.name)}">${esc(r.name)}</span>
-          ${hasKids?`<span class="cat-tree-badge">${childList.length}</span>`:''}
-          ${isManager?`<button class="cat-action-btn" onclick="event.stopPropagation();editCategory(${r.id})">✏️</button>`:''}
-        </div>
-    `;
-
-    if (hasKids && expanded) {
-      html += `<div class="cat-children">`;
-      childList.forEach((c, ci) => {
-        const cActive = docActiveCategory == c.id;
-        const isLast = ci === childList.length - 1;
-        html += `
-          <div class="cat-tree-row" data-cat-id="${c.id}" ${draggable}
-               ondragstart="catDragStart(event,${c.id})"
-               ondragend="catDragEnd(event)"
-               ondragover="catDragOver(event,${c.id})"
-               ondragleave="catDragLeave(event,${c.id})"
-               ondrop="catDrop(event,${c.id})">
-            <div class="cat-tree-item ${cActive?'active':''}" onclick="filterDocCat(${c.id})">
-              <span class="cat-tree-connector">${isLast?'└':'├'}</span>
-              <span class="cat-tree-icon" style="color:${c.color};font-size:13px">📄</span>
-              <span class="cat-tree-name" title="${esc(c.name)}">${esc(c.name)}</span>
-              ${isManager?`<button class="cat-action-btn" onclick="event.stopPropagation();editCategory(${c.id})">✏️</button>`:''}
-            </div>
-          </div>
-        `;
-      });
-      html += `</div>`;
-    }
-
-    html += `</div>`;
-  });
-
-  html += `</div>`;
+  html += renderCatSubtree(null, isManager, 0);
   el.innerHTML = html;
 }
 
@@ -847,8 +826,7 @@ function toggleCatExpand(id) {
 function catDragStart(e, id) {
   catDragging = id;
   e.dataTransfer.effectAllowed = 'move';
-  const row = e.currentTarget;
-  setTimeout(() => row.classList.add('is-dragging'), 0);
+  setTimeout(() => e.currentTarget.classList.add('is-dragging'), 0);
 }
 
 function catDragEnd(e) {
@@ -862,7 +840,6 @@ function catDragOver(e, targetId) {
   e.dataTransfer.dropEffect = 'move';
   if (catDragging === null) return;
   if (targetId !== 'root' && catDragging == targetId) return;
-  // Highlight drop target item
   const item = e.currentTarget.querySelector(':scope > .cat-tree-item');
   if (item) {
     document.querySelectorAll('.cat-tree-item.drag-over').forEach(el => { if (el !== item) el.classList.remove('drag-over'); });
@@ -870,7 +847,7 @@ function catDragOver(e, targetId) {
   }
 }
 
-function catDragLeave(e, targetId) {
+function catDragLeave(e) {
   const item = e.currentTarget.querySelector(':scope > .cat-tree-item');
   if (item) item.classList.remove('drag-over');
 }
@@ -879,41 +856,25 @@ async function catDrop(e, targetParentId) {
   e.preventDefault();
   e.stopPropagation();
   document.querySelectorAll('.cat-tree-item.drag-over').forEach(el => el.classList.remove('drag-over'));
-
   const dragId = catDragging;
   catDragging = null;
-  if (dragId === null || dragId === targetParentId) return;
+  if (dragId === null || dragId == targetParentId) return;
 
   const dragCat = docCategories.find(c => c.id == dragId);
   if (!dragCat) return;
 
-  // Can't drop onto own children
   if (targetParentId) {
-    const targetCat = docCategories.find(c => c.id == targetParentId);
-    if (!targetCat) return;
-    // Dropping onto a child (would create grandchild) → reject
-    if (targetCat.parent_id == dragId) {
+    // Prevent dropping onto own descendant (circular)
+    if (catGetAllDescendants(dragId).includes(targetParentId)) {
       alert('Không thể chuyển danh mục vào danh mục con của chính nó'); return;
     }
-    // Target is itself a child → we'd create grandchild, not supported
-    if (targetCat.parent_id) {
-      alert('Chỉ hỗ trợ 2 cấp danh mục'); return;
-    }
-    // Already has this parent
-    if (dragCat.parent_id == targetParentId) return;
-    // Can't make a root (which has children) a child of another root
-    const dragHasKids = docCategories.some(c => c.parent_id == dragId);
-    if (dragHasKids) {
-      alert('Không thể chuyển danh mục đang có con thành danh mục con'); return;
-    }
+    if (dragCat.parent_id == targetParentId) return; // already there
   } else {
-    // Dropping on root → promote to root
     if (!dragCat.parent_id) return; // already root
   }
 
   try {
     await api('PATCH', `/api/docs/categories/${dragId}/parent`, { parent_id: targetParentId });
-    // Update local state
     const cat = docCategories.find(c => c.id == dragId);
     if (cat) cat.parent_id = targetParentId || null;
     populateCategorySelects();
@@ -1144,16 +1105,19 @@ async function submitUploadDoc() {
 
 // ─── EDIT DOC ───
 function populateEditSelects() {
-  // Populate category select in edit modal
+  // Populate category select in edit modal (recursive, N levels)
   const catSel = document.getElementById('edit-doc-cat');
   if (catSel) {
-    const { roots, children } = buildCategoryTree();
-    let opts = '<option value="">-- Không có --</option>';
-    roots.forEach(r => {
-      opts += `<option value="${r.id}">${esc(r.name)}</option>`;
-      children(r.id).forEach(c => { opts += `<option value="${c.id}">　└ ${esc(c.name)}</option>`; });
-    });
-    catSel.innerHTML = opts;
+    function buildOpts(parentId, depth) {
+      let opts = '';
+      const prefix = '　'.repeat(depth) + (depth > 0 ? '└ ' : '');
+      docCategories.filter(c => (c.parent_id || null) == (parentId || null)).forEach(c => {
+        opts += `<option value="${c.id}">${prefix}${esc(c.name)}</option>`;
+        opts += buildOpts(c.id, depth + 1);
+      });
+      return opts;
+    }
+    catSel.innerHTML = '<option value="">-- Không có --</option>' + buildOpts(null, 0);
   }
   // Populate type select in edit modal
   const typeSel = document.getElementById('edit-doc-type');
