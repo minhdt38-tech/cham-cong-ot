@@ -559,6 +559,35 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_doc_types_delete(int(m.group(1))); return
         self.send_json({'error': 'Not found'}, 404)
 
+    def do_PATCH(self):
+        path, _ = self.get_path_and_query()
+        m = re.match(r'^/api/docs/categories/(\d+)/parent$', path)
+        if m:
+            self.api_doc_categories_reparent(int(m.group(1))); return
+        self.send_json({'error': 'Not found'}, 404)
+
+    def api_doc_categories_reparent(self, cat_id):
+        sess = self.require_manager()
+        if not sess: return
+        body = self.read_json()
+        raw = body.get('parent_id')
+        parent_id = int(raw) if raw else None
+        if parent_id == cat_id:
+            self.send_json({'error': 'Khong the dat chinh no lam cha'}, 400); return
+        with get_db() as db:
+            if parent_id:
+                # Prevent circular: parent_id must not be a child of cat_id
+                child = db.execute('SELECT id FROM doc_categories WHERE parent_id=?', (cat_id,)).fetchall()
+                if any(r[0] == parent_id for r in child):
+                    self.send_json({'error': 'Khong the tao vong lap danh muc'}, 400); return
+                # Enforce max 2 levels: target must be a root (no parent itself)
+                target = db.execute('SELECT parent_id FROM doc_categories WHERE id=?', (parent_id,)).fetchone()
+                if target and target[0]:
+                    self.send_json({'error': 'Chi ho tro 2 cap danh muc'}, 400); return
+            db.execute('UPDATE doc_categories SET parent_id=? WHERE id=?', (parent_id, cat_id))
+            db.commit()
+        self.send_json({'ok': True})
+
     # --- AUTH ---
 
     def api_login(self):

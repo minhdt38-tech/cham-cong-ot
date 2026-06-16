@@ -102,6 +102,27 @@
   .doc-cat-item:hover { background:rgba(0,0,0,0.05); }
   .doc-cat-item.active { background:var(--accent-light); color:var(--primary); font-weight:600; border-left-color:var(--accent); }
 
+  /* ── CATEGORY TREE (File Explorer style) ── */
+  .cat-tree-wrap { display:flex; flex-direction:column; gap:1px; }
+  .cat-tree-row { position:relative; border-radius:5px; }
+  .cat-tree-item {
+    display:flex; align-items:center; padding:5px 6px; border-radius:5px;
+    font-size:13px; cursor:pointer; color:var(--text);
+    border:1.5px solid transparent; transition:background .1s; user-select:none; gap:2px;
+  }
+  .cat-tree-item:hover { background:rgba(0,0,0,0.05); }
+  .cat-tree-item.active { background:var(--accent-light); color:var(--primary); font-weight:600; border-color:var(--accent); }
+  .cat-tree-item.drag-over { background:rgba(196,136,58,0.12) !important; border:1.5px dashed var(--accent) !important; }
+  .cat-tree-row.is-dragging > .cat-tree-item { opacity:0.4; }
+  .cat-tree-toggle { background:none; border:none; cursor:pointer; padding:0 3px; color:var(--muted); font-size:10px; flex-shrink:0; line-height:1; }
+  .cat-tree-icon { font-size:14px; flex-shrink:0; }
+  .cat-tree-name { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .cat-tree-badge { font-size:10px; color:var(--muted); flex-shrink:0; }
+  .cat-action-btn { background:none; border:none; cursor:pointer; font-size:11px; color:var(--muted); padding:1px 3px; opacity:0; transition:opacity .15s; flex-shrink:0; }
+  .cat-tree-row:hover .cat-action-btn { opacity:1; }
+  .cat-children { padding-left:18px; border-left:1.5px dashed rgba(0,0,0,0.08); margin-left:9px; margin-top:1px; display:flex; flex-direction:column; gap:1px; }
+  .cat-tree-connector { font-size:11px; color:var(--muted); flex-shrink:0; margin-right:2px; }
+
   /* ── FORM ── */
   .form-group { display: flex; flex-direction: column; gap: 6px; margin-bottom: 16px; }
   label { font-size: 12.5px; font-weight: 600; color: var(--primary); text-transform: uppercase; letter-spacing: 0.04em; }
@@ -731,31 +752,176 @@ function populateCategorySelects(excludeId) {
   }
 }
 
+/* ── Category tree state ── */
+let catExpanded = {};   // {id: bool} — true = expanded (default)
+let catDragging = null; // id being dragged
+
 function renderDocCategories() {
   const el = document.getElementById('doc-cat-list');
   if (!el) return;
-  const { roots, children } = buildCategoryTree();
-  let html = `<div class="doc-cat-item ${docActiveCategory===null?'active':''}" onclick="filterDocCat(null)"><span>🗂️</span> Tất cả</div>`;
+  const roots = docCategories.filter(c => !c.parent_id);
+  const getChildren = id => docCategories.filter(c => c.parent_id == id);
+  const isManager = currentUser && currentUser.role === 'manager';
+  const allActive = docActiveCategory === null;
+
+  // "Tất cả" header row — also a drop zone to promote to root
+  let html = `
+    <div class="cat-tree-row" id="cat-drop-root"
+         ondragover="catDragOver(event,'root')"
+         ondragleave="catDragLeave(event,'root')"
+         ondrop="catDrop(event,null)">
+      <div class="cat-tree-item ${allActive?'active':''}" onclick="filterDocCat(null)"
+           style="margin-bottom:2px;font-weight:600">
+        <span class="cat-tree-icon">🗂️</span>
+        <span class="cat-tree-name">Tất cả</span>
+        <span class="cat-tree-badge">${docCategories.length}</span>
+      </div>
+    </div>
+    <div style="height:1px;background:var(--border);margin:3px 0 5px"></div>
+    <div class="cat-tree-wrap" id="cat-tree-roots">
+  `;
+
   roots.forEach(r => {
     const rActive = docActiveCategory == r.id;
-    const childList = children(r.id);
-    html += `<div class="doc-cat-item ${rActive?'active':''}" onclick="filterDocCat(${r.id})"
-      style="${rActive?'border-left:3px solid '+r.color:''}">
-      <span style="color:${r.color}">●</span> ${r.name}
-      ${childList.length ? `<span style="margin-left:auto;font-size:10px;color:var(--muted)">${childList.length}</span>` : ''}
-      ${currentUser.role==='manager'?`<button onclick="event.stopPropagation();editCategory(${r.id})" style="margin-left:${childList.length?'2px':'auto'};background:none;border:none;cursor:pointer;font-size:11px;color:var(--muted)">✏️</button>`:''}
-    </div>`;
-    childList.forEach(c => {
-      const cActive = docActiveCategory == c.id;
-      html += `<div class="doc-cat-item ${cActive?'active':''}" onclick="filterDocCat(${c.id})"
-        style="padding-left:22px;${cActive?'border-left:3px solid '+c.color:'border-left:3px solid transparent'}">
-        <span style="color:var(--muted);font-size:10px">└</span>
-        <span style="color:${c.color}">●</span> ${c.name}
-        ${currentUser.role==='manager'?`<button onclick="event.stopPropagation();editCategory(${c.id})" style="margin-left:auto;background:none;border:none;cursor:pointer;font-size:11px;color:var(--muted)">✏️</button>`:''}
-      </div>`;
-    });
+    const childList = getChildren(r.id);
+    const hasKids = childList.length > 0;
+    const expanded = catExpanded[r.id] !== false; // default open
+    const draggable = isManager ? 'draggable="true"' : '';
+
+    html += `
+      <div class="cat-tree-row" data-cat-id="${r.id}" ${draggable}
+           ondragstart="catDragStart(event,${r.id})"
+           ondragend="catDragEnd(event)"
+           ondragover="catDragOver(event,${r.id})"
+           ondragleave="catDragLeave(event,${r.id})"
+           ondrop="catDrop(event,${r.id})">
+        <div class="cat-tree-item ${rActive?'active':''}"
+             onclick="filterDocCat(${r.id})">
+          ${hasKids
+            ? `<button class="cat-tree-toggle" onclick="event.stopPropagation();toggleCatExpand(${r.id})">${expanded?'▼':'▶'}</button>`
+            : `<span style="width:16px;flex-shrink:0;display:inline-block"></span>`}
+          <span class="cat-tree-icon" style="color:${r.color}">${expanded&&hasKids?'📂':'📁'}</span>
+          <span class="cat-tree-name" title="${esc(r.name)}">${esc(r.name)}</span>
+          ${hasKids?`<span class="cat-tree-badge">${childList.length}</span>`:''}
+          ${isManager?`<button class="cat-action-btn" onclick="event.stopPropagation();editCategory(${r.id})">✏️</button>`:''}
+        </div>
+    `;
+
+    if (hasKids && expanded) {
+      html += `<div class="cat-children">`;
+      childList.forEach((c, ci) => {
+        const cActive = docActiveCategory == c.id;
+        const isLast = ci === childList.length - 1;
+        html += `
+          <div class="cat-tree-row" data-cat-id="${c.id}" ${draggable}
+               ondragstart="catDragStart(event,${c.id})"
+               ondragend="catDragEnd(event)"
+               ondragover="catDragOver(event,${c.id})"
+               ondragleave="catDragLeave(event,${c.id})"
+               ondrop="catDrop(event,${c.id})">
+            <div class="cat-tree-item ${cActive?'active':''}" onclick="filterDocCat(${c.id})">
+              <span class="cat-tree-connector">${isLast?'└':'├'}</span>
+              <span class="cat-tree-icon" style="color:${c.color};font-size:13px">📄</span>
+              <span class="cat-tree-name" title="${esc(c.name)}">${esc(c.name)}</span>
+              ${isManager?`<button class="cat-action-btn" onclick="event.stopPropagation();editCategory(${c.id})">✏️</button>`:''}
+            </div>
+          </div>
+        `;
+      });
+      html += `</div>`;
+    }
+
+    html += `</div>`;
   });
+
+  html += `</div>`;
   el.innerHTML = html;
+}
+
+function toggleCatExpand(id) {
+  catExpanded[id] = (catExpanded[id] === false) ? true : false;
+  renderDocCategories();
+}
+
+/* ── Drag-and-drop ── */
+function catDragStart(e, id) {
+  catDragging = id;
+  e.dataTransfer.effectAllowed = 'move';
+  const row = e.currentTarget;
+  setTimeout(() => row.classList.add('is-dragging'), 0);
+}
+
+function catDragEnd(e) {
+  catDragging = null;
+  document.querySelectorAll('.cat-tree-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+  document.querySelectorAll('.cat-tree-row.is-dragging').forEach(el => el.classList.remove('is-dragging'));
+}
+
+function catDragOver(e, targetId) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  if (catDragging === null) return;
+  if (targetId !== 'root' && catDragging == targetId) return;
+  // Highlight drop target item
+  const item = e.currentTarget.querySelector(':scope > .cat-tree-item');
+  if (item) {
+    document.querySelectorAll('.cat-tree-item.drag-over').forEach(el => { if (el !== item) el.classList.remove('drag-over'); });
+    item.classList.add('drag-over');
+  }
+}
+
+function catDragLeave(e, targetId) {
+  const item = e.currentTarget.querySelector(':scope > .cat-tree-item');
+  if (item) item.classList.remove('drag-over');
+}
+
+async function catDrop(e, targetParentId) {
+  e.preventDefault();
+  e.stopPropagation();
+  document.querySelectorAll('.cat-tree-item.drag-over').forEach(el => el.classList.remove('drag-over'));
+
+  const dragId = catDragging;
+  catDragging = null;
+  if (dragId === null || dragId === targetParentId) return;
+
+  const dragCat = docCategories.find(c => c.id == dragId);
+  if (!dragCat) return;
+
+  // Can't drop onto own children
+  if (targetParentId) {
+    const targetCat = docCategories.find(c => c.id == targetParentId);
+    if (!targetCat) return;
+    // Dropping onto a child (would create grandchild) → reject
+    if (targetCat.parent_id == dragId) {
+      alert('Không thể chuyển danh mục vào danh mục con của chính nó'); return;
+    }
+    // Target is itself a child → we'd create grandchild, not supported
+    if (targetCat.parent_id) {
+      alert('Chỉ hỗ trợ 2 cấp danh mục'); return;
+    }
+    // Already has this parent
+    if (dragCat.parent_id == targetParentId) return;
+    // Can't make a root (which has children) a child of another root
+    const dragHasKids = docCategories.some(c => c.parent_id == dragId);
+    if (dragHasKids) {
+      alert('Không thể chuyển danh mục đang có con thành danh mục con'); return;
+    }
+  } else {
+    // Dropping on root → promote to root
+    if (!dragCat.parent_id) return; // already root
+  }
+
+  try {
+    await api('PATCH', `/api/docs/categories/${dragId}/parent`, { parent_id: targetParentId });
+    // Update local state
+    const cat = docCategories.find(c => c.id == dragId);
+    if (cat) cat.parent_id = targetParentId || null;
+    populateCategorySelects();
+    renderDocCategories();
+    loadDocs();
+  } catch(err) {
+    alert(err.message || 'Lỗi di chuyển danh mục');
+  }
 }
 
 function filterDocCat(id) { docActiveCategory = id; docActiveTag = null; docActiveType = null; renderDocCategories(); renderDocTypes(); loadDocs(); }
