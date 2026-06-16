@@ -17,6 +17,9 @@ import uuid
 import io
 import re
 import threading
+import base64
+import zipfile
+import urllib.request as _urlreq
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta, timezone
 
@@ -362,6 +365,83 @@ def parse_multipart(content_type, body):
     return fields, files
 
 
+# --- DOCUMENT META EXTRACTION (Claude AI) ---
+
+def extract_docx_text(file_bytes):
+    """Extract plain text from a DOCX file using stdlib only."""
+    from xml.etree import ElementTree as ET
+    try:
+        with zipfile.ZipFile(io.BytesIO(file_bytes)) as z:
+            with z.open('word/document.xml') as f:
+                tree = ET.parse(f)
+        ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
+        parts = [el.text for el in tree.findall('.//w:t', ns) if el.text]
+        return ' '.join(parts)[:6000]
+    except Exception:
+        return ''
+
+def call_claude_for_metadata(file_bytes, file_ext):
+    """Call Claude Haiku to extract doc_number, issued_date, issuer from a document."""
+    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+    if not api_key:
+        return None
+
+    prompt = (
+        'Phân tích tài liệu và trích xuất thông tin sau:\n'
+        '- doc_number: số hiệu/ký hiệu văn bản (vd: "123/2024/QĐ-UBND")\n'
+        '- issued_date: ngày ban hành định dạng YYYY-MM-DD (vd: "2024-03-15")\n'
+        '- issuer: tên cơ quan/tổ chức ban hành\n\n'
+        'Chỉ trả về JSON thuần, không markdown, không giải thích:\n'
+        '{"doc_number":"...","issued_date":"YYYY-MM-DD hoặc null","issuer":"..."}\n'
+        'Nếu không tìm thấy thông tin nào, dùng chuỗi rỗng "".'
+    )
+
+    if file_ext == '.pdf':
+        content = [
+            {'type': 'document', 'source': {
+                'type': 'base64', 'media_type': 'application/pdf',
+                'data': base64.b64encode(file_bytes).decode()
+            }},
+            {'type': 'text', 'text': prompt}
+        ]
+        extra = {'anthropic-beta': 'pdfs-2024-09-25'}
+    elif file_ext == '.docx':
+        text = extract_docx_text(file_bytes)
+        if not text.strip():
+            return None
+        content = [{'type': 'text', 'text': f'Nội dung văn bản:\n{text}\n\n{prompt}'}]
+        extra = {}
+    else:
+        return None
+
+    payload = json.dumps({
+        'model': 'claude-haiku-4-5-20251001',
+        'max_tokens': 300,
+        'messages': [{'role': 'user', 'content': content}]
+    }).encode('utf-8')
+
+    headers = {
+        'x-api-key': api_key,
+        'anthropic-version': '2023-06-01',
+        'content-type': 'application/json',
+        **extra
+    }
+    try:
+        req = _urlreq.Request(
+            'https://api.anthropic.com/v1/messages',
+            data=payload, headers=headers, method='POST'
+        )
+        with _urlreq.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+        resp_text = data.get('content', [{}])[0].get('text', '').strip()
+        m = re.search(r'\{.*?\}', resp_text, re.DOTALL)
+        if m:
+            return json.loads(m.group())
+    except Exception as e:
+        print(f'[Claude meta] {e}')
+    return None
+
+
 # --- HTTP HANDLER ---
 
 class Handler(http.server.BaseHTTPRequestHandler):
@@ -494,6 +574,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             '/api/manager/users':            self.api_manager_create_user,
             '/api/notifications/read-all':   self.api_notifications_read_all,
             '/api/docs/upload':              self.api_docs_upload,
+            '/api/docs/extract-meta':        self.api_docs_extract_meta,
             '/api/docs/categories':          self.api_doc_categories_create,
             '/api/docs/types':               self.api_doc_types_create,
         }
@@ -537,7 +618,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_json({'error': 'Not found'}, 404)
 
     def do_DELETE(self):
-        path, _ = self.get_path_and_query()
+        path, qs = self.get_path_and_query()
         m = re.match(r'^/api/overtime/(\d+)$', path)
         if m:
             self.api_overtime_delete(int(m.group(1))); return
@@ -553,7 +634,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_docs_delete(int(m.group(1))); return
         m = re.match(r'^/api/docs/categories/(\d+)$', path)
         if m:
-            self.api_doc_categories_delete(int(m.group(1))); return
+            self.api_doc_categories_delete(int(m.group(1)), qs); return
         m = re.match(r'^/api/docs/types/(\d+)$', path)
         if m:
             self.api_doc_types_delete(int(m.group(1))); return
@@ -1442,16 +1523,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.commit()
         self.send_json({'ok': True})
 
-    def api_doc_categories_delete(self, cat_id):
+    def api_doc_categories_delete(self, cat_id, qs=None):
         sess = self.require_manager()
         if not sess: return
+        force = (qs or {}).get('force', [''])[0] == '1'
         with get_db() as db:
-            child_cnt = db.execute('SELECT COUNT(*) FROM doc_categories WHERE parent_id=?', (cat_id,)).fetchone()[0]
+            child_cnt = db.execute(
+                'SELECT COUNT(*) FROM doc_categories WHERE parent_id=?', (cat_id,)).fetchone()[0]
             if child_cnt > 0:
                 self.send_json({'error': f'Danh muc co {child_cnt} danh muc con, vui long xoa con truoc'}, 400); return
-            cnt = db.execute('SELECT COUNT(*) FROM documents WHERE category_id=?', (cat_id,)).fetchone()[0]
-            if cnt > 0:
-                self.send_json({'error': f'Danh muc con {cnt} tai lieu, khong the xoa'}, 400); return
+            doc_cnt = db.execute(
+                'SELECT COUNT(*) FROM documents WHERE category_id=?', (cat_id,)).fetchone()[0]
+            if doc_cnt > 0 and not force:
+                # Return warning — frontend will confirm
+                self.send_json({'warning': True, 'doc_count': doc_cnt}); return
+            if doc_cnt > 0:
+                # Cascade: delete files on disk/R2, then delete DB rows
+                rows = db.execute(
+                    'SELECT file_path FROM documents WHERE category_id=?', (cat_id,)).fetchall()
+                for row in rows:
+                    try:
+                        fp = row[0]
+                        if fp.startswith('r2:'):
+                            r2_delete(fp[3:])
+                        else:
+                            fpath = os.path.join(DATA_DIR, fp.lstrip('/'))
+                            if os.path.exists(fpath):
+                                os.remove(fpath)
+                    except Exception:
+                        pass
+                db.execute('DELETE FROM documents WHERE category_id=?', (cat_id,))
             db.execute('DELETE FROM doc_categories WHERE id=?', (cat_id,))
             db.commit()
         self.send_json({'ok': True})
@@ -1492,6 +1593,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with get_db() as db:
             rows = db.execute(sql, params).fetchall()
         self.send_json(rows_to_list(rows))
+
+    def api_docs_extract_meta(self):
+        """Extract doc_number, issued_date, issuer from an uploaded file via Claude."""
+        sess = self.require_auth()
+        if not sess: return
+        ct = self.headers.get('Content-Type', '')
+        if 'multipart/form-data' not in ct:
+            self.send_json({'error': 'multipart required'}, 400); return
+        fields, files = self.read_multipart()
+        if 'file' not in files:
+            self.send_json({}, 200); return
+        fitem = files['file']
+        ext   = os.path.splitext(fitem.filename)[1].lower()
+        file_bytes = fitem.file.read()
+        meta = call_claude_for_metadata(file_bytes, ext)
+        self.send_json(meta or {})
 
     def api_docs_upload(self):
         sess = self.require_auth()
