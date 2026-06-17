@@ -367,6 +367,26 @@ def parse_multipart(content_type, body):
 
 # --- DOCUMENT META EXTRACTION (Claude AI) ---
 
+# Prompt chuẩn cho văn bản hành chính Việt Nam
+_PROMPT_VN_DOC = (
+    'Phân tích văn bản hành chính Việt Nam và trích xuất CHÍNH XÁC 3 trường:\n\n'
+    '1. doc_number — Số hiệu văn bản:\n'
+    '   Tìm dòng bắt đầu bằng "Số:" ở góc trên bên trái.\n'
+    '   Lấy TOÀN BỘ ký hiệu sau "Số:" (ví dụ: "11369/VP-ĐT", "123/2024/QĐ-UBND").\n'
+    '   Nếu số và ký hiệu nằm tách nhau (ví dụ "11369" và "/VP-ĐT"), ghép lại thành "11369/VP-ĐT".\n\n'
+    '2. issued_date — Ngày ban hành (định dạng YYYY-MM-DD):\n'
+    '   Tìm cụm "ngày DD tháng MM năm YYYY" thường ở góc phải hoặc dòng địa danh.\n'
+    '   Ví dụ: "Hà Nội, ngày 12 tháng 6 năm 2026" → "2026-06-12".\n\n'
+    '3. issuer — Cơ quan ban hành:\n'
+    '   Lấy từ khối tiêu đề góc TRÊN BÊN TRÁI (thường 2-3 dòng).\n'
+    '   Ghép tên cơ quan cấp trên và tên đơn vị thành tên đầy đủ.\n'
+    '   Ví dụ: "ỦY BAN NHÂN DÂN / THÀNH PHỐ HÀ NỘI / VĂN PHÒNG"\n'
+    '   → "Văn phòng UBND Thành phố Hà Nội".\n\n'
+    'Chỉ trả về JSON thuần, KHÔNG markdown, KHÔNG giải thích:\n'
+    '{"doc_number":"...","issued_date":"YYYY-MM-DD","issuer":"..."}\n'
+    'Dùng chuỗi rỗng "" nếu không tìm thấy.'
+)
+
 def extract_docx_text(file_bytes):
     """Extract plain text from a DOCX file using stdlib only."""
     from xml.etree import ElementTree as ET
@@ -376,55 +396,41 @@ def extract_docx_text(file_bytes):
                 tree = ET.parse(f)
         ns = {'w': 'http://schemas.openxmlformats.org/wordprocessingml/2006/main'}
         parts = [el.text for el in tree.findall('.//w:t', ns) if el.text]
-        return ' '.join(parts)[:6000]
+        return ' '.join(parts)[:8000]
     except Exception:
         return ''
 
-def call_claude_for_metadata(file_bytes, file_ext):
-    """Call Claude Haiku to extract doc_number, issued_date, issuer from a document."""
+def extract_pdf_text(file_bytes):
+    """Extract text from PDF using pypdf (fallback when vision fails)."""
+    try:
+        import pypdf
+        reader = pypdf.PdfReader(io.BytesIO(file_bytes))
+        texts = []
+        for i, page in enumerate(reader.pages):
+            if i >= 3: break
+            t = page.extract_text()
+            if t:
+                texts.append(t)
+        return '\n'.join(texts)[:8000]
+    except Exception as e:
+        print(f'[pypdf] {e}')
+        return ''
+
+def _call_claude_api(content, extra_headers=None):
+    """Call Claude Haiku API. Returns parsed dict or None."""
     api_key = os.environ.get('ANTHROPIC_API_KEY', '')
     if not api_key:
         return None
-
-    prompt = (
-        'Phân tích tài liệu và trích xuất thông tin sau:\n'
-        '- doc_number: số hiệu/ký hiệu văn bản (vd: "123/2024/QĐ-UBND")\n'
-        '- issued_date: ngày ban hành định dạng YYYY-MM-DD (vd: "2024-03-15")\n'
-        '- issuer: tên cơ quan/tổ chức ban hành\n\n'
-        'Chỉ trả về JSON thuần, không markdown, không giải thích:\n'
-        '{"doc_number":"...","issued_date":"YYYY-MM-DD hoặc null","issuer":"..."}\n'
-        'Nếu không tìm thấy thông tin nào, dùng chuỗi rỗng "".'
-    )
-
-    if file_ext == '.pdf':
-        content = [
-            {'type': 'document', 'source': {
-                'type': 'base64', 'media_type': 'application/pdf',
-                'data': base64.b64encode(file_bytes).decode()
-            }},
-            {'type': 'text', 'text': prompt}
-        ]
-        extra = {'anthropic-beta': 'pdfs-2024-09-25'}
-    elif file_ext == '.docx':
-        text = extract_docx_text(file_bytes)
-        if not text.strip():
-            return None
-        content = [{'type': 'text', 'text': f'Nội dung văn bản:\n{text}\n\n{prompt}'}]
-        extra = {}
-    else:
-        return None
-
     payload = json.dumps({
         'model': 'claude-haiku-4-5-20251001',
         'max_tokens': 300,
         'messages': [{'role': 'user', 'content': content}]
     }).encode('utf-8')
-
     headers = {
         'x-api-key': api_key,
         'anthropic-version': '2023-06-01',
         'content-type': 'application/json',
-        **extra
+        **(extra_headers or {})
     }
     try:
         req = _urlreq.Request(
@@ -434,11 +440,61 @@ def call_claude_for_metadata(file_bytes, file_ext):
         with _urlreq.urlopen(req, timeout=30) as resp:
             data = json.loads(resp.read().decode('utf-8'))
         resp_text = data.get('content', [{}])[0].get('text', '').strip()
-        m = re.search(r'\{.*?\}', resp_text, re.DOTALL)
+        print(f'[Claude meta] OK: {resp_text[:200]}')
+        # Extract first complete JSON object (handles markdown code blocks too)
+        m = re.search(r'\{[^{}]*\}', resp_text)
         if m:
-            return json.loads(m.group())
+            parsed = json.loads(m.group())
+            # Normalize: replace null/"null" with empty string
+            return {k: ('' if v in (None, 'null') else str(v)) for k, v in parsed.items()}
     except Exception as e:
-        print(f'[Claude meta] {e}')
+        err_body = ''
+        if hasattr(e, 'read'):
+            try:
+                err_body = e.read().decode('utf-8', errors='ignore')[:200]
+            except Exception:
+                pass
+        print(f'[Claude meta] error: {e} {err_body}')
+    return None
+
+def call_claude_for_metadata(file_bytes, file_ext):
+    """Call Claude Haiku to extract doc_number, issued_date, issuer from a document."""
+    api_key = os.environ.get('ANTHROPIC_API_KEY', '')
+    if not api_key:
+        print('[Claude meta] ANTHROPIC_API_KEY not set')
+        return None
+
+    if file_ext == '.pdf':
+        pdf_content = [
+            {'type': 'document', 'source': {
+                'type': 'base64', 'media_type': 'application/pdf',
+                'data': base64.b64encode(file_bytes).decode()
+            }},
+            {'type': 'text', 'text': _PROMPT_VN_DOC}
+        ]
+        # Attempt 1: without beta header (PDF GA for claude 4.x models)
+        result = _call_claude_api(pdf_content)
+        if result:
+            return result
+        # Attempt 2: with beta header (for claude 3.x compatibility)
+        result = _call_claude_api(pdf_content, {'anthropic-beta': 'pdfs-2024-09-25'})
+        if result:
+            return result
+        # Fallback: pypdf text extraction (may miss visual-only text)
+        text = extract_pdf_text(file_bytes)
+        if text.strip():
+            print('[Claude meta] Falling back to PDF text extraction')
+            text_content = [{'type': 'text', 'text': f'Nội dung văn bản:\n{text}\n\n{_PROMPT_VN_DOC}'}]
+            return _call_claude_api(text_content)
+        return None
+
+    elif file_ext == '.docx':
+        text = extract_docx_text(file_bytes)
+        if not text.strip():
+            return None
+        text_content = [{'type': 'text', 'text': f'Nội dung văn bản:\n{text}\n\n{_PROMPT_VN_DOC}'}]
+        return _call_claude_api(text_content)
+
     return None
 
 
@@ -1607,8 +1663,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         fitem = files['file']
         ext   = os.path.splitext(fitem.filename)[1].lower()
         file_bytes = fitem.file.read()
+        if not os.environ.get('ANTHROPIC_API_KEY', ''):
+            self.send_json({'_error': 'ANTHROPIC_API_KEY chua duoc cau hinh'}); return
         meta = call_claude_for_metadata(file_bytes, ext)
-        self.send_json(meta or {})
+        if meta is None:
+            self.send_json({'_error': 'Khong the trich xuat tu dong, vui long nhap tay'}); return
+        self.send_json(meta)
 
     def api_docs_upload(self):
         sess = self.require_auth()

@@ -1129,7 +1129,12 @@ function showDocFilePreview(file) {
 async function extractDocMeta(file) {
   const st = document.getElementById('meta-scan-status');
   const fields = ['doc-number','doc-issued-date','doc-issuer'];
-  const setStatus = (msg) => { if (st) { st.textContent = msg; st.style.display = msg ? 'inline' : 'none'; } };
+  const setStatus = (msg, color) => {
+    if (!st) return;
+    st.textContent = msg;
+    st.style.display = msg ? 'inline' : 'none';
+    st.style.color = color || 'var(--accent)';
+  };
   setStatus('🔍 Đang quét tài liệu...');
   fields.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = true; });
   try {
@@ -1137,17 +1142,26 @@ async function extractDocMeta(file) {
     fd.append('file', file);
     const r = await fetch('/api/docs/extract-meta', { method: 'POST', body: fd });
     const data = await r.json();
+    // Server-side error (API key missing, extraction failed, etc.)
+    if (data._error) {
+      setStatus('⚠️ ' + data._error, 'var(--danger, #d9534f)');
+      setTimeout(() => setStatus(''), 6000);
+      return;
+    }
     let filled = 0;
     if (data.doc_number)  { document.getElementById('doc-number').value = data.doc_number; filled++; }
     if (data.issued_date) { document.getElementById('doc-issued-date').value = data.issued_date; filled++; }
     if (data.issuer)      { document.getElementById('doc-issuer').value = data.issuer; filled++; }
-    setStatus(filled > 0
-      ? `✅ Điền tự động ${filled} trường — kiểm tra lại nếu cần`
-      : '⚠️ Không tìm thấy thông tin tự động');
-    setTimeout(() => setStatus(''), 5000);
-  } catch {
-    setStatus('⚠️ Không thể quét tự động');
-    setTimeout(() => setStatus(''), 3000);
+    if (filled > 0) {
+      setStatus(`✅ Tự động điền ${filled} trường — kiểm tra lại nếu cần`, 'var(--success, #28a745)');
+    } else {
+      setStatus('⚠️ Không tìm thấy thông tin, vui lòng nhập tay', 'var(--danger, #d9534f)');
+    }
+    setTimeout(() => setStatus(''), 6000);
+  } catch (err) {
+    console.error('[extractDocMeta]', err);
+    setStatus('⚠️ Lỗi kết nối khi quét tài liệu', 'var(--danger, #d9534f)');
+    setTimeout(() => setStatus(''), 4000);
   } finally {
     fields.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = false; });
   }
