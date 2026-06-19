@@ -618,6 +618,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_file(os.path.join(PUBLIC_DIR, 'docs.html'))
             return
 
+        if path == '/cay':
+            self.send_file(os.path.join(PUBLIC_DIR, 'cay.html'))
+            return
+
         self.send_file(os.path.join(PUBLIC_DIR, 'index.html'))
 
     def do_POST(self):
