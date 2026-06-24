@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quản lý Bồi thường, Hỗ trợ</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#0f1923;--sidebar-bg:#1b2a3b;--panel-bg:#162130;
+  --card:#1e2f42;--accent:#2980b9;--accent2:#27ae60;
+  --warn:#e67e22;--danger:#e74c3c;--text:#e8edf2;
+  --muted:rgba(232,237,242,.5);--border:rgba(255,255,255,.08);
+  --radius:8px;--font:'Segoe UI',Arial,sans-serif
+}
+body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh;display:flex;overflow:hidden}
+
+/* ── SIDEBAR PROJECTS ─────────────────────────────────────── */
+#proj-sidebar{width:240px;flex-shrink:0;background:var(--sidebar-bg);display:flex;flex-direction:column;border-right:1px solid var(--border);overflow:hidden}
+.sb-header{padding:16px 12px 10px;border-bottom:1px solid var(--border)}
+.sb-header h2{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px}
+.btn-new-proj{width:100%;padding:8px;background:var(--accent);color:#fff;border:none;border-radius:var(--radius);cursor:pointer;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px;justify-content:center}
+.btn-new-proj:hover{filter:brightness(1.1)}
+#proj-list{flex:1;overflow-y:auto;padding:8px 6px}
+.proj-item{padding:10px 10px;border-radius:var(--radius);cursor:pointer;display:flex;align-items:center;gap:8px;margin-bottom:2px;transition:background .15s}
+.proj-item:hover{background:rgba(255,255,255,.06)}
+.proj-item.active{background:rgba(41,128,185,.22);border-left:3px solid var(--accent)}
+.proj-item .proj-name{flex:1;font-size:13px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.proj-item .proj-cnt{font-size:11px;color:var(--muted);background:rgba(255,255,255,.08);padding:2px 6px;border-radius:20px;flex-shrink:0}
+.proj-item .proj-actions{display:none;gap:4px}
+.proj-item:hover .proj-actions{display:flex}
+.proj-actions button{background:none;border:none;color:var(--muted);cursor:pointer;font-size:13px;padding:2px 4px;border-radius:4px}
+.proj-actions button:hover{color:#fff;background:rgba(255,255,255,.1)}
+.sb-nav{padding:8px 6px;border-top:1px solid var(--border)}
+.sb-nav a{display:flex;align-items:center;gap:8px;padding:8px 10px;color:rgba(255,255,255,.6);text-decoration:none;font-size:13px;border-radius:var(--radius);transition:background .15s}
+.sb-nav a:hover{background:rgba(255,255,255,.06);color:#fff}
+
+/* ── MAIN CONTENT ─────────────────────────────────────────── */
+#main{flex:1;display:flex;flex-direction:column;overflow:hidden}
+#topbar{height:54px;flex-shrink:0;background:var(--panel-bg);border-bottom:1px solid var(--border);display:flex;align-items:center;padding:0 20px;gap:12px}
+#topbar h1{font-size:16px;font-weight:700;flex:1}
+.tab-bar{display:flex;gap:4px}
+.tab-btn{padding:6px 14px;border-radius:6px;border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;transition:all .15s}
+.tab-btn.active{background:var(--accent);color:#fff}
+.tab-btn:hover:not(.active){background:rgba(255,255,255,.07);color:#fff}
+
+/* ── DASHBOARD ─────────────────────────────────────────────── */
+#tab-dashboard{flex:1;overflow-y:auto;padding:20px;display:none}
+#tab-dashboard.show{display:block}
+.stats-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px;margin-bottom:20px}
+.stat-card{background:var(--card);border-radius:var(--radius);padding:16px;border:1px solid var(--border)}
+.stat-card .sc-label{font-size:11px;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:6px}
+.stat-card .sc-val{font-size:24px;font-weight:700}
+.stat-card .sc-sub{font-size:11px;color:var(--muted);margin-top:4px}
+.section-title{font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--muted);margin-bottom:10px}
+.status-chart{background:var(--card);border-radius:var(--radius);border:1px solid var(--border);padding:16px;margin-bottom:20px}
+.status-row{display:flex;align-items:center;gap:10px;margin-bottom:8px}
+.status-row:last-child{margin-bottom:0}
+.status-dot{width:12px;height:12px;border-radius:50%;flex-shrink:0}
+.status-label{flex:1;font-size:13px}
+.status-bar-wrap{width:140px;height:8px;background:rgba(255,255,255,.08);border-radius:4px;overflow:hidden}
+.status-bar{height:100%;border-radius:4px;transition:width .4s}
+.status-cnt{font-size:12px;color:var(--muted);min-width:30px;text-align:right}
+.finance-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:12px}
+.fin-card{background:var(--card);border-radius:var(--radius);padding:14px;border:1px solid var(--border)}
+.fin-card .fc-label{font-size:12px;color:var(--muted);margin-bottom:4px}
+.fin-card .fc-val{font-size:16px;font-weight:700;color:var(--accent2)}
+
+/* ── RECORDS TABLE ─────────────────────────────────────────── */
+#tab-records{flex:1;display:none;flex-direction:column;overflow:hidden}
+#tab-records.show{display:flex}
+.toolbar{padding:10px 16px;background:var(--panel-bg);border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.search-box{position:relative;flex:1;min-width:200px}
+.search-box input{width:100%;padding:7px 10px 7px 32px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px}
+.search-box::before{content:'🔍';position:absolute;left:9px;top:50%;transform:translateY(-50%);font-size:12px}
+.filter-sel{padding:7px 10px;background:var(--card);border:1px solid var(--border);border-radius:var(--radius);color:var(--text);font-size:13px}
+.btn{padding:7px 14px;border-radius:var(--radius);border:none;cursor:pointer;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:6px}
+.btn-primary{background:var(--accent);color:#fff}
+.btn-primary:hover{filter:brightness(1.1)}
+.btn-success{background:var(--accent2);color:#fff}
+.btn-success:hover{filter:brightness(1.1)}
+.btn-warn{background:var(--warn);color:#fff}
+.btn-warn:hover{filter:brightness(1.1)}
+.btn-danger{background:var(--danger);color:#fff}
+.btn-danger:hover{filter:brightness(1.1)}
+.btn-ghost{background:rgba(255,255,255,.07);color:var(--text)}
+.btn-ghost:hover{background:rgba(255,255,255,.12)}
+.btn-sm{padding:4px 10px;font-size:12px}
+.tbl-wrap{flex:1;overflow:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+thead th{position:sticky;top:0;background:#162d45;padding:10px 10px;text-align:left;font-weight:600;font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--muted);border-bottom:1px solid var(--border);white-space:nowrap;z-index:2}
+tbody tr{border-bottom:1px solid rgba(255,255,255,.04);transition:background .1s}
+tbody tr:hover{background:rgba(255,255,255,.04)}
+tbody td{padding:8px 10px;vertical-align:middle}
+td.td-num{font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+td.td-ctr{text-align:center}
+.status-badge{display:inline-block;padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+.pagination{display:flex;align-items:center;gap:6px;padding:10px 16px;border-top:1px solid var(--border);background:var(--panel-bg);font-size:13px}
+.pagination span{color:var(--muted)}
+.pg-btn{padding:5px 10px;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text);cursor:pointer;font-size:12px}
+.pg-btn:hover:not(:disabled){background:rgba(255,255,255,.1)}
+.pg-btn:disabled{opacity:.4;cursor:default}
+
+/* ── MODALS ───────────────────────────────────────────────── */
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;align-items:center;justify-content:center}
+.modal-overlay.open{display:flex}
+.modal{background:#1a2b3c;border-radius:12px;border:1px solid var(--border);width:min(820px,96vw);max-height:90vh;display:flex;flex-direction:column;overflow:hidden}
+.modal-sm{width:min(420px,96vw)}
+.modal-head{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;flex-shrink:0}
+.modal-head h3{font-size:15px;font-weight:700}
+.modal-close{background:none;border:none;color:var(--muted);font-size:18px;cursor:pointer;padding:4px 8px;border-radius:6px}
+.modal-close:hover{color:#fff;background:rgba(255,255,255,.1)}
+.modal-body{padding:20px;overflow-y:auto;flex:1}
+.modal-footer{padding:14px 20px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px;flex-shrink:0}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.form-grid.cols3{grid-template-columns:1fr 1fr 1fr}
+.form-full{grid-column:1/-1}
+.form-group{display:flex;flex-direction:column;gap:5px}
+.form-group label{font-size:12px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.05em}
+.form-group input,.form-group select,.form-group textarea{padding:8px 10px;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:13px;font-family:var(--font)}
+.form-group input:focus,.form-group select:focus,.form-group textarea:focus{outline:none;border-color:var(--accent)}
+.form-group textarea{resize:vertical;min-height:60px}
+.form-section{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.07em;color:var(--accent);margin:16px 0 8px;padding-bottom:6px;border-bottom:1px solid rgba(41,128,185,.2);grid-column:1/-1}
+
+/* ── EMPTY STATE ─────────────────────────────────────────── */
+.empty-state{display:flex;flex-direction:column;align-items:center;justify-content:center;flex:1;color:var(--muted);gap:10px;padding:40px}
+.empty-state .es-icon{font-size:48px;opacity:.4}
+
+/* ── TOAST ──────────────────────────────────────────────── */
+#toast{position:fixed;bottom:24px;right:24px;background:#27ae60;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;opacity:0;transform:translateY(10px);transition:all .3s;pointer-events:none}
+#toast.show{opacity:1;transform:translateY(0)}
+#toast.err{background:var(--danger)}
+
+/* ── IMPORT MODAL ──────────────────────────────────────── */
+.drop-zone{border:2px dashed var(--border);border-radius:8px;padding:32px;text-align:center;cursor:pointer;transition:border-color .2s}
+.drop-zone.over{border-color:var(--accent);background:rgba(41,128,185,.08)}
+.drop-zone p{color:var(--muted);margin-top:8px;font-size:13px}
+.import-result{margin-top:14px;padding:12px;background:var(--card);border-radius:8px;font-size:13px;display:none}
+
+/* ── NO PROJECT SELECTED ───────────────────────────────── */
+#no-project{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;color:var(--muted)}
+#no-project .np-icon{font-size:56px;opacity:.3}
+#no-project p{font-size:15px}
+
+/* scrollbar */
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:3px}
+</style>
+</head>
+<body>
+
+<!-- ══ PROJECT SIDEBAR ═══════════════════════════════════════════ -->
+<div id="proj-sidebar">
+  <div class="sb-header">
+    <h2>🏗️ Dự án</h2>
+    <button class="btn-new-proj" onclick="openProjModal()">＋ Thêm dự án</button>
+  </div>
+  <div id="proj-list"></div>
+  <div class="sb-nav">
+    <a href="/">⬅ Trang chủ</a>
+  </div>
+</div>
+
+<!-- ══ MAIN AREA ═════════════════════════════════════════════════ -->
+<div id="main">
+  <div id="topbar">
+    <h1 id="proj-title">Quản lý Bồi thường, Hỗ trợ</h1>
+    <div class="tab-bar" id="tab-bar" style="display:none">
+      <button class="tab-btn active" onclick="switchTab('dashboard')">📊 Tổng quan</button>
+      <button class="tab-btn" onclick="switchTab('records')">📋 Hồ sơ</button>
+    </div>
+  </div>
+
+  <!-- No project -->
+  <div id="no-project">
+    <div class="np-icon">🏗️</div>
+    <p>Chọn hoặc tạo một dự án để bắt đầu</p>
+    <button class="btn btn-primary" onclick="openProjModal()">＋ Tạo dự án mới</button>
+  </div>
+
+  <!-- DASHBOARD TAB -->
+  <div id="tab-dashboard">
+    <div class="stats-grid" id="stats-grid"></div>
+    <div class="section-title">Phân loại theo trạng thái</div>
+    <div class="status-chart" id="status-chart"></div>
+    <div class="section-title" style="margin-top:20px">Tài chính</div>
+    <div class="finance-grid" id="finance-grid"></div>
+  </div>
+
+  <!-- RECORDS TAB -->
+  <div id="tab-records">
+    <div class="toolbar">
+      <div class="search-box">
+        <input id="search-inp" type="text" placeholder="Tìm tên chủ sử dụng, tờ/thửa..." oninput="debouncedLoad()">
+      </div>
+      <select class="filter-sel" id="filter-status" onchange="loadRecords()">
+        <option value="">Tất cả trạng thái</option>
+      </select>
+      <select class="filter-sel" id="filter-loai" onchange="loadRecords()">
+        <option value="">Tất cả loại đất</option>
+        <option value="CLN">CLN</option>
+        <option value="ONT">ONT</option>
+        <option value="LUC">LUC</option>
+        <option value="BHK">BHK</option>
+        <option value="NTS">NTS</option>
+      </select>
+      <button class="btn btn-primary" onclick="openRecordModal()">＋ Thêm hồ sơ</button>
+      <button class="btn btn-ghost" onclick="openImportModal()">📥 Import Excel</button>
+      <button class="btn btn-ghost" onclick="exportExcel()">📤 Xuất Excel</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Tờ/Thửa</th>
+            <th>Họ tên CSD</th>
+            <th>Loại đất</th>
+            <th style="text-align:right">DT thu hồi (m²)</th>
+            <th>Trạng thái</th>
+            <th style="text-align:right">Tổng BT (đồng)</th>
+            <th style="text-align:right">Đã chi trả</th>
+            <th>Ghi chú</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="tbl-body"></tbody>
+      </table>
+      <div id="tbl-empty" class="empty-state" style="display:none">
+        <div class="es-icon">📋</div>
+        <p>Chưa có hồ sơ nào trong dự án này</p>
+        <button class="btn btn-primary" onclick="openRecordModal()">＋ Thêm hồ sơ đầu tiên</button>
+      </div>
+    </div>
+    <div class="pagination">
+      <button class="pg-btn" id="pg-prev" onclick="changePage(-1)">‹ Trước</button>
+      <span id="pg-info">Trang 1</span>
+      <button class="pg-btn" id="pg-next" onclick="changePage(1)">Sau ›</button>
+      <span id="pg-total" style="margin-left:auto"></span>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PROJECT MODAL ══════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-proj">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <h3 id="proj-modal-title">Tạo dự án mới</h3>
+      <button class="modal-close" onclick="closeProjModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div style="display:flex;flex-direction:column;gap:14px">
+        <div class="form-group">
+          <label>Tên dự án *</label>
+          <input id="pf-name" type="text" placeholder="VD: Dự án mở rộng QL1A">
+        </div>
+        <div class="form-group">
+          <label>Địa điểm</label>
+          <input id="pf-dia-diem" type="text" placeholder="Xã, huyện, tỉnh...">
+        </div>
+        <div class="form-group">
+          <label>Mô tả</label>
+          <textarea id="pf-mo-ta" placeholder="Thông tin thêm về dự án..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeProjModal()">Hủy</button>
+      <button class="btn btn-primary" onclick="saveProject()">Lưu</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ RECORD MODAL ═══════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-record">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="rec-modal-title">Thêm hồ sơ</h3>
+      <button class="modal-close" onclick="closeRecordModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-section">👤 Thông tin chủ sử dụng đất</div>
+        <div class="form-group form-full"><label>Họ và tên *</label><input id="rf-ho-ten" type="text"></div>
+        <div class="form-group"><label>Địa chỉ thường trú</label><input id="rf-dia-chi" type="text"></div>
+        <div class="form-group"><label>Số CCCD/CMND</label><input id="rf-cccd" type="text"></div>
+        <div class="form-group"><label>Số điện thoại</label><input id="rf-sdt" type="text"></div>
+
+        <div class="form-section">🗺️ Thông tin thửa đất</div>
+        <div class="form-group"><label>Số tờ</label><input id="rf-so-to" type="text"></div>
+        <div class="form-group"><label>Số thửa</label><input id="rf-so-thua" type="text"></div>
+        <div class="form-group"><label>Loại đất</label>
+          <select id="rf-loai-dat">
+            <option value="">-- chọn --</option>
+            <option>CLN</option><option>ONT</option><option>LUC</option>
+            <option>BHK</option><option>NTS</option><option>TMD</option><option>SKC</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Địa điểm thu hồi</label><input id="rf-dia-diem" type="text"></div>
+        <div class="form-group"><label>Tổng DT (m²)</label><input id="rf-tong-dt" type="number" step="0.1"></div>
+        <div class="form-group"><label>DT thu hồi (m²)</label><input id="rf-dt-thu-hoi" type="number" step="0.1"></div>
+        <div class="form-group"><label>DT còn lại (m²)</label><input id="rf-dt-con-lai" type="number" step="0.1"></div>
+        <div class="form-group"><label>Số GCN</label><input id="rf-so-gcn" type="text"></div>
+
+        <div class="form-section">📋 Trạng thái & Quyết định</div>
+        <div class="form-group form-full"><label>Trạng thái hồ sơ</label>
+          <select id="rf-trang-thai"></select>
+        </div>
+        <div class="form-group"><label>Đợt niêm yết CK</label><input id="rf-dot-nyck" type="text"></div>
+        <div class="form-group"><label>Ngày họp dân</label><input id="rf-ngay-hop-dan" type="date"></div>
+        <div class="form-group"><label>Số QĐ phê duyệt</label><input id="rf-qd-pd" type="text"></div>
+        <div class="form-group"><label>Ngày QĐ phê duyệt</label><input id="rf-ngay-qd-pd" type="date"></div>
+        <div class="form-group"><label>Số QĐ thu hồi đất</label><input id="rf-qd-thd" type="text"></div>
+        <div class="form-group"><label>Ngày QĐ thu hồi đất</label><input id="rf-ngay-qd-thd" type="date"></div>
+
+        <div class="form-section">💰 Tài chính bồi thường</div>
+        <div class="form-group"><label>Tiền BT đất (đồng)</label><input id="rf-tien-dat" type="number"></div>
+        <div class="form-group"><label>Tiền BT cây trồng</label><input id="rf-tien-cay" type="number"></div>
+        <div class="form-group"><label>Tiền CSHT</label><input id="rf-tien-csht" type="number"></div>
+        <div class="form-group"><label>Tiền hỗ trợ</label><input id="rf-tien-ho-tro" type="number"></div>
+        <div class="form-group"><label>Tổng tiền NYCK</label><input id="rf-tong-nyck" type="number"></div>
+        <div class="form-group"><label>Tạm ứng</label><input id="rf-tam-ung" type="number"></div>
+        <div class="form-group"><label>Tổng tiền BTHT</label><input id="rf-tong-btht" type="number"></div>
+        <div class="form-group"><label>Đã chi trả</label><input id="rf-da-chi-tra" type="number"></div>
+        <div class="form-group"><label>Ngày chi trả</label><input id="rf-ngay-chi-tra" type="date"></div>
+
+        <div class="form-section">📝 Ý kiến & Ghi chú</div>
+        <div class="form-group form-full">
+          <label>Có đơn ý kiến</label>
+          <select id="rf-co-don"><option value="0">Không</option><option value="1">Có</option></select>
+        </div>
+        <div class="form-group form-full"><label>Nội dung ý kiến</label><textarea id="rf-y-kien"></textarea></div>
+        <div class="form-group form-full"><label>Ghi chú</label><textarea id="rf-ghi-chu"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeRecordModal()">Hủy</button>
+      <button class="btn btn-primary" onclick="saveRecord()">Lưu hồ sơ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ IMPORT MODAL ═══════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-import">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <h3>📥 Import từ Excel</h3>
+      <button class="modal-close" onclick="closeImportModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px">
+        File Excel cần đúng cấu trúc: họ tên (cột D), số tờ (cột F), số thửa (cột G)...
+        <br>Dữ liệu bắt đầu từ dòng 5 trở đi (bỏ qua 4 dòng tiêu đề).
+      </p>
+      <div class="drop-zone" id="drop-zone" onclick="document.getElementById('import-file').click()">
+        <div style="font-size:32px">📂</div>
+        <p>Nhấp để chọn hoặc kéo file .xlsx vào đây</p>
+        <input type="file" id="import-file" accept=".xlsx,.xls" style="display:none" onchange="handleImportFile(this.files[0])">
+      </div>
+      <div class="import-result" id="import-result"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeImportModal()">Đóng</button>
+      <button class="btn btn-primary" id="btn-do-import" onclick="doImport()" disabled>Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ CONFIRM DELETE ═════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-confirm">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <h3>Xác nhận xóa</h3>
+      <button class="modal-close" onclick="closeConfirm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="confirm-msg" style="font-size:14px;line-height:1.6"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeConfirm()">Hủy</button>
+      <button class="btn btn-danger" onclick="confirmAction()">Xóa</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+// ══════════════════════════════════════════════════════════════
+// STATE
+// ══════════════════════════════════════════════════════════════
+let currentProjId = null;
+let currentProjName = '';
+let statusConfigs = [];
+let page = 1;
+let totalRecords = 0;
+const PER_PAGE = 50;
+let editRecordId = null;
+let editProjId = null;
+let confirmCb = null;
+let importFile = null;
+let currentTab = 'dashboard';
+
+// ══════════════════════════════════════════════════════════════
+// INIT
+// ══════════════════════════════════════════════════════════════
+async function init() {
+  await Promise.all([loadStatuses(), loadProjects()]);
+}
+
+// ══════════════════════════════════════════════════════════════
+// STATUSES
+// ══════════════════════════════════════════════════════════════
+async function loadStatuses() {
+  const res = await fetch('/api/bt/status-config');
+  if (!res.ok) return;
+  statusConfigs = await res.json();
+  // Populate filter
+  const sel = document.getElementById('filter-status');
+  sel.innerHTML = '<option value="">Tất cả trạng thái</option>';
+  statusConfigs.forEach(s => {
+    sel.insertAdjacentHTML('beforeend', `<option value="${esc(s.ten)}">${esc(s.ten)}</option>`);
+  });
+  // Populate record form select
+  const rsel = document.getElementById('rf-trang-thai');
+  rsel.innerHTML = '';
+  statusConfigs.forEach(s => {
+    rsel.insertAdjacentHTML('beforeend', `<option value="${esc(s.ten)}" style="color:${s.mau}">${esc(s.ten)}</option>`);
+  });
+}
+
+function statusColor(ten) {
+  const s = statusConfigs.find(x => x.ten === ten);
+  return s ? s.mau : '#95a5a6';
+}
+
+// ══════════════════════════════════════════════════════════════
+// PROJECTS
+// ══════════════════════════════════════════════════════════════
+async function loadProjects() {
+  const res = await fetch('/api/bt/projects');
+  if (!res.ok) return;
+  const projects = await res.json();
+  const list = document.getElementById('proj-list');
+  list.innerHTML = '';
+  if (!projects.length) {
+    list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">Chưa có dự án nào</div>';
+    return;
+  }
+  projects.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'proj-item' + (p.id === currentProjId ? ' active' : '');
+    div.dataset.id = p.id;
+    div.innerHTML = `
+      <span class="proj-name" title="${esc(p.name)}">${esc(p.name)}</span>
+      <span class="proj-cnt">${p.so_ho_so || 0}</span>
+      <span class="proj-actions">
+        <button title="Sửa" onclick="event.stopPropagation();openProjModal(${p.id},'${esc(p.name)}','${esc(p.dia_diem||'')}','${esc(p.mo_ta||'')}')">✏️</button>
+        <button title="Xóa" onclick="event.stopPropagation();askDeleteProject(${p.id},'${esc(p.name)}')">🗑️</button>
+      </span>`;
+    div.addEventListener('click', () => selectProject(p.id, p.name));
+    list.appendChild(div);
+  });
+}
+
+function selectProject(id, name) {
+  currentProjId = id;
+  currentProjName = name;
+  document.getElementById('proj-title').textContent = name;
+  document.getElementById('no-project').style.display = 'none';
+  document.getElementById('tab-bar').style.display = 'flex';
+  document.querySelectorAll('.proj-item').forEach(el => el.classList.toggle('active', +el.dataset.id === id));
+  page = 1;
+  switchTab(currentTab);
+}
+
+// ── Project Modal
+function openProjModal(id, name, diaDiem, moTa) {
+  editProjId = id || null;
+  document.getElementById('proj-modal-title').textContent = id ? 'Sửa dự án' : 'Tạo dự án mới';
+  document.getElementById('pf-name').value = name || '';
+  document.getElementById('pf-dia-diem').value = diaDiem || '';
+  document.getElementById('pf-mo-ta').value = moTa || '';
+  document.getElementById('modal-proj').classList.add('open');
+  setTimeout(() => document.getElementById('pf-name').focus(), 50);
+}
+function closeProjModal() { document.getElementById('modal-proj').classList.remove('open'); editProjId = null; }
+
+async function saveProject() {
+  const name = document.getElementById('pf-name').value.trim();
+  if (!name) { toast('Vui lòng nhập tên dự án', true); return; }
+  const body = { name, dia_diem: document.getElementById('pf-dia-diem').value, mo_ta: document.getElementById('pf-mo-ta').value };
+  const url  = editProjId ? `/api/bt/projects/${editProjId}` : '/api/bt/projects';
+  const method = editProjId ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) {
+    closeProjModal();
+    await loadProjects();
+    toast(editProjId ? 'Đã cập nhật dự án' : 'Đã tạo dự án mới');
+  } else { toast('Lỗi khi lưu dự án', true); }
+}
+
+function askDeleteProject(id, name) {
+  document.getElementById('confirm-msg').textContent = `Xóa dự án "${name}"? Toàn bộ hồ sơ trong dự án này cũng sẽ bị xóa. Hành động này không thể hoàn tác.`;
+  confirmCb = async () => {
+    const res = await fetch(`/api/bt/projects/${id}`, {method:'DELETE'});
+    if (res.ok) {
+      if (currentProjId === id) {
+        currentProjId = null;
+        document.getElementById('proj-title').textContent = 'Quản lý Bồi thường, Hỗ trợ';
+        document.getElementById('no-project').style.display = 'flex';
+        document.getElementById('tab-bar').style.display = 'none';
+        document.getElementById('tab-dashboard').classList.remove('show');
+        document.getElementById('tab-records').classList.remove('show');
+      }
+      await loadProjects();
+      toast('Đã xóa dự án');
+    } else toast('Lỗi khi xóa', true);
+  };
+  document.getElementById('modal-confirm').classList.add('open');
+}
+
+// ══════════════════════════════════════════════════════════════
+// TABS
+// ══════════════════════════════════════════════════════════════
+function switchTab(tab) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', (i===0&&tab==='dashboard')||(i===1&&tab==='records')));
+  document.getElementById('tab-dashboard').classList.toggle('show', tab==='dashboard');
+  document.getElementById('tab-records').classList.toggle('show', tab==='records');
+  if (tab==='dashboard') loadDashboard();
+  else loadRecords();
+}
+
+// ══════════════════════════════════════════════════════════════
+// DASHBOARD
+// ══════════════════════════════════════════════════════════════
+async function loadDashboard() {
+  if (!currentProjId) return;
+  const res = await fetch(`/api/bt/projects/${currentProjId}/stats`);
+  if (!res.ok) return;
+  const data = await res.json();
+  // Stat cards
+  const f = data.finance || {};
+  const fmtM = v => v ? (v/1e6).toFixed(1)+'M' : '0';
+  document.getElementById('stats-grid').innerHTML = `
+    <div class="stat-card">
+      <div class="sc-label">Tổng hồ sơ</div>
+      <div class="sc-val">${data.total || 0}</div>
+    </div>
+    <div class="stat-card">
+      <div class="sc-label">Tổng DT thu hồi</div>
+      <div class="sc-val">${fmt1(f.tong_dt_thu_hoi || 0)}</div>
+      <div class="sc-sub">m²</div>
+    </div>
+    <div class="stat-card">
+      <div class="sc-label">Tổng tiền BTHT</div>
+      <div class="sc-val">${fmtM(f.tong_tien)}</div>
+      <div class="sc-sub">đồng</div>
+    </div>
+    <div class="stat-card">
+      <div class="sc-label">Đã chi trả</div>
+      <div class="sc-val" style="color:#27ae60">${fmtM(f.da_chi_tra)}</div>
+      <div class="sc-sub">đồng</div>
+    </div>`;
+
+  // Status chart
+  const total = data.total || 1;
+  const byStatus = data.by_status || [];
+  document.getElementById('status-chart').innerHTML = byStatus.length ? byStatus.map(s => {
+    const color = statusColor(s.trang_thai);
+    const pct = Math.round((s.cnt / total) * 100);
+    return `<div class="status-row">
+      <div class="status-dot" style="background:${color}"></div>
+      <div class="status-label">${esc(s.trang_thai)}</div>
+      <div class="status-bar-wrap"><div class="status-bar" style="width:${pct}%;background:${color}"></div></div>
+      <div class="status-cnt">${s.cnt}</div>
+    </div>`;
+  }).join('') : '<div style="color:var(--muted);font-size:13px;padding:10px">Chưa có dữ liệu</div>';
+
+  // Finance
+  document.getElementById('finance-grid').innerHTML = `
+    <div class="fin-card"><div class="fc-label">BT về đất</div><div class="fc-val">${fmtVND(f.tien_dat)}</div></div>
+    <div class="fin-card"><div class="fc-label">BT cây trồng</div><div class="fc-val">${fmtVND(f.tien_cay)}</div></div>
+    <div class="fin-card"><div class="fc-label">Hỗ trợ CSHT</div><div class="fc-val">${fmtVND(f.tien_csht)}</div></div>
+    <div class="fin-card"><div class="fc-label">Hỗ trợ khác</div><div class="fc-val">${fmtVND(f.tien_ho_tro)}</div></div>
+    <div class="fin-card"><div class="fc-label">Tổng tiền BTHT</div><div class="fc-val">${fmtVND(f.tong_tien)}</div></div>
+    <div class="fin-card"><div class="fc-label">Đã chi trả</div><div class="fc-val">${fmtVND(f.da_chi_tra)}</div></div>`;
+}
+
+// ══════════════════════════════════════════════════════════════
+// RECORDS TABLE
+// ══════════════════════════════════════════════════════════════
+let searchTimer = null;
+function debouncedLoad() {
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(loadRecords, 300);
+}
+
+async function loadRecords() {
+  if (!currentProjId) return;
+  const q      = document.getElementById('search-inp').value;
+  const status = document.getElementById('filter-status').value;
+  const loai   = document.getElementById('filter-loai').value;
+  const params = new URLSearchParams({ page, per_page: PER_PAGE });
+  if (q)      params.set('q', q);
+  if (status) params.set('trang_thai', status);
+  if (loai)   params.set('loai_dat', loai);
+  const res = await fetch(`/api/bt/projects/${currentProjId}/records?${params}`);
+  if (!res.ok) return;
+  const data = await res.json();
+  totalRecords = data.total;
+  renderTable(data.records);
+  renderPagination(data.total, data.page, data.per_page);
+}
+
+function renderTable(rows) {
+  const tbody = document.getElementById('tbl-body');
+  const empty = document.getElementById('tbl-empty');
+  if (!rows.length) { tbody.innerHTML = ''; empty.style.display = 'flex'; return; }
+  empty.style.display = 'none';
+  tbody.innerHTML = rows.map((r, i) => {
+    const color = statusColor(r.trang_thai);
+    const offset = (page - 1) * PER_PAGE;
+    return `<tr>
+      <td class="td-ctr" style="color:var(--muted)">${offset + i + 1}</td>
+      <td><strong>${esc(r.so_to)}.${esc(r.so_thua)}</strong></td>
+      <td>${esc(r.ho_ten || '')}</td>
+      <td><span style="font-size:11px;background:rgba(255,255,255,.07);padding:2px 7px;border-radius:4px">${esc(r.loai_dat || '')}</span></td>
+      <td class="td-num">${fmt1(r.dien_tich_thu_hoi || 0)}</td>
+      <td><span class="status-badge" style="background:${color}22;color:${color};border:1px solid ${color}44">${esc(r.trang_thai || '')}</span></td>
+      <td class="td-num">${fmtVND(r.tong_tien_btht)}</td>
+      <td class="td-num" style="color:#27ae60">${fmtVND(r.so_tien_da_chi_tra)}</td>
+      <td style="max-width:150px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)" title="${esc(r.ghi_chu||'')}">${esc(r.ghi_chu || '')}</td>
+      <td class="td-ctr" style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" onclick="openRecordModal(${r.record_id})">✏️</button>
+        <button class="btn btn-ghost btn-sm" onclick="askDeleteRecord(${r.record_id})">🗑️</button>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function renderPagination(total, pg, perPage) {
+  const pages = Math.ceil(total / perPage) || 1;
+  document.getElementById('pg-info').textContent = `Trang ${pg} / ${pages}`;
+  document.getElementById('pg-total').textContent = `${total} hồ sơ`;
+  document.getElementById('pg-prev').disabled = pg <= 1;
+  document.getElementById('pg-next').disabled = pg >= pages;
+}
+
+function changePage(dir) {
+  const pages = Math.ceil(totalRecords / PER_PAGE) || 1;
+  page = Math.max(1, Math.min(pages, page + dir));
+  loadRecords();
+}
+
+// ══════════════════════════════════════════════════════════════
+// RECORD MODAL
+// ══════════════════════════════════════════════════════════════
+async function openRecordModal(recId) {
+  editRecordId = recId || null;
+  document.getElementById('rec-modal-title').textContent = recId ? 'Sửa hồ sơ' : 'Thêm hồ sơ mới';
+  clearRecordForm();
+  if (recId) {
+    // Load existing — find in current table data by fetching single
+    // We fetch the records list and find the matching id
+    const res = await fetch(`/api/bt/projects/${currentProjId}/records?page=1&per_page=9999`);
+    if (res.ok) {
+      const data = await res.json();
+      const r = data.records.find(x => x.record_id === recId);
+      if (r) fillRecordForm(r);
+    }
+  }
+  document.getElementById('modal-record').classList.add('open');
+}
+
+function closeRecordModal() { document.getElementById('modal-record').classList.remove('open'); editRecordId = null; }
+
+function clearRecordForm() {
+  ['ho-ten','dia-chi','cccd','sdt','so-to','so-thua','dia-diem','so-gcn',
+   'tong-dt','dt-thu-hoi','dt-con-lai','tien-dat','tien-cay','tien-csht',
+   'tien-ho-tro','tong-nyck','tam-ung','tong-btht','da-chi-tra',
+   'y-kien','ghi-chu','dot-nyck','qd-pd','qd-thd'].forEach(id => {
+    const el = document.getElementById('rf-'+id);
+    if (el) el.value = '';
+  });
+  ['ngay-hop-dan','ngay-qd-pd','ngay-qd-thd','ngay-chi-tra'].forEach(id => {
+    const el = document.getElementById('rf-'+id);
+    if (el) el.value = '';
+  });
+  const sel = document.getElementById('rf-loai-dat');
+  if (sel) sel.value = '';
+  const trsel = document.getElementById('rf-trang-thai');
+  if (trsel) trsel.value = statusConfigs[0]?.ten || '';
+  const codon = document.getElementById('rf-co-don');
+  if (codon) codon.value = '0';
+}
+
+function fillRecordForm(r) {
+  const set = (id, val) => { const el = document.getElementById(id); if (el && val !== null && val !== undefined) el.value = val; };
+  set('rf-ho-ten', r.ho_ten); set('rf-dia-chi', r.dia_chi_thuong_tru);
+  set('rf-cccd', r.so_cccd); set('rf-sdt', r.so_dien_thoai);
+  set('rf-so-to', r.so_to); set('rf-so-thua', r.so_thua);
+  set('rf-loai-dat', r.loai_dat); set('rf-dia-diem', r.dia_diem_thu_hoi);
+  set('rf-tong-dt', r.tong_dien_tich); set('rf-dt-thu-hoi', r.dien_tich_thu_hoi);
+  set('rf-dt-con-lai', r.dien_tich_con_lai); set('rf-so-gcn', r.so_gcn);
+  set('rf-trang-thai', r.trang_thai); set('rf-dot-nyck', r.dot_niem_yet_ck);
+  set('rf-ngay-hop-dan', r.ngay_hop_dan); set('rf-qd-pd', r.so_quyet_dinh_pd);
+  set('rf-ngay-qd-pd', r.ngay_quyet_dinh_pd); set('rf-qd-thd', r.so_quyet_dinh_thd);
+  set('rf-ngay-qd-thd', r.ngay_quyet_dinh_thd);
+  set('rf-tien-dat', r.tien_bt_dat); set('rf-tien-cay', r.tien_bt_cay_trong);
+  set('rf-tien-csht', r.tien_csht); set('rf-tien-ho-tro', r.tien_ho_tro);
+  set('rf-tong-nyck', r.tong_tien_nyck); set('rf-tam-ung', r.so_tien_tam_ung);
+  set('rf-tong-btht', r.tong_tien_btht); set('rf-da-chi-tra', r.so_tien_da_chi_tra);
+  set('rf-ngay-chi-tra', r.ngay_chi_tra); set('rf-co-don', r.co_don_y_kien ? '1' : '0');
+  set('rf-y-kien', r.noi_dung_y_kien); set('rf-ghi-chu', r.ghi_chu);
+}
+
+function getV(id) { return document.getElementById(id)?.value || ''; }
+function getN(id) { const v = parseFloat(document.getElementById(id)?.value); return isNaN(v) ? 0 : v; }
+
+async function saveRecord() {
+  const body = {
+    ho_ten: getV('rf-ho-ten'), dia_chi_thuong_tru: getV('rf-dia-chi'),
+    so_cccd: getV('rf-cccd'), so_dien_thoai: getV('rf-sdt'),
+    so_to: getV('rf-so-to'), so_thua: getV('rf-so-thua'),
+    loai_dat: getV('rf-loai-dat'), dia_diem_thu_hoi: getV('rf-dia-diem'),
+    tong_dien_tich: getN('rf-tong-dt'), dien_tich_thu_hoi: getN('rf-dt-thu-hoi'),
+    dien_tich_con_lai: getN('rf-dt-con-lai'), so_gcn: getV('rf-so-gcn'),
+    trang_thai: getV('rf-trang-thai'), dot_niem_yet_ck: getV('rf-dot-nyck'),
+    ngay_hop_dan: getV('rf-ngay-hop-dan') || null,
+    so_quyet_dinh_pd: getV('rf-qd-pd'), ngay_quyet_dinh_pd: getV('rf-ngay-qd-pd') || null,
+    so_quyet_dinh_thd: getV('rf-qd-thd'), ngay_quyet_dinh_thd: getV('rf-ngay-qd-thd') || null,
+    tien_bt_dat: getN('rf-tien-dat'), tien_bt_cay_trong: getN('rf-tien-cay'),
+    tien_csht: getN('rf-tien-csht'), tien_ho_tro: getN('rf-tien-ho-tro'),
+    tong_tien_nyck: getN('rf-tong-nyck'), so_tien_tam_ung: getN('rf-tam-ung'),
+    tong_tien_btht: getN('rf-tong-btht'), so_tien_da_chi_tra: getN('rf-da-chi-tra'),
+    ngay_chi_tra: getV('rf-ngay-chi-tra') || null,
+    co_don_y_kien: getV('rf-co-don') === '1',
+    noi_dung_y_kien: getV('rf-y-kien'), ghi_chu: getV('rf-ghi-chu')
+  };
+  const url    = editRecordId ? `/api/bt/records/${editRecordId}` : `/api/bt/projects/${currentProjId}/records`;
+  const method = editRecordId ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) {
+    closeRecordModal();
+    loadRecords();
+    if (currentTab === 'dashboard') loadDashboard();
+    loadProjects();
+    toast(editRecordId ? 'Đã cập nhật hồ sơ' : 'Đã thêm hồ sơ mới');
+  } else { toast('Lỗi khi lưu hồ sơ', true); }
+}
+
+function askDeleteRecord(id) {
+  document.getElementById('confirm-msg').textContent = 'Xóa hồ sơ này? Hành động không thể hoàn tác.';
+  confirmCb = async () => {
+    const res = await fetch(`/api/bt/records/${id}`, {method:'DELETE'});
+    if (res.ok) { loadRecords(); loadProjects(); toast('Đã xóa hồ sơ'); }
+    else toast('Lỗi khi xóa', true);
+  };
+  document.getElementById('modal-confirm').classList.add('open');
+}
+
+// ══════════════════════════════════════════════════════════════
+// IMPORT EXCEL
+// ══════════════════════════════════════════════════════════════
+function openImportModal() {
+  importFile = null;
+  document.getElementById('import-result').style.display = 'none';
+  document.getElementById('import-result').textContent = '';
+  document.getElementById('btn-do-import').disabled = true;
+  document.getElementById('import-file').value = '';
+  document.getElementById('modal-import').classList.add('open');
+}
+function closeImportModal() { document.getElementById('modal-import').classList.remove('open'); }
+
+function handleImportFile(file) {
+  if (!file) return;
+  importFile = file;
+  const result = document.getElementById('import-result');
+  result.style.display = 'block';
+  result.innerHTML = `<span style="color:#27ae60">✓</span> Đã chọn: <strong>${esc(file.name)}</strong> (${(file.size/1024).toFixed(0)} KB)`;
+  document.getElementById('btn-do-import').disabled = false;
+}
+
+// Drag-drop
+const dz = document.getElementById('drop-zone');
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('over'); });
+dz.addEventListener('dragleave', () => dz.classList.remove('over'));
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('over');
+  const file = e.dataTransfer.files[0];
+  if (file) handleImportFile(file);
+});
+
+async function doImport() {
+  if (!importFile || !currentProjId) return;
+  const btn = document.getElementById('btn-do-import');
+  btn.disabled = true; btn.textContent = 'Đang import...';
+  const fd = new FormData();
+  fd.append('file', importFile);
+  const res = await fetch(`/api/bt/projects/${currentProjId}/import`, { method: 'POST', body: fd });
+  const data = await res.json();
+  btn.textContent = 'Import';
+  const result = document.getElementById('import-result');
+  if (res.ok) {
+    result.style.display = 'block';
+    result.innerHTML = `<span style="color:#27ae60;font-weight:700">✓ Import thành công!</span><br>
+      Đã nhập: <strong>${data.imported}</strong> hồ sơ${data.skipped ? `, bỏ qua: ${data.skipped} dòng` : ''}.`;
+    loadRecords(); loadProjects(); loadDashboard();
+    btn.disabled = true;
+  } else {
+    result.style.display = 'block';
+    result.innerHTML = `<span style="color:#e74c3c">✗ Lỗi: ${esc(data.error || 'Unknown')}</span>`;
+    btn.disabled = false;
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+// EXPORT
+// ══════════════════════════════════════════════════════════════
+function exportExcel() {
+  if (!currentProjId) return;
+  window.open(`/api/bt/projects/${currentProjId}/export`, '_blank');
+}
+
+// ══════════════════════════════════════════════════════════════
+// CONFIRM MODAL
+// ══════════════════════════════════════════════════════════════
+function closeConfirm() { document.getElementById('modal-confirm').classList.remove('open'); confirmCb = null; }
+function confirmAction() { closeConfirm(); if (confirmCb) confirmCb(); }
+
+// ══════════════════════════════════════════════════════════════
+// TOAST
+// ══════════════════════════════════════════════════════════════
+let toastTimer = null;
+function toast(msg, err) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'show' + (err ? ' err' : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.className = ''; }, 3000);
+}
+
+// ══════════════════════════════════════════════════════════════
+// UTIL
+// ══════════════════════════════════════════════════════════════
+function esc(s) { return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;'); }
+function fmt1(n) { return Number(n||0).toLocaleString('vi-VN', {maximumFractionDigits:1}); }
+function fmtVND(n) {
+  if (!n || n==0) return '0';
+  if (n >= 1e9) return (n/1e9).toFixed(2) + ' tỷ';
+  if (n >= 1e6) return (n/1e6).toFixed(1) + ' triệu';
+  return Number(n).toLocaleString('vi-VN');
+}
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', e => { if (e.target === overlay) overlay.classList.remove('open'); });
+});
+
+// ══════════════════════════════════════════════════════════════
+// START
+// ══════════════════════════════════════════════════════════════
+init();
+</script>
+</body>
+</html>
