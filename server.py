@@ -1771,8 +1771,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                  WHERE 1=1"""
         params = []
         if cat_id:
-            sql += ' AND d.category_id IN (SELECT id FROM doc_categories WHERE id=? OR parent_id=?)'
-            params += [int(cat_id), int(cat_id)]
+            # Lấy toàn bộ cây con (N cấp) bằng CTE đệ quy
+            sql += (
+                ' AND d.category_id IN ('
+                '  WITH RECURSIVE sub(id) AS ('
+                '    SELECT id FROM doc_categories WHERE id=?'
+                '    UNION ALL'
+                '    SELECT c.id FROM doc_categories c JOIN sub s ON c.parent_id=s.id'
+                '  ) SELECT id FROM sub)'
+            )
+            params.append(int(cat_id))
         if doc_type_id:
             sql += ' AND d.doc_type_id=?'
             params.append(int(doc_type_id))
