@@ -363,90 +363,44 @@
 <!-- ── MODALS ── -->
 
 <!-- Modal upload -->
-<div id="upload-doc-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('upload-doc-modal')">
-  <div class="modal-box" style="max-width:560px;border-radius:12px;overflow:hidden;padding:0">
-    <div style="background:var(--primary);padding:18px 20px;display:flex;align-items:center;justify-content:space-between">
-      <div>
+<!-- Multi-file upload modal -->
+<div id="upload-doc-modal" class="modal-overlay hidden" onclick="if(event.target===this)cancelMultiUpload()">
+  <div style="background:#1a2332;border-radius:14px;overflow:hidden;width:min(96vw,1100px);max-height:90vh;display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(0,0,0,.5)">
+    <!-- Header -->
+    <div style="background:var(--primary);padding:16px 20px;display:flex;align-items:center;gap:12px;flex-shrink:0">
+      <div style="flex:1">
         <div style="color:#fff;font-weight:700;font-size:16px">📤 Tải lên tài liệu</div>
-        <div style="color:rgba(255,255,255,0.65);font-size:12px;margin-top:2px">PDF · Word · Excel · Hình ảnh</div>
+        <div id="mu-subtitle" style="color:rgba(255,255,255,0.65);font-size:12px;margin-top:2px">PDF · Word · Excel · Hình ảnh</div>
       </div>
-      <button onclick="closeModal('upload-doc-modal')" class="modal-close">✕</button>
+      <button onclick="cancelMultiUpload()" style="background:rgba(255,255,255,.15);border:none;color:#fff;cursor:pointer;font-size:16px;padding:6px 10px;border-radius:8px;line-height:1">✕</button>
     </div>
-    <div style="padding:20px;background:var(--bg)">
-      <div id="upload-doc-msg" class="hidden" style="margin-bottom:12px"></div>
-      <div id="doc-dropzone"
-        onclick="document.getElementById('doc-file').click()"
-        ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='rgba(196,136,58,0.07)'"
-        ondragleave="this.style.borderColor='var(--border)';this.style.background=''"
-        ondrop="handleDocDrop(event)"
-        style="border:2px dashed var(--border);border-radius:10px;padding:28px 20px;text-align:center;cursor:pointer;transition:all .2s;margin-bottom:16px">
-        <div style="font-size:36px;margin-bottom:8px">📂</div>
-        <div style="font-weight:600;color:var(--primary);margin-bottom:4px">Kéo thả file vào đây</div>
-        <div style="font-size:12px;color:var(--muted)">hoặc click để chọn file</div>
-        <input type="file" id="doc-file" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png" style="display:none" onchange="onDocFileChange(this)">
-      </div>
-      <div id="doc-file-preview" class="hidden" style="background:#f8f9fa;border:1px solid var(--border);border-radius:8px;padding:10px 14px;display:flex;align-items:center;gap:10px;margin-bottom:16px">
-        <span id="doc-file-icon" style="font-size:24px">📄</span>
-        <div style="flex:1;min-width:0">
-          <div id="doc-file-name" style="font-size:13px;font-weight:600;color:var(--primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis"></div>
-          <div id="doc-file-size" style="font-size:11px;color:var(--muted)"></div>
-        </div>
-        <button onclick="clearDocFile()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:18px;padding:0 4px">✕</button>
-      </div>
-      <div class="form-group">
-        <label>Tiêu đề tài liệu <span style="color:var(--danger)">*</span></label>
-        <input type="text" id="doc-title" placeholder="Nhập tiêu đề tài liệu..." style="width:100%">
-      </div>
-      <div class="form-group">
-        <label>Mô tả</label>
-        <textarea id="doc-desc" rows="2" placeholder="Mô tả ngắn (không bắt buộc)..." style="width:100%;min-height:60px"></textarea>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="form-group" style="margin-bottom:0">
-          <label>Danh mục</label>
-          <select id="doc-cat-select" style="width:100%">
-            <option value="">-- Không có --</option>
-          </select>
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label>Tags <span style="font-weight:400;color:var(--muted);font-size:10px">phân cách bằng dấu phẩy</span></label>
-          <input type="text" id="doc-tags" placeholder="hợp đồng, mẫu, 2024" style="width:100%">
-        </div>
-      </div>
-      <div style="border-top:1px dashed var(--border);margin:14px 0 12px;display:flex;align-items:center;gap:8px">
-        <span style="font-size:11px;color:var(--muted);white-space:nowrap;font-weight:600;text-transform:uppercase;letter-spacing:.05em">Thông tin văn bản</span>
-        <div style="flex:1;height:1px;background:var(--border)"></div>
-        <span id="meta-scan-status" style="display:none;font-size:11px;color:var(--accent);white-space:nowrap;font-style:italic"></span>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-        <div class="form-group" style="margin-bottom:0">
-          <label>Số văn bản</label>
-          <input type="text" id="doc-number" placeholder="VD: 123/2024/QĐ-VH" style="width:100%">
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label>Ngày ban hành</label>
-          <input type="date" id="doc-issued-date" style="width:100%">
-        </div>
-      </div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:10px">
-        <div class="form-group" style="margin-bottom:0">
-          <label>Cơ quan ban hành</label>
-          <input type="text" id="doc-issuer" placeholder="VD: Hội đồng quản trị" style="width:100%">
-        </div>
-        <div class="form-group" style="margin-bottom:0">
-          <label>Loại văn bản</label>
-          <select id="doc-type-select" style="width:100%">
-            <option value="">-- Không phân loại --</option>
-          </select>
-        </div>
-      </div>
+    <!-- Drop zone (shown when no files) -->
+    <div id="mu-dropzone"
+      onclick="document.getElementById('mu-file-input').click()"
+      ondragover="event.preventDefault();this.style.borderColor='var(--accent)';this.style.background='rgba(196,136,58,0.07)'"
+      ondragleave="this.style.borderColor='var(--border)';this.style.background=''"
+      ondrop="handleMultiDrop(event)"
+      style="margin:24px;border:2px dashed var(--border);border-radius:12px;padding:40px 20px;text-align:center;cursor:pointer;transition:all .2s">
+      <div style="font-size:44px;margin-bottom:10px">📂</div>
+      <div style="font-weight:700;color:var(--primary);font-size:15px;margin-bottom:4px">Kéo thả một hoặc nhiều file vào đây</div>
+      <div style="font-size:12px;color:var(--muted)">hoặc click để chọn file · PDF, Word, Excel, Hình ảnh</div>
+      <input type="file" id="mu-file-input" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png" multiple style="display:none" onchange="handleMultiFileSelect(this.files)">
     </div>
-    <div style="padding:14px 20px;background:#f8f9fa;border-top:1px solid var(--border);display:flex;gap:10px;justify-content:flex-end">
-      <button class="btn btn-outline" onclick="closeModal('upload-doc-modal')">Huỷ</button>
-      <button class="btn btn-primary" id="btn-upload-doc" onclick="submitUploadDoc()" style="min-width:120px">⬆️ Tải lên</button>
+    <!-- Cards container (scrollable horizontal) -->
+    <div id="mu-cards" style="display:none;flex:1;overflow-x:auto;overflow-y:hidden;padding:0 20px 0">
+      <div id="mu-cards-inner" style="display:flex;gap:16px;padding:16px 0;min-height:0;align-items:flex-start"></div>
+    </div>
+    <!-- Footer -->
+    <div id="mu-footer" style="display:none;padding:14px 20px;border-top:1px solid rgba(255,255,255,.08);display:none;align-items:center;gap:10px;flex-shrink:0;background:#141f2d">
+      <span id="mu-progress" style="font-size:13px;color:var(--muted);flex:1"></span>
+      <button class="btn btn-outline" onclick="cancelMultiUpload()">Huỷ tất cả</button>
+      <button class="btn btn-primary" id="mu-upload-all-btn" onclick="uploadAllCards()" style="min-width:140px">⬆️ Tải lên tất cả</button>
     </div>
   </div>
 </div>
+<!-- Hidden legacy fields kept for compatibility with populateCategorySelects() -->
+<select id="doc-cat-select" style="display:none"><option value="">-- Không có --</option></select>
+<select id="doc-type-select" style="display:none"><option value="">-- Không phân loại --</option></select>
 
 <!-- Modal preview -->
 <div id="preview-doc-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('preview-doc-modal')">
@@ -764,7 +718,10 @@ async function renderDocs() {
       <!-- Drag handle -->
       <div id="cat-resize-handle" title="Kéo để thay đổi độ rộng"></div>
       <!-- Nội dung chính -->
-      <div id="doc-main">
+      <div id="doc-main"
+        ondragover="if(canUploadDocs && document.getElementById('upload-doc-modal').classList.contains('hidden')){event.preventDefault();this.style.outline='2px dashed var(--accent)';this.style.outlineOffset='4px';}"
+        ondragleave="this.style.outline='';this.style.outlineOffset='';"
+        ondrop="this.style.outline='';this.style.outlineOffset='';if(canUploadDocs){event.preventDefault();openUploadModal();setTimeout(()=>handleMultiDrop(event),50);}">
         <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
           <input type="text" id="doc-search" placeholder="🔍 Tìm tiêu đề, số VB, cơ quan..." oninput="docSearch(this.value)"
             style="flex:1;min-width:180px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit">
@@ -1083,133 +1040,230 @@ async function deleteDoc(id, title) {
 
 // ─── UPLOAD ───
 function showUploadModal() {
-  document.getElementById('doc-title').value = '';
-  document.getElementById('doc-desc').value = '';
-  document.getElementById('doc-cat-select').value = '';
-  document.getElementById('doc-tags').value = '';
-  document.getElementById('doc-file').value = '';
-  document.getElementById('doc-number').value = '';
-  document.getElementById('doc-issued-date').value = '';
-  document.getElementById('doc-issuer').value = '';
-  document.getElementById('doc-type-select').value = '';
-  document.getElementById('upload-doc-msg').className = 'hidden';
-  document.getElementById('doc-file-preview').classList.add('hidden');
-  document.getElementById('doc-dropzone').style.display = '';
+  openUploadModal();
+}
+
+// ════════════════════════════════════════════════════════════
+// MULTI-FILE UPLOAD
+// ════════════════════════════════════════════════════════════
+let muFiles = []; // array of File objects
+const MU_ICONS = {pdf:'📕',docx:'📝',doc:'📝',xlsx:'📊',xls:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'};
+const MU_ALLOWED = ['.pdf','.docx','.doc','.xlsx','.xls','.jpg','.jpeg','.png'];
+
+function openUploadModal() {
+  muFiles = [];
+  document.getElementById('mu-dropzone').style.display = '';
+  document.getElementById('mu-cards').style.display = 'none';
+  document.getElementById('mu-footer').style.display = 'none';
+  document.getElementById('mu-cards-inner').innerHTML = '';
+  document.getElementById('mu-subtitle').textContent = 'PDF · Word · Excel · Hình ảnh';
+  document.getElementById('mu-file-input').value = '';
   showModal('upload-doc-modal');
 }
 
-function onDocFileChange(input) {
-  if (input.files && input.files[0]) showDocFilePreview(input.files[0]);
-}
-
-function handleDocDrop(e) {
+function handleMultiDrop(e) {
   e.preventDefault();
-  const dz = document.getElementById('doc-dropzone');
+  const dz = document.getElementById('mu-dropzone');
   dz.style.borderColor = ''; dz.style.background = '';
-  const file = e.dataTransfer.files[0];
+  addFilesToUpload([...e.dataTransfer.files]);
+}
+
+function handleMultiFileSelect(fileList) {
+  addFilesToUpload([...fileList]);
+}
+
+function addFilesToUpload(newFiles) {
+  const valid = newFiles.filter(f => {
+    const ext = '.' + f.name.split('.').pop().toLowerCase();
+    return MU_ALLOWED.includes(ext);
+  });
+  if (!valid.length) { alert('Không có file hợp lệ (PDF, Word, Excel, Hình ảnh)'); return; }
+  // Merge with existing, avoid duplicates by name
+  valid.forEach(f => {
+    if (!muFiles.find(x => x.name === f.name && x.size === f.size)) muFiles.push(f);
+  });
+  renderUploadCards();
+}
+
+function renderUploadCards() {
+  if (!muFiles.length) return;
+  document.getElementById('mu-dropzone').style.display = 'none';
+  document.getElementById('mu-cards').style.display = 'block';
+  document.getElementById('mu-footer').style.display = 'flex';
+  document.getElementById('mu-subtitle').textContent = `${muFiles.length} file được chọn`;
+  document.getElementById('mu-progress').textContent = '';
+
+  const catOpts = buildMuCatOptions();
+  const typeOpts = buildMuTypeOptions();
+  const inner = document.getElementById('mu-cards-inner');
+  inner.innerHTML = muFiles.map((f, i) => buildUploadCard(f, i, catOpts, typeOpts)).join('');
+}
+
+function buildMuCatOptions() {
+  function rec(pid, depth) {
+    let html = '';
+    const prefix = ' '.repeat(depth * 3);
+    docCategories.filter(c => (c.parent_id || null) == (pid || null)).forEach(c => {
+      html += `<option value="${c.id}">${prefix}${esc(c.name)}</option>`;
+      html += rec(c.id, depth + 1);
+    });
+    return html;
+  }
+  return '<option value="">-- Không có --</option>' + rec(null, 0);
+}
+
+function buildMuTypeOptions() {
+  return '<option value="">-- Không phân loại --</option>' +
+    docTypes.map(t => `<option value="${t.id}">${esc(t.name)}</option>`).join('');
+}
+
+function buildUploadCard(file, i, catOpts, typeOpts) {
+  const ext  = file.name.split('.').pop().toLowerCase();
+  const icon = MU_ICONS[ext] || '📄';
+  const sz   = file.size > 1048576 ? (file.size/1048576).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB';
+  const titleDefault = file.name.replace(/\.[^.]+$/, '');
+  return `<div id="mu-card-${i}" style="flex-shrink:0;width:360px;background:#0f1924;border:1px solid rgba(255,255,255,.1);border-radius:12px;overflow:hidden;display:flex;flex-direction:column">
+    <!-- Card header -->
+    <div style="background:rgba(255,255,255,.05);padding:10px 14px;display:flex;align-items:center;gap:10px;border-bottom:1px solid rgba(255,255,255,.07)">
+      <span style="font-size:22px">${icon}</span>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:12px;font-weight:700;color:#e8edf2;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(file.name)}">${esc(file.name)}</div>
+        <div style="font-size:11px;color:rgba(255,255,255,.4)">${sz} · .${ext.toUpperCase()}</div>
+      </div>
+      <button onclick="removeCard(${i})" style="background:none;border:none;color:rgba(255,255,255,.4);cursor:pointer;font-size:16px;padding:2px 6px;border-radius:6px;line-height:1" title="Bỏ file này">✕</button>
+    </div>
+    <!-- Card body -->
+    <div style="padding:14px;overflow-y:auto;flex:1;display:flex;flex-direction:column;gap:10px">
+      <div id="mu-msg-${i}"></div>
+      <div class="form-group" style="margin:0">
+        <label style="font-size:11px">Tiêu đề <span style="color:var(--danger)">*</span></label>
+        <input type="text" id="mu-title-${i}" value="${esc(titleDefault)}" style="width:100%;font-size:13px">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label style="font-size:11px">Danh mục</label>
+        <select id="mu-cat-${i}" style="width:100%;font-size:13px">${catOpts}</select>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="form-group" style="margin:0">
+          <label style="font-size:11px">Tags</label>
+          <input type="text" id="mu-tags-${i}" placeholder="tag1, tag2" style="width:100%;font-size:12px">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label style="font-size:11px">Loại văn bản</label>
+          <select id="mu-type-${i}" style="width:100%;font-size:12px">${typeOpts}</select>
+        </div>
+      </div>
+      <div style="border-top:1px dashed rgba(255,255,255,.1);padding-top:8px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:rgba(255,255,255,.35)">Thông tin văn bản</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div class="form-group" style="margin:0">
+          <label style="font-size:11px">Số văn bản</label>
+          <input type="text" id="mu-number-${i}" placeholder="123/2024/QĐ-VH" style="width:100%;font-size:12px">
+        </div>
+        <div class="form-group" style="margin:0">
+          <label style="font-size:11px">Ngày ban hành</label>
+          <input type="date" id="mu-date-${i}" style="width:100%;font-size:12px">
+        </div>
+      </div>
+      <div class="form-group" style="margin:0">
+        <label style="font-size:11px">Cơ quan ban hành</label>
+        <input type="text" id="mu-issuer-${i}" placeholder="VD: UBND Thành phố..." style="width:100%;font-size:13px">
+      </div>
+      <div class="form-group" style="margin:0">
+        <label style="font-size:11px">Mô tả</label>
+        <textarea id="mu-desc-${i}" rows="2" placeholder="Mô tả ngắn..." style="width:100%;font-size:12px;min-height:48px"></textarea>
+      </div>
+    </div>
+    <!-- Card footer -->
+    <div style="padding:10px 14px;border-top:1px solid rgba(255,255,255,.07);display:flex;justify-content:flex-end">
+      <button class="btn btn-primary btn-sm" id="mu-btn-${i}" onclick="uploadSingleCard(${i})">⬆️ Tải lên</button>
+    </div>
+  </div>`;
+}
+
+function removeCard(i) {
+  muFiles[i] = null;
+  const card = document.getElementById(`mu-card-${i}`);
+  if (card) card.remove();
+  const remaining = muFiles.filter(Boolean);
+  if (!remaining.length) {
+    // All removed — back to drop zone
+    muFiles = [];
+    document.getElementById('mu-dropzone').style.display = '';
+    document.getElementById('mu-cards').style.display = 'none';
+    document.getElementById('mu-footer').style.display = 'none';
+    document.getElementById('mu-subtitle').textContent = 'PDF · Word · Excel · Hình ảnh';
+  } else {
+    document.getElementById('mu-subtitle').textContent = `${remaining.length} file được chọn`;
+  }
+}
+
+async function uploadSingleCard(i) {
+  const file = muFiles[i];
   if (!file) return;
-  const allowed = ['.pdf','.docx','.xlsx','.jpg','.jpeg','.png'];
-  const ext = '.' + file.name.split('.').pop().toLowerCase();
-  if (!allowed.includes(ext)) { showMsg('upload-doc-msg','error','Định dạng không hỗ trợ'); return; }
-  const dt = new DataTransfer(); dt.items.add(file);
-  document.getElementById('doc-file').files = dt.files;
-  showDocFilePreview(file);
-}
-
-function showDocFilePreview(file) {
-  const icons = {pdf:'📕',docx:'📝',xlsx:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'};
-  const ext = file.name.split('.').pop().toLowerCase();
-  const sz = file.size > 1048576 ? (file.size/1048576).toFixed(1)+' MB' : Math.round(file.size/1024)+' KB';
-  document.getElementById('doc-file-icon').textContent = icons[ext] || '📄';
-  document.getElementById('doc-file-name').textContent = file.name;
-  document.getElementById('doc-file-size').textContent = sz + ' · .' + ext.toUpperCase();
-  document.getElementById('doc-file-preview').classList.remove('hidden');
-  document.getElementById('doc-dropzone').style.display = 'none';
-  if (!document.getElementById('doc-title').value) {
-    document.getElementById('doc-title').value = file.name.replace(/\.[^.]+$/, '');
+  const title = document.getElementById(`mu-title-${i}`)?.value.trim();
+  if (!title) {
+    const msg = document.getElementById(`mu-msg-${i}`);
+    if (msg) { msg.innerHTML = '<div style="color:#e74c3c;font-size:12px;margin-bottom:4px">⚠️ Vui lòng nhập tiêu đề</div>'; }
+    return;
   }
-  // Auto-extract metadata for PDF/DOCX
-  if (['pdf','docx'].includes(ext)) extractDocMeta(file);
-}
-
-async function extractDocMeta(file) {
-  const st = document.getElementById('meta-scan-status');
-  const fields = ['doc-number','doc-issued-date','doc-issuer'];
-  const setStatus = (msg, color) => {
-    if (!st) return;
-    st.textContent = msg;
-    st.style.display = msg ? 'inline' : 'none';
-    st.style.color = color || 'var(--accent)';
-  };
-  setStatus('🔍 Đang quét tài liệu...');
-  fields.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = true; });
-  try {
-    const fd = new FormData();
-    fd.append('file', file);
-    const r = await fetch('/api/docs/extract-meta', { method: 'POST', body: fd });
-    const data = await r.json();
-    // Server-side error (API key missing, extraction failed, etc.)
-    if (data._error) {
-      setStatus('⚠️ ' + data._error, 'var(--danger, #d9534f)');
-      setTimeout(() => setStatus(''), 6000);
-      return;
-    }
-    let filled = 0;
-    if (data.doc_number)  { document.getElementById('doc-number').value = data.doc_number; filled++; }
-    if (data.issued_date) { document.getElementById('doc-issued-date').value = data.issued_date; filled++; }
-    if (data.issuer)      { document.getElementById('doc-issuer').value = data.issuer; filled++; }
-    if (filled > 0) {
-      setStatus(`✅ Tự động điền ${filled} trường — kiểm tra lại nếu cần`, 'var(--success, #28a745)');
-    } else {
-      setStatus('⚠️ Không tìm thấy thông tin, vui lòng nhập tay', 'var(--danger, #d9534f)');
-    }
-    setTimeout(() => setStatus(''), 6000);
-  } catch (err) {
-    console.error('[extractDocMeta]', err);
-    setStatus('⚠️ Lỗi kết nối khi quét tài liệu', 'var(--danger, #d9534f)');
-    setTimeout(() => setStatus(''), 4000);
-  } finally {
-    fields.forEach(id => { const el = document.getElementById(id); if (el) el.disabled = false; });
-  }
-}
-
-function clearDocFile() {
-  document.getElementById('doc-file').value = '';
-  document.getElementById('doc-file-preview').classList.add('hidden');
-  document.getElementById('doc-dropzone').style.display = '';
-}
-
-async function submitUploadDoc() {
-  const title      = document.getElementById('doc-title').value.trim();
-  const desc       = document.getElementById('doc-desc').value.trim();
-  const catId      = document.getElementById('doc-cat-select').value;
-  const tags       = document.getElementById('doc-tags').value.trim();
-  const docNumber  = document.getElementById('doc-number').value.trim();
-  const issuedDate = document.getElementById('doc-issued-date').value;
-  const issuer     = document.getElementById('doc-issuer').value.trim();
-  const docTypeId  = document.getElementById('doc-type-select').value;
-  const file  = document.getElementById('doc-file').files[0];
-  const btn   = document.getElementById('btn-upload-doc');
-  if (!title) { showMsg('upload-doc-msg','error','Vui lòng nhập tiêu đề'); return; }
-  if (!file)  { showMsg('upload-doc-msg','error','Vui lòng chọn file'); return; }
-  // No size limit
+  const btn = document.getElementById(`mu-btn-${i}`);
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Đang tải...'; }
   const fd = new FormData();
-  fd.append('title', title); fd.append('description', desc);
-  fd.append('category_id', catId); fd.append('tags', tags);
-  fd.append('doc_number', docNumber); fd.append('issued_date', issuedDate);
-  fd.append('issuer', issuer); fd.append('doc_type_id', docTypeId);
+  fd.append('title',       title);
+  fd.append('description', document.getElementById(`mu-desc-${i}`)?.value || '');
+  fd.append('category_id', document.getElementById(`mu-cat-${i}`)?.value || '');
+  fd.append('tags',        document.getElementById(`mu-tags-${i}`)?.value || '');
+  fd.append('doc_number',  document.getElementById(`mu-number-${i}`)?.value || '');
+  fd.append('issued_date', document.getElementById(`mu-date-${i}`)?.value || '');
+  fd.append('issuer',      document.getElementById(`mu-issuer-${i}`)?.value || '');
+  fd.append('doc_type_id', document.getElementById(`mu-type-${i}`)?.value || '');
   fd.append('file', file);
-  btn.disabled = true; btn.textContent = '⏳ Đang tải...';
   try {
-    const r = await fetch('/api/docs/upload', {method:'POST', body: fd});
+    const r = await fetch('/api/docs/upload', { method: 'POST', body: fd });
     const d = await r.json();
     if (d.ok) {
-      closeModal('upload-doc-modal');
-      await loadDocs();
-    } else { showMsg('upload-doc-msg','error', d.error || 'Lỗi upload'); }
-  } catch(e) { showMsg('upload-doc-msg','error','Lỗi kết nối'); }
-  btn.disabled = false; btn.textContent = '⬆️ Tải lên';
+      // Mark card as done
+      const card = document.getElementById(`mu-card-${i}`);
+      if (card) {
+        card.style.opacity = '0.5';
+        card.style.pointerEvents = 'none';
+        const msg = document.getElementById(`mu-msg-${i}`);
+        if (msg) msg.innerHTML = '<div style="color:#27ae60;font-size:12px;font-weight:700;margin-bottom:4px">✅ Đã tải lên thành công</div>';
+      }
+      muFiles[i] = null;
+      loadDocs();
+    } else {
+      if (btn) { btn.disabled = false; btn.textContent = '⬆️ Tải lên'; }
+      const msg = document.getElementById(`mu-msg-${i}`);
+      if (msg) msg.innerHTML = `<div style="color:#e74c3c;font-size:12px;margin-bottom:4px">⚠️ ${esc(d.error||'Lỗi upload')}</div>`;
+    }
+  } catch(e) {
+    if (btn) { btn.disabled = false; btn.textContent = '⬆️ Tải lên'; }
+  }
 }
+
+async function uploadAllCards() {
+  const btn = document.getElementById('mu-upload-all-btn');
+  btn.disabled = true; btn.textContent = '⏳ Đang tải...';
+  const pending = muFiles.map((f,i) => f ? i : -1).filter(i => i >= 0);
+  let done = 0;
+  for (const i of pending) {
+    await uploadSingleCard(i);
+    done++;
+    document.getElementById('mu-progress').textContent = `Đã tải ${done}/${pending.length}...`;
+  }
+  btn.disabled = false; btn.textContent = '⬆️ Tải lên tất cả';
+  const stillPending = muFiles.filter(Boolean).length;
+  if (!stillPending) {
+    setTimeout(() => { closeModal('upload-doc-modal'); }, 700);
+  }
+}
+
+function cancelMultiUpload() {
+  muFiles = [];
+  closeModal('upload-doc-modal');
+}
+
 
 // ─── EDIT DOC ───
 function populateEditSelects() {
