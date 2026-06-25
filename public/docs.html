@@ -631,6 +631,8 @@ let docTypes = [];
 let allDocs = [];
 let docActiveCategory = null;
 let docViewMode = localStorage.getItem('docViewMode') || 'card';
+let docSortCol = localStorage.getItem('docSortCol') || 'created_at';
+let docSortDir = localStorage.getItem('docSortDir') || 'desc';
 let docActiveTag = null;
 let docActiveType = null;
 let docSearchQ = '';
@@ -954,10 +956,58 @@ function docMeta(d) {
   return { ext, icon, sz, canDelete, canEdit, catBadge, typeBadge, tags };
 }
 
+function setDocSort(col) {
+  if (docSortCol === col) {
+    docSortDir = docSortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    docSortCol = col;
+    docSortDir = 'asc';
+  }
+  localStorage.setItem('docSortCol', docSortCol);
+  localStorage.setItem('docSortDir', docSortDir);
+  const area = document.getElementById('doc-list-area');
+  if (area && allDocs.length) area.innerHTML = renderDocList(allDocs);
+}
+
+function sortedDocs(docs) {
+  const col = docSortCol;
+  const dir = docSortDir === 'asc' ? 1 : -1;
+  return [...docs].sort((a, b) => {
+    let va = a[col] ?? '';
+    let vb = b[col] ?? '';
+    // numeric for file_size
+    if (col === 'file_size') return (va - vb) * dir;
+    // date comparison for issued_date / created_at
+    if (col === 'issued_date' || col === 'created_at') {
+      va = va ? new Date(va).getTime() : 0;
+      vb = vb ? new Date(vb).getTime() : 0;
+      return (va - vb) * dir;
+    }
+    return String(va).localeCompare(String(vb), 'vi', { sensitivity: 'base' }) * dir;
+  });
+}
+
+function sortArrow(col) {
+  if (docSortCol !== col) return `<span style="opacity:.25;font-size:10px;margin-left:3px">⇅</span>`;
+  return `<span style="font-size:10px;margin-left:3px;color:var(--primary)">${docSortDir === 'asc' ? '▲' : '▼'}</span>`;
+}
+
+function thSort(col, label) {
+  const active = docSortCol === col;
+  return `<th onclick="setDocSort('${col}')" style="padding:9px 8px;text-align:left;font-size:11px;font-weight:700;
+    text-transform:uppercase;letter-spacing:.05em;cursor:pointer;user-select:none;white-space:nowrap;
+    color:${active ? 'var(--primary)' : 'var(--muted)'};
+    background:${active ? 'rgba(196,136,58,.08)' : 'rgba(0,0,0,.04)'};
+    transition:background .15s" title="Sắp xếp theo ${label}">
+    ${label}${sortArrow(col)}
+  </th>`;
+}
+
 function renderDocList(docs) {
-  if (docViewMode === 'list')    return renderListView(docs);
-  if (docViewMode === 'compact') return renderCompactView(docs);
-  return renderCardView(docs);
+  const sorted = sortedDocs(docs);
+  if (docViewMode === 'list')    return renderListView(sorted);
+  if (docViewMode === 'compact') return renderCompactView(sorted);
+  return renderCardView(sorted);
 }
 
 // ── CARD VIEW ──────────────────────────────────────────────
@@ -1029,14 +1079,14 @@ function renderListView(docs) {
   return `<div class="card" style="padding:0;overflow:hidden">
     <table style="width:100%;border-collapse:collapse">
       <thead>
-        <tr style="background:rgba(0,0,0,.04);border-bottom:2px solid var(--border)">
-          <th style="padding:9px 8px;text-align:center;width:36px"></th>
-          <th style="padding:9px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Tiêu đề / Danh mục</th>
-          <th style="padding:9px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Số VB / Ngày</th>
-          <th style="padding:9px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Cơ quan</th>
-          <th style="padding:9px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Kích cỡ</th>
-          <th style="padding:9px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Ngày tải</th>
-          <th style="padding:9px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Thao tác</th>
+        <tr style="border-bottom:2px solid var(--border)">
+          <th style="padding:9px 8px;text-align:center;width:36px;background:rgba(0,0,0,.04)"></th>
+          ${thSort('title',      'Tiêu đề / Danh mục')}
+          ${thSort('doc_number', 'Số VB / Ngày')}
+          ${thSort('issuer',     'Cơ quan')}
+          ${thSort('file_size',  'Kích cỡ')}
+          ${thSort('created_at', 'Ngày tải')}
+          <th style="padding:9px 8px;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);background:rgba(0,0,0,.04)">Thao tác</th>
         </tr>
       </thead>
       <tbody>${rows}</tbody>
