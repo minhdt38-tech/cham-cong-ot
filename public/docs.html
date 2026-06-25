@@ -1066,6 +1066,9 @@ function updateDocBulkBar() {
   bar.style.display = cnt > 0 ? 'flex' : 'none';
   const lbl = document.getElementById('doc-bulk-cnt');
   if (lbl) lbl.textContent = `Đã chọn ${cnt} / ${total} tài liệu`;
+  // Update download button text with count
+  const dlBtn = document.getElementById('doc-bulk-dl-btn');
+  if (dlBtn) dlBtn.textContent = `⬇️ Tải về ${cnt} tài liệu đã chọn`;
   // sync select-all
   const sa = document.getElementById('doc-chk-all');
   if (sa) { sa.checked = cnt === total && total > 0; sa.indeterminate = cnt > 0 && cnt < total; }
@@ -1118,9 +1121,8 @@ function docBulkBarHtml() {
     margin-bottom:10px;flex-wrap:wrap">
     <span id="doc-bulk-cnt" style="font-size:13px;font-weight:600;flex:1;color:var(--primary)"></span>
     <button class="btn btn-sm btn-outline" id="doc-bulk-edit-btn" onclick="bulkEditDoc()" style="display:none">✏️ Sửa</button>
-    ${myDocPerms.can_download_docs?`<button class="btn btn-sm btn-outline" onclick="bulkDownloadDocs()">⬇️ Tải về tất cả</button>`:''}
-    ${myDocPerms.can_delete_docs?`<button class="btn btn-sm" style="color:var(--danger);border:1.5px solid var(--danger)" onclick="bulkDeleteDocs()">🗑 Xóa tất cả đã chọn</button>`:''}
-    ${!myDocPerms.can_download_docs&&!myDocPerms.can_delete_docs?'':''}
+    ${myDocPerms.can_download_docs?`<button class="btn btn-sm btn-outline" id="doc-bulk-dl-btn" onclick="bulkDownloadDocs()">⬇️ Tải về</button>`:''}
+    ${myDocPerms.can_delete_docs?`<button class="btn btn-sm" style="color:var(--danger);border:1.5px solid var(--danger)" onclick="bulkDeleteDocs()">🗑 Xóa đã chọn</button>`:''}
     <button class="btn btn-sm btn-outline" onclick="docSelectAll(false);docSelected.clear();updateDocBulkBar()">✕ Bỏ chọn</button>
   </div>`;
 }
@@ -1280,9 +1282,19 @@ async function downloadDoc(id, fileNameEnc) {
   try {
     const r = await api('GET', '/api/docs/url/' + id);
     if (!r.url) { alert('Không thể tải file'); return; }
+    const fileName = decodeURIComponent(fileNameEnc);
+    // Fetch as blob so browser saves to Downloads instead of opening in tab
+    const resp = await fetch(r.url);
+    if (!resp.ok) throw new Error('Lỗi tải file: ' + resp.status);
+    const blob = await resp.blob();
+    const blobUrl = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = r.url; a.download = decodeURIComponent(fileNameEnc);
-    document.body.appendChild(a); a.click(); document.body.removeChild(a);
+    a.href = blobUrl;
+    a.download = fileName;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
   } catch(e) { alert(e.message); }
 }
 
