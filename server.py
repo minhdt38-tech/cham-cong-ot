@@ -277,6 +277,8 @@ def init_db():
             db.execute("ALTER TABLE users ADD COLUMN can_upload_docs INTEGER DEFAULT 0")
         if 'can_view_docs' not in cols:
             db.execute("ALTER TABLE users ADD COLUMN can_view_docs INTEGER DEFAULT 1")
+        if 'can_download_docs' not in cols:
+            db.execute("ALTER TABLE users ADD COLUMN can_download_docs INTEGER DEFAULT 1")
         if 'can_edit_docs' not in cols:
             db.execute("ALTER TABLE users ADD COLUMN can_edit_docs INTEGER DEFAULT 0")
         if 'can_delete_docs' not in cols:
@@ -1676,14 +1678,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def _get_doc_perms(self, sess):
         """Lay quyen tai lieu cua user (manager luon co tat ca quyen)"""
         if sess['role'] == 'manager':
-            return {'can_upload_docs':1,'can_view_docs':1,'can_edit_docs':1,'can_delete_docs':1}
+            return {'can_upload_docs':1,'can_view_docs':1,'can_download_docs':1,'can_edit_docs':1,'can_delete_docs':1}
         with get_db() as db:
             row = db.execute(
-                'SELECT can_upload_docs,can_view_docs,can_edit_docs,can_delete_docs FROM users WHERE id=?',
+                'SELECT can_upload_docs,can_view_docs,can_download_docs,can_edit_docs,can_delete_docs FROM users WHERE id=?',
                 (sess['userId'],)
             ).fetchone()
         if not row:
-            return {'can_upload_docs':0,'can_view_docs':0,'can_edit_docs':0,'can_delete_docs':0}
+            return {'can_upload_docs':0,'can_view_docs':0,'can_download_docs':0,'can_edit_docs':0,'can_delete_docs':0}
         return dict(row)
 
     def can_upload_docs(self, sess):
@@ -1691,6 +1693,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     def can_view_docs(self, sess):
         return self._get_doc_perms(sess)['can_view_docs'] == 1
+
+    def can_download_docs(self, sess):
+        return self._get_doc_perms(sess)['can_download_docs'] == 1
 
     def can_edit_docs(self, sess):
         return self._get_doc_perms(sess)['can_edit_docs'] == 1
@@ -2025,6 +2030,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def api_docs_presigned_url(self, doc_id):
         sess = self.require_auth()
         if not sess: return
+        if not self.can_download_docs(sess):
+            self.send_json({'error': 'Ban khong co quyen tai ve tai lieu'}, 403); return
         with get_db() as db:
             row = db.execute('SELECT file_path, file_name FROM documents WHERE id=?', (doc_id,)).fetchone()
         if not row:
@@ -2109,7 +2116,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with get_db() as db:
             rows = db.execute(
                 """SELECT id, username, full_name, department,
-                          can_upload_docs, can_view_docs, can_edit_docs, can_delete_docs
+                          can_upload_docs, can_view_docs, can_download_docs, can_edit_docs, can_delete_docs
                    FROM users WHERE role='employee' ORDER BY full_name"""
             ).fetchall()
         self.send_json(rows_to_list(rows))
@@ -2121,12 +2128,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with get_db() as db:
             db.execute(
                 """UPDATE users SET
-                   can_upload_docs=?, can_view_docs=?, can_edit_docs=?, can_delete_docs=?
+                   can_upload_docs=?, can_view_docs=?, can_download_docs=?, can_edit_docs=?, can_delete_docs=?
                    WHERE id=?""",
-                (1 if body.get('can_upload_docs') else 0,
-                 1 if body.get('can_view_docs')   else 0,
-                 1 if body.get('can_edit_docs')   else 0,
-                 1 if body.get('can_delete_docs') else 0,
+                (1 if body.get('can_upload_docs')   else 0,
+                 1 if body.get('can_view_docs')     else 0,
+                 1 if body.get('can_download_docs') else 0,
+                 1 if body.get('can_edit_docs')     else 0,
+                 1 if body.get('can_delete_docs')   else 0,
                  uid)
             )
             db.commit()

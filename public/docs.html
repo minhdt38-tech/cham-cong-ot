@@ -618,7 +618,7 @@ let docActiveTag = null;
 let docActiveType = null;
 let docSearchQ = '';
 let canUploadDocs = false;
-let myDocPerms = { can_view_docs:1, can_upload_docs:0, can_edit_docs:0, can_delete_docs:0 };
+let myDocPerms = { can_view_docs:1, can_download_docs:1, can_upload_docs:0, can_edit_docs:0, can_delete_docs:0 };
 
 // ─── AUTH ───
 document.getElementById('login-form').addEventListener('submit', async e => {
@@ -937,15 +937,16 @@ function docMeta(d) {
   const ext  = (d.file_name||'').split('.').pop().toLowerCase();
   const icon = {pdf:'📄',docx:'📝',doc:'📝',xlsx:'📊',xls:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'}[ext] || '📁';
   const sz   = d.file_size > 1048576 ? (d.file_size/1048576).toFixed(1)+'MB' : Math.round((d.file_size||0)/1024)+'KB';
-  const canDelete = myDocPerms.can_delete_docs == 1;
-  const canEdit   = myDocPerms.can_edit_docs == 1;
+  const canDownload = myDocPerms.can_download_docs == 1;
+  const canDelete   = myDocPerms.can_delete_docs == 1;
+  const canEdit     = myDocPerms.can_edit_docs == 1;
   const catBadge  = d.category_name
     ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:${d.category_color}22;color:${d.category_color};font-weight:600">${esc(d.category_name)}</span>` : '';
   const typeBadge = d.doc_type_name
     ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:rgba(36,113,163,.1);color:#2471A3;font-weight:600">📋 ${esc(d.doc_type_name)}</span>` : '';
   const tags = (d.tags||'').split(',').map(t=>t.trim()).filter(Boolean)
     .map(t => `<span onclick="filterDocTag('${esc(t)}')" style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,.06);color:var(--muted);cursor:pointer">${esc(t)}</span>`).join('');
-  return { ext, icon, sz, canDelete, canEdit, catBadge, typeBadge, tags };
+  return { ext, icon, sz, canDownload, canDelete, canEdit, catBadge, typeBadge, tags };
 }
 
 function setDocSort(col) {
@@ -1006,7 +1007,7 @@ function renderDocList(docs) {
 function renderCardView(docs) {
   return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">${
     docs.map(d => {
-      const { ext, icon, sz, canDelete, canEdit, catBadge, typeBadge, tags } = docMeta(d);
+      const { ext, icon, sz, canDownload, canDelete, canEdit, catBadge, typeBadge, tags } = docMeta(d);
       const metaRows = [];
       if (d.doc_number)  metaRows.push(`<span>🔢 <b>Số VB:</b> ${esc(d.doc_number)}</span>`);
       if (d.issued_date) metaRows.push(`<span>📅 <b>Ban hành:</b> ${d.issued_date}</span>`);
@@ -1030,7 +1031,7 @@ function renderCardView(docs) {
         </div>
         <div style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn btn-sm btn-primary" style="flex:1;min-width:60px" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">👁 Xem</button>
-          <button class="btn btn-sm btn-outline" style="flex:1;min-width:60px" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name||'')}')">⬇️ Tải</button>
+          ${canDownload?`<button class="btn btn-sm btn-outline" style="flex:1;min-width:60px" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name||'')}')">⬇️ Tải</button>`:''}
           ${canEdit?`<button class="btn btn-sm btn-outline" title="Sửa" onclick="editDoc(${d.id})" style="padding:7px 10px">✏️</button>`:''}
           ${canDelete?`<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);border-width:1.5px;padding:7px 10px" onclick="deleteDoc(${d.id},'${esc(d.title)}')">🗑</button>`:''}
         </div>
@@ -1117,8 +1118,9 @@ function docBulkBarHtml() {
     margin-bottom:10px;flex-wrap:wrap">
     <span id="doc-bulk-cnt" style="font-size:13px;font-weight:600;flex:1;color:var(--primary)"></span>
     <button class="btn btn-sm btn-outline" id="doc-bulk-edit-btn" onclick="bulkEditDoc()" style="display:none">✏️ Sửa</button>
-    <button class="btn btn-sm btn-outline" onclick="bulkDownloadDocs()">⬇️ Tải về tất cả</button>
-    <button class="btn btn-sm" style="color:var(--danger);border:1.5px solid var(--danger)" onclick="bulkDeleteDocs()">🗑 Xóa tất cả đã chọn</button>
+    ${myDocPerms.can_download_docs?`<button class="btn btn-sm btn-outline" onclick="bulkDownloadDocs()">⬇️ Tải về tất cả</button>`:''}
+    ${myDocPerms.can_delete_docs?`<button class="btn btn-sm" style="color:var(--danger);border:1.5px solid var(--danger)" onclick="bulkDeleteDocs()">🗑 Xóa tất cả đã chọn</button>`:''}
+    ${!myDocPerms.can_download_docs&&!myDocPerms.can_delete_docs?'':''}
     <button class="btn btn-sm btn-outline" onclick="docSelectAll(false);docSelected.clear();updateDocBulkBar()">✕ Bỏ chọn</button>
   </div>`;
 }
@@ -1126,7 +1128,7 @@ function docBulkBarHtml() {
 // ── LIST VIEW ──────────────────────────────────────────────
 function renderListView(docs) {
   const rows = docs.map(d => {
-    const { ext, icon, sz, canDelete, canEdit, catBadge, typeBadge } = docMeta(d);
+    const { ext, icon, sz, canDownload, canDelete, canEdit, catBadge, typeBadge } = docMeta(d);
     const sel = docSelected.has(d.id);
     return `<tr style="border-bottom:1px solid var(--border);transition:background .1s;${sel?'background:rgba(27,42,74,.04)':''}"
         onmouseover="if(!this.dataset.sel)this.style.background='rgba(0,0,0,.03)'"
@@ -1149,7 +1151,7 @@ function renderListView(docs) {
       <td style="padding:10px 8px;white-space:nowrap">
         <div style="display:flex;gap:4px">
           <button class="btn btn-sm btn-primary" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">👁 Xem</button>
-          <button class="btn btn-sm btn-outline" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name||'')}')">⬇️ Tải</button>
+          ${canDownload?`<button class="btn btn-sm btn-outline" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name||'')}')">⬇️ Tải</button>`:''}
           ${canEdit?`<button class="btn btn-sm btn-outline" title="Sửa" onclick="editDoc(${d.id})" style="padding:5px 8px">✏️</button>`:''}
           ${canDelete?`<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);padding:5px 8px" onclick="deleteDoc(${d.id},'${esc(d.title)}')">🗑</button>`:''}
         </div>
@@ -1179,7 +1181,7 @@ function renderListView(docs) {
 // ── COMPACT VIEW ───────────────────────────────────────────
 function renderCompactView(docs) {
   const rows = docs.map(d => {
-    const { ext, icon, sz, canDelete, canEdit, catBadge } = docMeta(d);
+    const { ext, icon, sz, canDownload, canDelete, canEdit, catBadge } = docMeta(d);
     const sel = docSelected.has(d.id);
     return `<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;
         border-bottom:1px solid var(--border);transition:background .1s;${sel?'background:rgba(27,42,74,.04)':''}">
@@ -1194,7 +1196,7 @@ function renderCompactView(docs) {
       <span style="font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0">${sz}</span>
       <div style="display:flex;gap:3px;flex-shrink:0">
         <button class="btn btn-sm btn-primary" style="padding:4px 8px;font-size:12px" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">Xem</button>
-        <button class="btn btn-sm btn-outline" style="padding:4px 8px;font-size:12px" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name||'')}')">Tải</button>
+        ${canDownload?`<button class="btn btn-sm btn-outline" style="padding:4px 8px;font-size:12px" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name||'')}')">Tải</button>`:''}
         ${canEdit?`<button class="btn btn-sm btn-outline" style="padding:4px 7px;font-size:12px" onclick="editDoc(${d.id})">✏️</button>`:''}
         ${canDelete?`<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);padding:4px 7px;font-size:12px" onclick="deleteDoc(${d.id},'${esc(d.title)}')">🗑</button>`:''}
       </div>
