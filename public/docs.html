@@ -630,6 +630,7 @@ let docCategories = [];
 let docTypes = [];
 let allDocs = [];
 let docActiveCategory = null;
+let docViewMode = localStorage.getItem('docViewMode') || 'card';
 let docActiveTag = null;
 let docActiveType = null;
 let docSearchQ = '';
@@ -722,9 +723,19 @@ async function renderDocs() {
         ondragover="if(canUploadDocs && document.getElementById('upload-doc-modal').classList.contains('hidden')){event.preventDefault();this.style.outline='2px dashed var(--accent)';this.style.outlineOffset='4px';}"
         ondragleave="this.style.outline='';this.style.outlineOffset='';"
         ondrop="this.style.outline='';this.style.outlineOffset='';if(canUploadDocs){event.preventDefault();openUploadModal();setTimeout(()=>handleMultiDrop(event),50);}">
-        <div style="display:flex;gap:10px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+        <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
           <input type="text" id="doc-search" placeholder="🔍 Tìm tiêu đề, số VB, cơ quan..." oninput="docSearch(this.value)"
             style="flex:1;min-width:180px;padding:8px 12px;border:1px solid var(--border);border-radius:6px;font-size:14px;font-family:inherit">
+          <div id="view-toggle" style="display:flex;border:1px solid var(--border);border-radius:6px;overflow:hidden;flex-shrink:0">
+            ${['card','list','compact'].map(m=>`
+            <button title="${m==='card'?'Dạng thẻ':m==='list'?'Dạng danh sách':'Dạng thu gọn'}"
+              onclick="setDocView('${m}')" id="vbtn-${m}"
+              style="padding:6px 11px;border:none;cursor:pointer;font-size:14px;transition:all .15s;
+                background:${docViewMode===m?'var(--primary)':'transparent'};
+                color:${docViewMode===m?'#fff':'var(--muted)'}">
+              ${m==='card'?'⊞':m==='list'?'☰':'▤'}
+            </button>`).join('')}
+          </div>
           ${canUploadDocs ? `<button class="btn btn-primary" onclick="showUploadModal()">⬆️ Tải lên tài liệu</button>` : ''}
         </div>
         <div id="doc-list-area"></div>
@@ -912,6 +923,152 @@ function filterDocType(id) { docActiveType = (docActiveType==id)?null:id; docAct
 function filterDocTag(tag) { docActiveTag = (docActiveTag===tag)?null:tag; docActiveCategory=null; docActiveType=null; renderDocCategories(); renderDocTypes(); loadDocs(); }
 function docSearch(q) { docSearchQ = q; loadDocs(); }
 
+// ════════════════════════════════════════════════════════
+// VIEW MODE
+// ════════════════════════════════════════════════════════
+function setDocView(mode) {
+  docViewMode = mode;
+  localStorage.setItem('docViewMode', mode);
+  ['card','list','compact'].forEach(m => {
+    const btn = document.getElementById('vbtn-' + m);
+    if (!btn) return;
+    btn.style.background = m === mode ? 'var(--primary)' : 'transparent';
+    btn.style.color = m === mode ? '#fff' : 'var(--muted)';
+  });
+  const area = document.getElementById('doc-list-area');
+  if (area && allDocs.length) area.innerHTML = renderDocList(allDocs);
+}
+
+function docMeta(d) {
+  const ext  = (d.file_name||'').split('.').pop().toLowerCase();
+  const icon = {pdf:'📄',docx:'📝',doc:'📝',xlsx:'📊',xls:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'}[ext] || '📁';
+  const sz   = d.file_size > 1048576 ? (d.file_size/1048576).toFixed(1)+'MB' : Math.round((d.file_size||0)/1024)+'KB';
+  const canDelete = currentUser.role==='manager' || d.uploaded_by==currentUser.id;
+  const canEdit   = currentUser.role==='manager' || d.uploaded_by==currentUser.id;
+  const catBadge  = d.category_name
+    ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:${d.category_color}22;color:${d.category_color};font-weight:600">${esc(d.category_name)}</span>` : '';
+  const typeBadge = d.doc_type_name
+    ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:rgba(36,113,163,.1);color:#2471A3;font-weight:600">📋 ${esc(d.doc_type_name)}</span>` : '';
+  const tags = (d.tags||'').split(',').map(t=>t.trim()).filter(Boolean)
+    .map(t => `<span onclick="filterDocTag('${esc(t)}')" style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,.06);color:var(--muted);cursor:pointer">${esc(t)}</span>`).join('');
+  return { ext, icon, sz, canDelete, canEdit, catBadge, typeBadge, tags };
+}
+
+function renderDocList(docs) {
+  if (docViewMode === 'list')    return renderListView(docs);
+  if (docViewMode === 'compact') return renderCompactView(docs);
+  return renderCardView(docs);
+}
+
+// ── CARD VIEW ──────────────────────────────────────────────
+function renderCardView(docs) {
+  return `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">${
+    docs.map(d => {
+      const { ext, icon, sz, canDelete, canEdit, catBadge, typeBadge, tags } = docMeta(d);
+      const metaRows = [];
+      if (d.doc_number)  metaRows.push(`<span>🔢 <b>Số VB:</b> ${esc(d.doc_number)}</span>`);
+      if (d.issued_date) metaRows.push(`<span>📅 <b>Ban hành:</b> ${d.issued_date}</span>`);
+      if (d.issuer)      metaRows.push(`<span>🏛️ <b>Cơ quan:</b> ${esc(d.issuer)}</span>`);
+      const metaHtml = metaRows.length
+        ? `<div style="background:#f0f4f8;border:1px solid #dce4ee;border-radius:6px;padding:7px 10px;font-size:11.5px;color:#2c3e50;display:flex;flex-direction:column;gap:3px">${metaRows.join('')}</div>` : '';
+      return `<div class="card" style="padding:14px;display:flex;flex-direction:column;gap:8px;border-top:3px solid ${d.category_color||'var(--accent)'}">
+        <div style="display:flex;align-items:flex-start;gap:10px">
+          <div style="font-size:32px;line-height:1">${icon}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:14px;color:var(--primary);margin-bottom:2px;word-break:break-word">${esc(d.title)}</div>
+            ${d.description?`<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${esc(d.description)}</div>`:''}
+            <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${catBadge}${typeBadge}</div>
+          </div>
+        </div>
+        ${metaHtml}
+        ${tags?`<div style="display:flex;gap:4px;flex-wrap:wrap">${tags}</div>`:''}
+        <div style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px">
+          <span>📎 ${esc((d.file_name||'').length>25?(d.file_name||'').slice(0,22)+'...':(d.file_name||''))} · ${sz}</span>
+          <span>${esc(d.uploader_name||'')} · ${d.created_at?d.created_at.slice(0,10):''}</span>
+        </div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn btn-sm btn-primary" style="flex:1;min-width:60px" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">👁 Xem</button>
+          <button class="btn btn-sm btn-outline" style="flex:1;min-width:60px" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name||'')}')">⬇️ Tải</button>
+          ${canEdit?`<button class="btn btn-sm btn-outline" title="Sửa" onclick="editDoc(${d.id})" style="padding:7px 10px">✏️</button>`:''}
+          ${canDelete?`<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);border-width:1.5px;padding:7px 10px" onclick="deleteDoc(${d.id},'${esc(d.title)}')">🗑</button>`:''}
+        </div>
+      </div>`;
+    }).join('')
+  }</div>`;
+}
+
+// ── LIST VIEW ──────────────────────────────────────────────
+function renderListView(docs) {
+  const rows = docs.map(d => {
+    const { ext, icon, sz, canDelete, canEdit, catBadge, typeBadge } = docMeta(d);
+    return `<tr style="border-bottom:1px solid var(--border);transition:background .1s" onmouseover="this.style.background='rgba(0,0,0,.03)'" onmouseout="this.style.background=''">
+      <td style="padding:10px 12px;width:36px;font-size:22px;text-align:center">${icon}</td>
+      <td style="padding:10px 8px;min-width:0">
+        <div style="font-weight:600;font-size:13.5px;color:var(--primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px" title="${esc(d.title)}">${esc(d.title)}</div>
+        <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;align-items:center">${catBadge}${typeBadge}</div>
+      </td>
+      <td style="padding:10px 8px;font-size:12px;color:var(--muted);white-space:nowrap">
+        ${d.doc_number?`<div>🔢 ${esc(d.doc_number)}</div>`:''}
+        ${d.issued_date?`<div>📅 ${d.issued_date}</div>`:''}
+      </td>
+      <td style="padding:10px 8px;font-size:12px;color:var(--muted);max-width:180px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="${esc(d.issuer||'')}">
+        ${d.issuer?`🏛️ ${esc(d.issuer)}`:''}
+      </td>
+      <td style="padding:10px 8px;font-size:11px;color:var(--muted);white-space:nowrap">${sz}</td>
+      <td style="padding:10px 8px;font-size:11px;color:var(--muted);white-space:nowrap">${d.created_at?d.created_at.slice(0,10):''}</td>
+      <td style="padding:10px 8px;white-space:nowrap">
+        <div style="display:flex;gap:4px">
+          <button class="btn btn-sm btn-primary" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">👁 Xem</button>
+          <button class="btn btn-sm btn-outline" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name||'')}')">⬇️ Tải</button>
+          ${canEdit?`<button class="btn btn-sm btn-outline" title="Sửa" onclick="editDoc(${d.id})" style="padding:5px 8px">✏️</button>`:''}
+          ${canDelete?`<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);padding:5px 8px" onclick="deleteDoc(${d.id},'${esc(d.title)}')">🗑</button>`:''}
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+  return `<div class="card" style="padding:0;overflow:hidden">
+    <table style="width:100%;border-collapse:collapse">
+      <thead>
+        <tr style="background:rgba(0,0,0,.04);border-bottom:2px solid var(--border)">
+          <th style="padding:9px 8px;text-align:center;width:36px"></th>
+          <th style="padding:9px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Tiêu đề / Danh mục</th>
+          <th style="padding:9px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Số VB / Ngày</th>
+          <th style="padding:9px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Cơ quan</th>
+          <th style="padding:9px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Kích cỡ</th>
+          <th style="padding:9px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Ngày tải</th>
+          <th style="padding:9px 8px;text-align:left;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Thao tác</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+// ── COMPACT VIEW ───────────────────────────────────────────
+function renderCompactView(docs) {
+  const rows = docs.map(d => {
+    const { ext, icon, sz, canDelete, canEdit, catBadge } = docMeta(d);
+    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border);transition:background .1s"
+        onmouseover="this.style.background='rgba(0,0,0,.03)'" onmouseout="this.style.background=''">
+      <span style="font-size:18px;flex-shrink:0">${icon}</span>
+      <div style="flex:1;min-width:0">
+        <span style="font-weight:600;font-size:13px;color:var(--primary);cursor:pointer" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">${esc(d.title)}</span>
+        <span style="margin-left:6px">${catBadge}</span>
+        ${d.doc_number?`<span style="margin-left:8px;font-size:11px;color:var(--muted)">№ ${esc(d.doc_number)}</span>`:''}
+        ${d.issued_date?`<span style="margin-left:6px;font-size:11px;color:var(--muted)">${d.issued_date}</span>`:''}
+      </div>
+      <span style="font-size:11px;color:var(--muted);white-space:nowrap;flex-shrink:0">${sz}</span>
+      <div style="display:flex;gap:3px;flex-shrink:0">
+        <button class="btn btn-sm btn-primary" style="padding:4px 8px;font-size:12px" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">Xem</button>
+        <button class="btn btn-sm btn-outline" style="padding:4px 8px;font-size:12px" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name||'')}')">Tải</button>
+        ${canEdit?`<button class="btn btn-sm btn-outline" style="padding:4px 7px;font-size:12px" onclick="editDoc(${d.id})">✏️</button>`:''}
+        ${canDelete?`<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);padding:4px 7px;font-size:12px" onclick="deleteDoc(${d.id},'${esc(d.title)}')">🗑</button>`:''}
+      </div>
+    </div>`;
+  }).join('');
+  return `<div class="card" style="padding:0;overflow:hidden">${rows}</div>`;
+}
+
 async function loadDocs() {
   const area = document.getElementById('doc-list-area');
   if (!area) return;
@@ -944,51 +1101,7 @@ async function loadDocs() {
       </div>`; return;
     }
 
-    area.innerHTML = `<div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:14px">${
-      docs.map(d => {
-        const ext = (d.file_name||'').split('.').pop().toLowerCase();
-        const icon = {pdf:'📄',docx:'📝',xlsx:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'}[ext] || '📁';
-        const sz = d.file_size > 1048576 ? (d.file_size/1048576).toFixed(1)+'MB' : Math.round(d.file_size/1024)+'KB';
-        const catBadge = d.category_name ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:${d.category_color}22;color:${d.category_color};font-weight:600">${esc(d.category_name)}</span>` : '';
-        const typeBadge = d.doc_type_name ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:rgba(36,113,163,0.1);color:#2471A3;font-weight:600">📋 ${esc(d.doc_type_name)}</span>` : '';
-        const tags = (d.tags||'').split(',').map(t=>t.trim()).filter(Boolean).map(t =>
-          `<span onclick="filterDocTag('${esc(t)}')" style="font-size:10px;padding:2px 7px;border-radius:10px;background:rgba(0,0,0,0.06);color:var(--muted);cursor:pointer">${esc(t)}</span>`
-        ).join('');
-        const canDelete = currentUser.role==='manager' || d.uploaded_by==currentUser.id;
-        const canEdit   = currentUser.role==='manager' || d.uploaded_by==currentUser.id;
-        // Metadata văn bản
-        const metaRows = [];
-        if (d.doc_number) metaRows.push(`<span>🔢 <b>Số VB:</b> ${esc(d.doc_number)}</span>`);
-        if (d.issued_date) metaRows.push(`<span>📅 <b>Ban hành:</b> ${d.issued_date}</span>`);
-        if (d.issuer) metaRows.push(`<span>🏛️ <b>Cơ quan:</b> ${esc(d.issuer)}</span>`);
-        const metaHtml = metaRows.length ? `
-          <div style="background:#f0f4f8;border:1px solid #dce4ee;border-radius:6px;padding:7px 10px;font-size:11.5px;color:#2c3e50;display:flex;flex-direction:column;gap:3px">
-            ${metaRows.join('')}
-          </div>` : '';
-        return `<div class="card" style="padding:14px;display:flex;flex-direction:column;gap:8px;border-top:3px solid ${d.category_color||'var(--accent)'}">
-          <div style="display:flex;align-items:flex-start;gap:10px">
-            <div style="font-size:32px;line-height:1">${icon}</div>
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:600;font-size:14px;color:var(--primary);margin-bottom:2px;word-break:break-word">${esc(d.title)}</div>
-              ${d.description?`<div style="font-size:12px;color:var(--muted);margin-bottom:4px">${esc(d.description)}</div>`:''}
-              <div style="display:flex;gap:4px;flex-wrap:wrap;align-items:center">${catBadge}${typeBadge}</div>
-            </div>
-          </div>
-          ${metaHtml}
-          ${tags?`<div style="display:flex;gap:4px;flex-wrap:wrap">${tags}</div>`:''}
-          <div style="font-size:11px;color:var(--muted);display:flex;justify-content:space-between;border-top:1px solid var(--border);padding-top:8px">
-            <span>📎 ${esc((d.file_name||'').length>25?(d.file_name||'').slice(0,22)+'...':(d.file_name||''))} · ${sz}</span>
-            <span>${esc(d.uploader_name||'')} · ${d.created_at?d.created_at.slice(0,10):''}</span>
-          </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            <button class="btn btn-sm btn-primary" style="flex:1;min-width:60px" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">👁 Xem</button>
-            <button class="btn btn-sm btn-outline" style="flex:1;min-width:60px" onclick="downloadDoc(${d.id},'${encodeURIComponent(d.file_name||'')}')">⬇️ Tải</button>
-            ${canEdit?`<button class="btn btn-sm btn-outline" title="Chỉnh sửa tài liệu" onclick="editDoc(${d.id})" style="padding:7px 10px">✏️</button>`:''}
-            ${canDelete?`<button class="btn btn-sm" style="color:var(--danger);border-color:var(--danger);border-width:1.5px;padding:7px 10px" onclick="deleteDoc(${d.id},'${esc(d.title)}')">🗑</button>`:''}
-          </div>
-        </div>`;
-      }).join('')
-    }</div>`;
+    area.innerHTML = renderDocList(docs);
   } catch(e) {
     area.innerHTML = `<div class="alert alert-error">Lỗi tải tài liệu: ${e.message}</div>`;
   }
