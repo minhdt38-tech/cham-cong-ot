@@ -1047,14 +1047,102 @@ function renderCardView(docs) {
   }</div>`;
 }
 
+// ════════════════════════════════════════════════════════
+// MULTI-SELECT
+// ════════════════════════════════════════════════════════
+let docSelected = new Set(); // Set of doc IDs
+
+function docChkChange(id, checked) {
+  checked ? docSelected.add(id) : docSelected.delete(id);
+  updateDocBulkBar();
+}
+
+function docSelectAll(checked) {
+  document.querySelectorAll('.doc-chk').forEach(c => {
+    c.checked = checked;
+    checked ? docSelected.add(+c.value) : docSelected.delete(+c.value);
+  });
+  updateDocBulkBar();
+}
+
+function updateDocBulkBar() {
+  const cnt   = docSelected.size;
+  const total = document.querySelectorAll('.doc-chk').length;
+  const bar   = document.getElementById('doc-bulk-bar');
+  if (!bar) return;
+  bar.style.display = cnt > 0 ? 'flex' : 'none';
+  const lbl = document.getElementById('doc-bulk-cnt');
+  if (lbl) lbl.textContent = `Đã chọn ${cnt} / ${total} tài liệu`;
+  // sync select-all
+  const sa = document.getElementById('doc-chk-all');
+  if (sa) { sa.checked = cnt === total && total > 0; sa.indeterminate = cnt > 0 && cnt < total; }
+  // show/hide edit button (only if exactly 1 selected)
+  const editBtn = document.getElementById('doc-bulk-edit-btn');
+  if (editBtn) editBtn.style.display = cnt === 1 ? 'inline-flex' : 'none';
+}
+
+function docCheckboxHtml(d) {
+  const checked = docSelected.has(d.id) ? 'checked' : '';
+  return `<input type="checkbox" class="doc-chk" value="${d.id}" ${checked}
+    style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary);flex-shrink:0"
+    onchange="docChkChange(${d.id},this.checked)" onclick="event.stopPropagation()">`;
+}
+
+function selectAllHeaderChk() {
+  return `<input type="checkbox" id="doc-chk-all" title="Chọn tất cả"
+    style="width:15px;height:15px;cursor:pointer;accent-color:var(--primary)"
+    onchange="docSelectAll(this.checked)">`;
+}
+
+async function bulkDownloadDocs() {
+  const ids = [...docSelected];
+  for (const id of ids) {
+    const d = allDocs.find(x => x.id === id);
+    if (d) { await downloadDoc(id, encodeURIComponent(d.file_name || '')); await new Promise(r => setTimeout(r, 400)); }
+  }
+}
+
+async function bulkDeleteDocs() {
+  const ids = [...docSelected];
+  const names = ids.map(id => allDocs.find(x => x.id === id)?.title || id).slice(0,3).join(', ');
+  const more  = ids.length > 3 ? ` và ${ids.length - 3} tài liệu khác` : '';
+  if (!confirm(`Xóa ${ids.length} tài liệu:\n${names}${more}\n\nHành động này không thể hoàn tác.`)) return;
+  for (const id of ids) {
+    try { await api('DELETE', '/api/docs/' + id); } catch(e) {}
+  }
+  docSelected.clear();
+  await loadDocs();
+}
+
+function bulkEditDoc() {
+  const id = [...docSelected][0];
+  if (id) editDoc(id);
+}
+
+function docBulkBarHtml() {
+  return `<div id="doc-bulk-bar" style="display:none;align-items:center;gap:8px;padding:8px 12px;
+    background:rgba(27,42,74,.06);border:1px solid rgba(27,42,74,.15);border-radius:6px;
+    margin-bottom:10px;flex-wrap:wrap">
+    <span id="doc-bulk-cnt" style="font-size:13px;font-weight:600;flex:1;color:var(--primary)"></span>
+    <button class="btn btn-sm btn-outline" id="doc-bulk-edit-btn" onclick="bulkEditDoc()" style="display:none">✏️ Sửa</button>
+    <button class="btn btn-sm btn-outline" onclick="bulkDownloadDocs()">⬇️ Tải về tất cả</button>
+    <button class="btn btn-sm" style="color:var(--danger);border:1.5px solid var(--danger)" onclick="bulkDeleteDocs()">🗑 Xóa tất cả đã chọn</button>
+    <button class="btn btn-sm btn-outline" onclick="docSelectAll(false);docSelected.clear();updateDocBulkBar()">✕ Bỏ chọn</button>
+  </div>`;
+}
+
 // ── LIST VIEW ──────────────────────────────────────────────
 function renderListView(docs) {
   const rows = docs.map(d => {
     const { ext, icon, sz, canDelete, canEdit, catBadge, typeBadge } = docMeta(d);
-    return `<tr style="border-bottom:1px solid var(--border);transition:background .1s" onmouseover="this.style.background='rgba(0,0,0,.03)'" onmouseout="this.style.background=''">
-      <td style="padding:10px 12px;width:36px;font-size:22px;text-align:center">${icon}</td>
+    const sel = docSelected.has(d.id);
+    return `<tr style="border-bottom:1px solid var(--border);transition:background .1s;${sel?'background:rgba(27,42,74,.04)':''}"
+        onmouseover="if(!this.dataset.sel)this.style.background='rgba(0,0,0,.03)'"
+        onmouseout="if(!this.dataset.sel)this.style.background=''" data-sel="${sel||''}">
+      <td style="padding:8px 10px;width:34px;text-align:center">${docCheckboxHtml(d)}</td>
+      <td style="padding:10px 8px;font-size:22px;width:34px;text-align:center">${icon}</td>
       <td style="padding:10px 8px;min-width:0">
-        <div style="font-weight:600;font-size:13.5px;color:var(--primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:320px" title="${esc(d.title)}">${esc(d.title)}</div>
+        <div style="font-weight:600;font-size:13.5px;color:var(--primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:360px" title="${esc(d.title)}">${esc(d.title)}</div>
         <div style="display:flex;gap:4px;flex-wrap:wrap;margin-top:3px;align-items:center">${catBadge}${typeBadge}</div>
       </td>
       <td style="padding:10px 8px;font-size:12px;color:var(--muted);white-space:nowrap">
@@ -1076,11 +1164,13 @@ function renderListView(docs) {
       </td>
     </tr>`;
   }).join('');
-  return `<div class="card" style="padding:0;overflow:hidden">
+  return `${docBulkBarHtml()}
+  <div class="card" style="padding:0;overflow:hidden">
     <table style="width:100%;border-collapse:collapse">
       <thead>
         <tr style="border-bottom:2px solid var(--border)">
-          <th style="padding:9px 8px;text-align:center;width:36px;background:rgba(0,0,0,.04)"></th>
+          <th style="padding:9px 10px;width:34px;text-align:center;background:rgba(0,0,0,.04)">${selectAllHeaderChk()}</th>
+          <th style="padding:9px 8px;width:34px;background:rgba(0,0,0,.04)"></th>
           ${thSort('title',      'Tiêu đề / Danh mục')}
           ${thSort('doc_number', 'Số VB / Ngày')}
           ${thSort('issuer',     'Cơ quan')}
@@ -1098,9 +1188,11 @@ function renderListView(docs) {
 function renderCompactView(docs) {
   const rows = docs.map(d => {
     const { ext, icon, sz, canDelete, canEdit, catBadge } = docMeta(d);
-    return `<div style="display:flex;align-items:center;gap:10px;padding:7px 12px;border-bottom:1px solid var(--border);transition:background .1s"
-        onmouseover="this.style.background='rgba(0,0,0,.03)'" onmouseout="this.style.background=''">
-      <span style="font-size:18px;flex-shrink:0">${icon}</span>
+    const sel = docSelected.has(d.id);
+    return `<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;
+        border-bottom:1px solid var(--border);transition:background .1s;${sel?'background:rgba(27,42,74,.04)':''}">
+      ${docCheckboxHtml(d)}
+      <span style="font-size:17px;flex-shrink:0">${icon}</span>
       <div style="flex:1;min-width:0">
         <span style="font-weight:600;font-size:13px;color:var(--primary);cursor:pointer" onclick="previewDoc(${d.id},'${encodeURIComponent(d.title)}','${ext}')">${esc(d.title)}</span>
         <span style="margin-left:6px">${catBadge}</span>
@@ -1116,7 +1208,13 @@ function renderCompactView(docs) {
       </div>
     </div>`;
   }).join('');
-  return `<div class="card" style="padding:0;overflow:hidden">${rows}</div>`;
+  // compact header with select-all
+  const hdr = `<div style="display:flex;align-items:center;gap:8px;padding:7px 12px;
+      border-bottom:2px solid var(--border);background:rgba(0,0,0,.03)">
+    ${selectAllHeaderChk()}
+    <span style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted)">Chọn tất cả</span>
+  </div>`;
+  return `${docBulkBarHtml()}<div class="card" style="padding:0;overflow:hidden">${hdr}${rows}</div>`;
 }
 
 async function loadDocs() {
@@ -1131,6 +1229,7 @@ async function loadDocs() {
   try {
     const docs = await api('GET', '/api/docs?' + params.toString());
     allDocs = docs || [];
+    docSelected.clear();
     loadStorageBar();
 
     // Tag cloud
