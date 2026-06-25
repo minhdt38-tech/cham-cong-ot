@@ -1965,8 +1965,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             row = db.execute('SELECT * FROM documents WHERE id=?', (doc_id,)).fetchone()
             if not row:
                 self.send_json({'error': 'Khong tim thay tai lieu'}, 404); return
-            if sess['role'] != 'manager' and row['uploaded_by'] != sess['userId']:
-                self.send_json({'error': 'Khong co quyen xoa'}, 403); return
+            if sess['role'] != 'manager':
+                self.send_json({'error': 'Chỉ Quản lý mới có quyền xóa tài liệu'}, 403); return
             try:
                 fp = row['file_path']
                 if fp.startswith('r2:'):

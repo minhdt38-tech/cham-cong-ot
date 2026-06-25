@@ -945,7 +945,7 @@ function docMeta(d) {
   const ext  = (d.file_name||'').split('.').pop().toLowerCase();
   const icon = {pdf:'📄',docx:'📝',doc:'📝',xlsx:'📊',xls:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'}[ext] || '📁';
   const sz   = d.file_size > 1048576 ? (d.file_size/1048576).toFixed(1)+'MB' : Math.round((d.file_size||0)/1024)+'KB';
-  const canDelete = currentUser.role==='manager' || d.uploaded_by==currentUser.id;
+  const canDelete = currentUser.role==='manager';
   const canEdit   = currentUser.role==='manager' || d.uploaded_by==currentUser.id;
   const catBadge  = d.category_name
     ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:${d.category_color}22;color:${d.category_color};font-weight:600">${esc(d.category_name)}</span>` : '';
