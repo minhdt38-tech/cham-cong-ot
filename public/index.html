@@ -252,6 +252,8 @@
   .alert-success { background: #D1FAE5; color: #065F46; border-color: var(--success); }
   .alert-error   { background: #FEE2E2; color: #991B1B; border-color: var(--danger); }
   .img-thumb { width: 48px; height: 48px; object-fit: cover; border-radius: 2px; cursor: pointer; border: 1px solid var(--border); }
+  .td-chk { width: 36px; text-align: center; padding: 0 4px !important; }
+  .ot-chk { width: 16px; height: 16px; cursor: pointer; accent-color: var(--primary); }
   .filter-bar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
   .filter-bar select, .filter-bar input { padding: 8px 12px; min-width: 120px; }
   .empty-state { text-align: center; padding: 48px 20px; color: var(--muted); }
@@ -1406,6 +1408,7 @@ async function renderMyRecords() {
 async function renderApprove() {
   async function load(status) {
     const records = await api('GET', `/api/manager/overtime?status=${status}`);
+    const isPending = status === 'pending';
     set('content-area', `
       <div class="card">
         <div class="flex items-center mb-4" style="gap:8px;flex-wrap:wrap">
@@ -1417,7 +1420,14 @@ async function renderApprove() {
               </button>`).join('')}
           </div>
         </div>
-        ${records.length ? renderOTTable(records, r => r.status === 'pending', r => r.status === 'approved') : `
+        ${isPending && records.length ? `
+        <div id="bulk-bar" style="display:none;align-items:center;gap:10px;padding:10px 14px;background:rgba(41,128,185,.12);border:1px solid rgba(41,128,185,.3);border-radius:8px;margin-bottom:12px;flex-wrap:wrap">
+          <span id="bulk-cnt" style="font-size:13px;font-weight:600;flex:1"></span>
+          <button class="btn btn-primary btn-sm" onclick="doBulkAction('approved')">✅ Duyệt tất cả đã chọn</button>
+          <button class="btn btn-danger btn-sm" onclick="doBulkAction('rejected')">❌ Từ chối tất cả đã chọn</button>
+          <button class="btn btn-outline btn-sm" onclick="toggleSelectAll(false)">✕ Bỏ chọn</button>
+        </div>` : ''}
+        ${records.length ? renderOTTable(records, r => r.status === 'pending', r => r.status === 'approved', isPending) : `
           <div class="empty-state"><div class="icon">🎉</div><div>Không có dữ liệu</div></div>`}
       </div>
     `);
@@ -1573,13 +1583,17 @@ function statusLabel(s) {
        : s;
 }
 
-function renderOTTable(records, canReviewFn, canCancelFn) {
+function renderOTTable(records, canReviewFn, canCancelFn, showCheckbox) {
   const isManager = currentUser.role === 'manager';
   const rows = records.map(r => {
     const canReview = typeof canReviewFn === 'function' ? canReviewFn(r) : canReviewFn;
     const canCancel = typeof canCancelFn === 'function' ? canCancelFn(r) : false;
     const canEdit   = !isManager && r.status === 'pending';
+    const chk = (showCheckbox && canReview)
+      ? `<td class="td-chk"><input type="checkbox" class="ot-chk" value="${r.id}" onchange="updateBulkBar()"></td>`
+      : (showCheckbox ? '<td></td>' : '');
     return `<tr>
+      ${chk}
       ${isManager ? `<td><strong>${r.full_name}</strong>${r.department?`<br><small style="color:var(--muted)">${r.department}</small>`:''}</td>` : ''}
       <td>${formatDate(r.request_date)}</td>
       <td><span class="badge badge-${r.ot_type}">${r.ot_type==='weekday'?'Ngày thường':'Cuối tuần'}</span></td>
@@ -1600,14 +1614,64 @@ function renderOTTable(records, canReviewFn, canCancelFn) {
     </tr>`;
   }).join('');
 
+  const chkHeader = showCheckbox
+    ? `<th class="td-chk"><input type="checkbox" id="chk-all" onchange="toggleSelectAll(this.checked)" title="Chọn tất cả"></th>`
+    : '';
+
   return `<div class="table-wrap"><table>
     <thead><tr>
+      ${chkHeader}
       ${isManager ? '<th>Nhân viên</th>' : ''}
       <th>Ngày</th><th>Loại</th><th>Giờ làm</th><th>Số giờ</th>
       <th>Lý do</th><th>Ảnh</th><th>Trạng thái</th><th>Thao tác</th>
     </tr></thead>
     <tbody>${rows}</tbody>
   </table></div>`;
+}
+
+function toggleSelectAll(checked) {
+  document.querySelectorAll('.ot-chk').forEach(c => c.checked = checked);
+  updateBulkBar();
+}
+
+function updateBulkBar() {
+  const cnt = document.querySelectorAll('.ot-chk:checked').length;
+  const total = document.querySelectorAll('.ot-chk').length;
+  const bar = document.getElementById('bulk-bar');
+  if (!bar) return;
+  bar.style.display = cnt > 0 ? 'flex' : 'none';
+  const lbl = document.getElementById('bulk-cnt');
+  if (lbl) lbl.textContent = `Đã chọn ${cnt} / ${total} hồ sơ`;
+  // sync select-all checkbox
+  const chkAll = document.getElementById('chk-all');
+  if (chkAll) { chkAll.checked = cnt === total && total > 0; chkAll.indeterminate = cnt > 0 && cnt < total; }
+}
+
+async function doBulkAction(status) {
+  const ids = [...document.querySelectorAll('.ot-chk:checked')].map(c => +c.value);
+  if (!ids.length) return;
+  const label = status === 'approved' ? 'duyệt' : 'từ chối';
+  const note  = status === 'rejected' ? (prompt('Lý do từ chối (tuỳ chọn):') || '') : '';
+  if (status === 'rejected' && note === null) return; // user cancelled prompt
+  const bar = document.getElementById('bulk-bar');
+  if (bar) { bar.style.opacity = '0.5'; bar.style.pointerEvents = 'none'; }
+  let ok = 0;
+  for (const id of ids) {
+    try {
+      await api('PUT', `/api/manager/overtime/${id}`, { status, manager_note: note });
+      ok++;
+    } catch(e) {}
+  }
+  if (bar) { bar.style.opacity = ''; bar.style.pointerEvents = ''; }
+  navigate('approve');
+  // small toast-like alert
+  setTimeout(() => {
+    const t = document.createElement('div');
+    t.style.cssText = 'position:fixed;bottom:24px;right:24px;background:#27ae60;color:#fff;padding:10px 18px;border-radius:8px;font-size:13px;font-weight:600;z-index:9999;box-shadow:0 4px 12px rgba(0,0,0,.3)';
+    t.textContent = `✓ Đã ${label} ${ok} hồ sơ`;
+    document.body.appendChild(t);
+    setTimeout(() => t.remove(), 3000);
+  }, 200);
 }
 
 // ─────────────── MODALS ───────────────
