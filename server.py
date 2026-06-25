@@ -20,6 +20,7 @@ import threading
 import base64
 import zipfile
 import urllib.request as _urlreq
+import urllib.parse
 from urllib.parse import urlparse, parse_qs
 from datetime import datetime, timedelta, timezone
 
@@ -712,6 +713,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/docs/url/(\d+)$', path)
         if m:
             self.api_docs_presigned_url(int(m.group(1))); return
+        m = re.match(r'^/api/docs/download/(\d+)$', path)
+        if m:
+            self.api_docs_download(int(m.group(1))); return
         if path == '/api/manager/doc-permissions':
             self.api_manager_doc_permissions(); return
 
@@ -2044,6 +2048,45 @@ class Handler(http.server.BaseHTTPRequestHandler):
         else:
             url = fp
         self.send_json({'url': url, 'file_name': row['file_name']})
+
+    def api_docs_download(self, doc_id):
+        """Proxy download: server lay file tu R2/local roi stream ve client voi Content-Disposition: attachment"""
+        sess = self.require_auth()
+        if not sess: return
+        if not self.can_download_docs(sess):
+            self.send_json({'error': 'Ban khong co quyen tai ve tai lieu'}, 403); return
+        with get_db() as db:
+            row = db.execute('SELECT file_path, file_name, file_type FROM documents WHERE id=?', (doc_id,)).fetchone()
+        if not row:
+            self.send_json({'error': 'Khong tim thay tai lieu'}, 404); return
+        fp        = row['file_path']
+        file_name = row['file_name'] or f'document_{doc_id}'
+        ext       = os.path.splitext(file_name)[1].lower()
+        ct_map    = {'.pdf':'application/pdf',
+                     '.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                     '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                     '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png'}
+        content_type = ct_map.get(ext, 'application/octet-stream')
+        try:
+            if fp.startswith('r2:'):
+                client = get_r2_client()
+                obj = client.get_object(Bucket=R2_BUCKET, Key=fp[3:])
+                data = obj['Body'].read()
+            else:
+                fpath = os.path.join(DATA_DIR, fp.lstrip('/'))
+                with open(fpath, 'rb') as f:
+                    data = f.read()
+        except Exception as e:
+            self.send_json({'error': f'Khong the doc file: {e}'}, 500); return
+        # Encode filename for Content-Disposition (RFC 5987)
+        self.send_response(200)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Content-Disposition',
+                         f"attachment; filename*=UTF-8''{urllib.parse.quote(file_name)}")
+        self.send_header('Cache-Control', 'no-cache')
+        self.end_headers()
+        self.wfile.write(data)
 
     # --- DOC STORAGE ---
 

@@ -1278,24 +1278,14 @@ async function previewDoc(id, titleEnc, ext) {
   }
 }
 
-async function downloadDoc(id, fileNameEnc) {
-  try {
-    const r = await api('GET', '/api/docs/url/' + id);
-    if (!r.url) { alert('Không thể tải file'); return; }
-    const fileName = decodeURIComponent(fileNameEnc);
-    // Fetch as blob so browser saves to Downloads instead of opening in tab
-    const resp = await fetch(r.url);
-    if (!resp.ok) throw new Error('Lỗi tải file: ' + resp.status);
-    const blob = await resp.blob();
-    const blobUrl = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = blobUrl;
-    a.download = fileName;
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(blobUrl), 30000);
-  } catch(e) { alert(e.message); }
+function downloadDoc(id, fileNameEnc) {
+  // Use server-side proxy endpoint — avoids CORS issues with R2 cross-origin URLs
+  const a = document.createElement('a');
+  a.href = `/api/docs/download/${id}`;
+  a.download = decodeURIComponent(fileNameEnc);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
 }
 
 async function deleteDoc(id, title) {
