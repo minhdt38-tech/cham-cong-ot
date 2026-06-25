@@ -275,6 +275,12 @@ def init_db():
         cols = [r[1] for r in db.execute("PRAGMA table_info(users)").fetchall()]
         if 'can_upload_docs' not in cols:
             db.execute("ALTER TABLE users ADD COLUMN can_upload_docs INTEGER DEFAULT 0")
+        if 'can_view_docs' not in cols:
+            db.execute("ALTER TABLE users ADD COLUMN can_view_docs INTEGER DEFAULT 1")
+        if 'can_edit_docs' not in cols:
+            db.execute("ALTER TABLE users ADD COLUMN can_edit_docs INTEGER DEFAULT 0")
+        if 'can_delete_docs' not in cols:
+            db.execute("ALTER TABLE users ADD COLUMN can_delete_docs INTEGER DEFAULT 0")
         doc_cols = [r[1] for r in db.execute("PRAGMA table_info(documents)").fetchall()]
         if 'notes' not in doc_cols:
             db.execute("ALTER TABLE documents ADD COLUMN notes TEXT DEFAULT ''")
@@ -693,6 +699,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_manager_storage(); return
         if path == '/api/docs':
             self.api_docs_list(qs); return
+        if path == '/api/docs/my-permissions':
+            self.api_docs_my_permissions(); return
         if path == '/api/docs/categories':
             self.api_doc_categories_list(); return
         if path == '/api/docs/types':
@@ -1665,13 +1673,36 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     # --- DOCUMENTS ---
 
-    def can_upload_docs(self, sess):
-        """Kiem tra quyen upload tai lieu: manager hoac co_upload_docs=1"""
+    def _get_doc_perms(self, sess):
+        """Lay quyen tai lieu cua user (manager luon co tat ca quyen)"""
         if sess['role'] == 'manager':
-            return True
+            return {'can_upload_docs':1,'can_view_docs':1,'can_edit_docs':1,'can_delete_docs':1}
         with get_db() as db:
-            row = db.execute('SELECT can_upload_docs FROM users WHERE id=?', (sess['userId'],)).fetchone()
-        return row and row['can_upload_docs'] == 1
+            row = db.execute(
+                'SELECT can_upload_docs,can_view_docs,can_edit_docs,can_delete_docs FROM users WHERE id=?',
+                (sess['userId'],)
+            ).fetchone()
+        if not row:
+            return {'can_upload_docs':0,'can_view_docs':0,'can_edit_docs':0,'can_delete_docs':0}
+        return dict(row)
+
+    def can_upload_docs(self, sess):
+        return self._get_doc_perms(sess)['can_upload_docs'] == 1
+
+    def can_view_docs(self, sess):
+        return self._get_doc_perms(sess)['can_view_docs'] == 1
+
+    def can_edit_docs(self, sess):
+        return self._get_doc_perms(sess)['can_edit_docs'] == 1
+
+    def can_delete_docs(self, sess):
+        return self._get_doc_perms(sess)['can_delete_docs'] == 1
+
+    def api_docs_my_permissions(self):
+        """Tra ve quyen tai lieu cua user dang dang nhap"""
+        sess = self.require_auth()
+        if not sess: return
+        self.send_json(self._get_doc_perms(sess))
 
     def api_doc_categories_list(self):
         sess = self.require_auth()
@@ -1756,6 +1787,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def api_docs_list(self, qs):
         sess = self.require_auth()
         if not sess: return
+        if not self.can_view_docs(sess):
+            self.send_json({'error': 'Ban khong co quyen xem tai lieu'}, 403); return
         cat_id      = qs.get('category_id', [None])[0]
         tag         = qs.get('tag', [None])[0]
         q           = qs.get('q', [None])[0]
@@ -1892,8 +1925,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             row = db.execute('SELECT * FROM documents WHERE id=?', (doc_id,)).fetchone()
             if not row:
                 self.send_json({'error': 'Khong tim thay tai lieu'}, 404); return
-            if sess['role'] != 'manager' and row['uploaded_by'] != sess['userId']:
-                self.send_json({'error': 'Khong co quyen chinh sua'}, 403); return
+            if not self.can_edit_docs(sess):
+                self.send_json({'error': 'Ban khong co quyen chinh sua tai lieu'}, 403); return
             upd, params = [], []
             # Text fields
             for key, col in [('title','title'), ('description','description'),
@@ -1973,8 +2006,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             row = db.execute('SELECT * FROM documents WHERE id=?', (doc_id,)).fetchone()
             if not row:
                 self.send_json({'error': 'Khong tim thay tai lieu'}, 404); return
-            if sess['role'] != 'manager':
-                self.send_json({'error': 'Chỉ Quản lý mới có quyền xóa tài liệu'}, 403); return
+            if not self.can_delete_docs(sess):
+                self.send_json({'error': 'Ban khong co quyen xoa tai lieu'}, 403); return
             try:
                 fp = row['file_path']
                 if fp.startswith('r2:'):
@@ -2075,7 +2108,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if not sess: return
         with get_db() as db:
             rows = db.execute(
-                """SELECT id, username, full_name, department, can_upload_docs
+                """SELECT id, username, full_name, department,
+                          can_upload_docs, can_view_docs, can_edit_docs, can_delete_docs
                    FROM users WHERE role='employee' ORDER BY full_name"""
             ).fetchall()
         self.send_json(rows_to_list(rows))
@@ -2084,9 +2118,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sess = self.require_manager()
         if not sess: return
         body = self.read_json()
-        val  = 1 if body.get('can_upload_docs') else 0
         with get_db() as db:
-            db.execute('UPDATE users SET can_upload_docs=? WHERE id=?', (val, uid))
+            db.execute(
+                """UPDATE users SET
+                   can_upload_docs=?, can_view_docs=?, can_edit_docs=?, can_delete_docs=?
+                   WHERE id=?""",
+                (1 if body.get('can_upload_docs') else 0,
+                 1 if body.get('can_view_docs')   else 0,
+                 1 if body.get('can_edit_docs')   else 0,
+                 1 if body.get('can_delete_docs') else 0,
+                 uid)
+            )
             db.commit()
         self.send_json({'ok': True})
 

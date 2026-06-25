@@ -347,9 +347,7 @@
         <button id="cat-panel-toggle" onclick="toggleCatPanel()" title="Hiện/ẩn danh mục  [ ]">🗂️</button>
         <h1 id="page-title">📄 Kho tài liệu</h1>
       </div>
-      <div id="manager-actions" class="hidden">
-        <button class="btn btn-outline btn-sm" onclick="showDocPermissionsModal()">👥 Phân quyền upload</button>
-      </div>
+      <div id="manager-actions" class="hidden"></div>
     </div>
 
     <div class="content-area">
@@ -464,23 +462,6 @@
       <div style="flex:1"></div>
       <button class="btn btn-outline" onclick="closeModal('add-cat-modal')">Huỷ</button>
       <button class="btn btn-primary" onclick="submitCategory()" style="min-width:80px">Lưu</button>
-    </div>
-  </div>
-</div>
-
-<!-- Modal phân quyền -->
-<div id="doc-perm-modal" class="modal-overlay hidden" onclick="if(event.target===this)closeModal('doc-perm-modal')">
-  <div class="modal-box" style="max-width:520px;border-radius:12px;overflow:hidden;padding:0">
-    <div style="background:var(--primary);padding:18px 20px;display:flex;align-items:center;justify-content:space-between">
-      <div>
-        <div style="color:#fff;font-weight:700;font-size:16px">👥 Quyền upload tài liệu</div>
-        <div style="color:rgba(255,255,255,0.65);font-size:12px;margin-top:2px">Bật để cho phép nhân viên tải tài liệu lên</div>
-      </div>
-      <button onclick="closeModal('doc-perm-modal')" class="modal-close">✕</button>
-    </div>
-    <div style="padding:16px 20px;max-height:60vh;overflow-y:auto" id="doc-perm-list"></div>
-    <div style="padding:12px 20px;background:#f8f9fa;border-top:1px solid var(--border);text-align:right">
-      <button class="btn btn-primary" onclick="closeModal('doc-perm-modal')">Đóng</button>
     </div>
   </div>
 </div>
@@ -637,6 +618,7 @@ let docActiveTag = null;
 let docActiveType = null;
 let docSearchQ = '';
 let canUploadDocs = false;
+let myDocPerms = { can_view_docs:1, can_upload_docs:0, can_edit_docs:0, can_delete_docs:0 };
 
 // ─── AUTH ───
 document.getElementById('login-form').addEventListener('submit', async e => {
@@ -674,8 +656,18 @@ function showApp() {
 
 // ─── DOCS ───
 async function renderDocs() {
-  const me = await api('GET', '/api/me');
-  canUploadDocs = (me.role === 'manager') || (me.can_upload_docs == 1);
+  myDocPerms = await api('GET', '/api/docs/my-permissions');
+  canUploadDocs = myDocPerms.can_upload_docs == 1;
+
+  if (!myDocPerms.can_view_docs) {
+    set('content-area', `
+      <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:80px 20px;text-align:center">
+        <div style="font-size:48px;margin-bottom:16px">🔒</div>
+        <div style="font-size:20px;font-weight:700;margin-bottom:8px">Không có quyền truy cập</div>
+        <div style="color:var(--muted);font-size:14px">Bạn chưa được cấp quyền xem tài liệu. Liên hệ Quản lý để được cấp quyền.</div>
+      </div>`);
+    return;
+  }
 
   const [cats, types] = await Promise.all([
     api('GET', '/api/docs/categories'),
@@ -945,8 +937,8 @@ function docMeta(d) {
   const ext  = (d.file_name||'').split('.').pop().toLowerCase();
   const icon = {pdf:'📄',docx:'📝',doc:'📝',xlsx:'📊',xls:'📊',jpg:'🖼️',jpeg:'🖼️',png:'🖼️'}[ext] || '📁';
   const sz   = d.file_size > 1048576 ? (d.file_size/1048576).toFixed(1)+'MB' : Math.round((d.file_size||0)/1024)+'KB';
-  const canDelete = currentUser.role==='manager';
-  const canEdit   = currentUser.role==='manager' || d.uploaded_by==currentUser.id;
+  const canDelete = myDocPerms.can_delete_docs == 1;
+  const canEdit   = myDocPerms.can_edit_docs == 1;
   const catBadge  = d.category_name
     ? `<span style="font-size:10px;padding:2px 6px;border-radius:10px;background:${d.category_color}22;color:${d.category_color};font-weight:600">${esc(d.category_name)}</span>` : '';
   const typeBadge = d.doc_type_name
@@ -1858,42 +1850,6 @@ async function deleteDocType(id, name) {
   } catch(e) { showMsg('doc-types-msg','error', e.message || 'Lỗi xoá'); }
 }
 
-// ─── PERMISSIONS ───
-async function showDocPermissionsModal() {
-  const listEl = document.getElementById('doc-perm-list');
-  listEl.innerHTML = '<div style="text-align:center;padding:20px;color:var(--muted)">Đang tải...</div>';
-  showModal('doc-perm-modal');
-  try {
-    const users = await api('GET', '/api/manager/doc-permissions');
-    if (!users.length) { listEl.innerHTML = '<div style="padding:16px;text-align:center;color:var(--muted)">Chưa có nhân viên</div>'; return; }
-    listEl.innerHTML = users.map(u => `
-      <div style="display:flex;align-items:center;justify-content:space-between;padding:10px 0;border-bottom:1px solid var(--border)">
-        <div>
-          <div style="font-weight:600;font-size:14px">${esc(u.full_name)}</div>
-          <div style="font-size:12px;color:var(--muted)">@${esc(u.username)}${u.department?' · '+esc(u.department):''}</div>
-        </div>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" ${u.can_upload_docs?'checked':''} onchange="setDocPermission(${u.id},this.checked,this)"
-            style="width:18px;height:18px;cursor:pointer;accent-color:var(--accent)">
-          <span style="font-size:13px;color:var(--muted)">${u.can_upload_docs?'Được phép':'Không'}</span>
-        </label>
-      </div>`).join('');
-  } catch(e) {
-    listEl.innerHTML = `<div style="padding:16px;color:var(--danger)">${e.message}</div>`;
-  }
-}
-
-async function setDocPermission(uid, val, checkbox) {
-  try {
-    await api('PUT', `/api/manager/doc-permissions/${uid}`, { can_upload_docs: val });
-    const span = checkbox.nextElementSibling;
-    if (span) span.textContent = val ? 'Được phép' : 'Không';
-  } catch(e) {
-    alert(e.message);
-    checkbox.checked = !val;
-  }
-}
-
 // ─── PASSWORD ───
 function showChangePwd() {
   document.getElementById('pwd-old').value = '';
@@ -2036,7 +1992,7 @@ function _setupResizeHandle() {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
-    ['upload-doc-modal','preview-doc-modal','add-cat-modal','doc-perm-modal','pwd-modal','edit-doc-modal','doc-types-modal'].forEach(closeModal);
+    ['upload-doc-modal','preview-doc-modal','add-cat-modal','pwd-modal','edit-doc-modal','doc-types-modal'].forEach(closeModal);
   }
   // '[' key → toggle category panel (when no text input focused)
   if (e.key === '[' && !e.ctrlKey && !e.metaKey && !e.altKey) {
