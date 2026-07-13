@@ -1958,6 +1958,17 @@ function renderDataMgmt() {
     <div style="display:flex;flex-direction:column;gap:20px;max-width:680px">
 
       <div class="card">
+        <h3>💾 Sao lưu dữ liệu (bồi thường + tài liệu)</h3>
+        <p style="color:var(--muted);font-size:14px;margin-bottom:16px;line-height:1.6">
+          Tự động sao lưu toàn bộ <code>cham_cong.db</code> (chứa hồ sơ bồi thường, hỗ trợ và danh mục tài liệu) lên Cloudflare R2 <strong>mỗi ngày</strong>. Giữ lại 30 bản gần nhất.
+        </p>
+        <div id="backup-status" style="margin-bottom:12px;font-size:14px;color:var(--muted)">Đang tải...</div>
+        <button class="btn btn-primary" onclick="doBackupNow()">🔄 Sao lưu ngay</button>
+        <div id="backup-msg" class="hidden" style="margin-top:12px"></div>
+        <div id="backup-list" style="margin-top:16px"></div>
+      </div>
+
+      <div class="card">
         <h3>🧹 Xóa dữ liệu chấm công cũ</h3>
         <p style="color:var(--muted);font-size:14px;margin-bottom:16px;line-height:1.6">
           Xóa toàn bộ bản ghi OT <strong>trước tháng được chọn</strong> để giải phóng dung lượng.<br>
@@ -1987,6 +1998,56 @@ function renderDataMgmt() {
 
     </div>
   `);
+  loadBackups();
+}
+
+async function loadBackups() {
+  const statusEl = document.getElementById('backup-status');
+  const listEl   = document.getElementById('backup-list');
+  if (!statusEl) return;
+  try {
+    const d = await api('GET', '/api/manager/backups');
+    if (!d.enabled) {
+      statusEl.innerHTML = '⚠️ R2 chưa được bật trên server này — chưa có auto-backup. Cần set các biến R2_* trên Railway.';
+      statusEl.style.color = 'var(--danger)';
+      listEl.innerHTML = '';
+      return;
+    }
+    statusEl.style.color = 'var(--muted)';
+    if (!d.backups.length) {
+      statusEl.textContent = 'Chưa có bản sao lưu nào. Bấm "Sao lưu ngay" để tạo bản đầu tiên.';
+      listEl.innerHTML = '';
+      return;
+    }
+    const latest = d.backups[0];
+    statusEl.innerHTML = `Bản gần nhất: <strong>${latest.key.split('/').pop()}</strong> (${(latest.size/1024/1024).toFixed(2)} MB) — tổng ${d.backups.length} bản`;
+    listEl.innerHTML = d.backups.slice(0, 10).map(b => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px">
+        <span>${b.key.split('/').pop()} — ${(b.size/1024).toFixed(0)} KB</span>
+        <a href="/api/manager/backups/download?key=${encodeURIComponent(b.key)}">Tải xuống</a>
+      </div>
+    `).join('');
+  } catch(e) {
+    statusEl.textContent = 'Không tải được danh sách backup: ' + e.message;
+    statusEl.style.color = 'var(--danger)';
+  }
+}
+
+async function doBackupNow() {
+  const msg = document.getElementById('backup-msg');
+  msg.classList.add('hidden');
+  try {
+    const res = await api('POST', '/api/manager/backups/run', {});
+    if (!res.ok) throw new Error(res.error || 'Sao lưu thất bại');
+    msg.className = 'alert alert-success';
+    msg.textContent = `Sao lưu thành công: ${res.key} (${(res.size/1024/1024).toFixed(2)} MB)`;
+    msg.classList.remove('hidden');
+    loadBackups();
+  } catch(e) {
+    msg.className = 'alert alert-error';
+    msg.textContent = e.message;
+    msg.classList.remove('hidden');
+  }
 }
 
 async function doCleanup() {

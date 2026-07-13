@@ -17,6 +17,7 @@ import uuid
 import io
 import re
 import threading
+import time
 import base64
 import zipfile
 import urllib.request as _urlreq
@@ -112,6 +113,67 @@ def r2_presigned_url(key, expires=3600):
     except Exception as e:
         print(f'[R2 presign error] {e}')
         return None
+
+
+def backup_db_to_r2():
+    """Chup nhanh toan bo cham_cong.db (an toan voi WAL) roi day len R2 duoi thu muc backups/."""
+    if not R2_ENABLED:
+        return {'ok': False, 'error': 'R2 chua duoc bat (thieu bien moi truong R2_*)'}
+    tmp_path = os.path.join(DATA_DIR, f'_backup_tmp_{uuid.uuid4().hex}.db')
+    try:
+        src = sqlite3.connect(DB_PATH)
+        dst = sqlite3.connect(tmp_path)
+        with dst:
+            src.backup(dst)
+        src.close()
+        dst.close()
+        with open(tmp_path, 'rb') as f:
+            data = f.read()
+        ts  = datetime.now(VN_TZ).strftime('%Y-%m-%d_%H%M%S')
+        key = f'backups/cham_cong_{ts}.db'
+        ok  = r2_upload(data, key, 'application/octet-stream')
+        if not ok:
+            return {'ok': False, 'error': 'Upload len R2 that bai'}
+        print(f'[Backup] OK -> {key} ({len(data)} bytes)')
+        cleanup_old_backups()
+        return {'ok': True, 'key': key, 'size': len(data), 'time': ts}
+    except Exception as e:
+        print(f'[Backup] error: {e}')
+        return {'ok': False, 'error': str(e)}
+    finally:
+        if os.path.exists(tmp_path):
+            os.remove(tmp_path)
+
+
+def list_r2_backups():
+    if not R2_ENABLED:
+        return []
+    try:
+        client = get_r2_client()
+        resp = client.list_objects_v2(Bucket=R2_BUCKET, Prefix='backups/')
+        items = [
+            {'key': o['Key'], 'size': o['Size'], 'modified': o['LastModified'].isoformat()}
+            for o in resp.get('Contents', [])
+        ]
+        items.sort(key=lambda x: x['key'], reverse=True)
+        return items
+    except Exception as e:
+        print(f'[Backup list] error: {e}')
+        return []
+
+
+def cleanup_old_backups(keep=30):
+    items = list_r2_backups()
+    for item in items[keep:]:
+        r2_delete(item['key'])
+
+
+def backup_scheduler_loop():
+    time.sleep(15)
+    while True:
+        backup_db_to_r2()
+        time.sleep(24 * 60 * 60)
+
 
 # In-memory sessions: { token: {userId, role, fullName} }
 SESSIONS = {}
@@ -700,6 +762,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_manager_export(qs); return
         if path == '/api/manager/storage':
             self.api_manager_storage(); return
+        if path == '/api/manager/backups':
+            self.api_manager_backups_list(); return
+        if path == '/api/manager/backups/download':
+            self.api_manager_backup_download(qs); return
         if path == '/api/docs':
             self.api_docs_list(qs); return
         if path == '/api/docs/my-permissions':
@@ -763,6 +829,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             '/api/docs/types':               self.api_doc_types_create,
             '/api/bt/projects':              self.api_bt_projects_create,
             '/api/bt/status-config':         self.api_bt_status_config_create,
+            '/api/manager/backups/run':      self.api_manager_backup_run,
         }
         if path in routes:
             routes[path]()
@@ -1676,6 +1743,44 @@ class Handler(http.server.BaseHTTPRequestHandler):
             })
         except Exception as e:
             self.send_json({'error': str(e)}, 500)
+
+    # --- BACKUP (cham_cong.db -> R2) ---
+
+    def api_manager_backups_list(self):
+        sess = self.require_manager()
+        if not sess:
+            return
+        self.send_json({'enabled': R2_ENABLED, 'backups': list_r2_backups()})
+
+    def api_manager_backup_run(self):
+        sess = self.require_manager()
+        if not sess:
+            return
+        result = backup_db_to_r2()
+        self.send_json(result, 200 if result.get('ok') else 500)
+
+    def api_manager_backup_download(self, qs):
+        sess = self.require_manager()
+        if not sess:
+            return
+        key = (qs.get('key') or [''])[0]
+        if not key or not key.startswith('backups/'):
+            self.send_json({'error': 'Key khong hop le'}, 400); return
+        try:
+            client = get_r2_client()
+            obj = client.get_object(Bucket=R2_BUCKET, Key=key)
+            data = obj['Body'].read()
+        except Exception as e:
+            self.send_json({'error': f'Khong tai duoc backup: {e}'}, 500); return
+        fname = key.split('/')[-1]
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/octet-stream')
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Content-Disposition',
+                          f"attachment; filename*=UTF-8''{urllib.parse.quote(fname)}")
+        self.send_header('Cache-Control', 'no-cache')
+        self.end_headers()
+        self.wfile.write(data)
 
     # --- DOCUMENTS ---
 
@@ -2691,6 +2796,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
 def run():
     os.chdir(PUBLIC_DIR)
     init_db()
+    if R2_ENABLED:
+        threading.Thread(target=backup_scheduler_loop, daemon=True).start()
+        print('[Backup] Da bat auto-backup cham_cong.db -> R2 (moi 24h)')
+    else:
+        print('[Backup] R2 chua bat nen KHONG co auto-backup. Xem cac bien R2_* tren Railway.')
     handler = Handler
     with socketserver.TCPServer(('', PORT), handler) as httpd:
         httpd.allow_reuse_address = True
