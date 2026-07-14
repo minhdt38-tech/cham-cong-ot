@@ -670,6 +670,38 @@ function makeSolver(trees, land1, land2, priceRatio){
     repairActual(x1, land1);
     repairActual(x2, land2);
 
+    // Greedy fill: lấp khoảng trống còn lại sau repair
+    // Duyệt tất cả (mùa, loại cây) theo hiệu quả giá/m² giảm dần
+    {
+      let A1 = x1.reduce((s, xi, i) => s + xi * trees[i].area, 0);
+      let A2 = x2.reduce((s, xi, i) => s + xi * trees[i].area, 0);
+      // Tạo danh sách ứng viên: mỗi loại cây × 2 mùa
+      const cands = [];
+      for (let i = 0; i < n; i++) {
+        if (trees[i].area > 0) {
+          cands.push({i, s:1, ratio: trees[i].price / trees[i].area});
+          cands.push({i, s:2, ratio: trees[i].price * r / trees[i].area});
+        }
+      }
+      cands.sort((a, b) => b.ratio - a.ratio);
+      for (const {i, s} of cands) {
+        const area = trees[i].area;
+        if (s === 1) {
+          const rem = land1 - A1;
+          if (rem < 1e-9) continue;
+          const used = x1[i] + x2[i];
+          const canAdd = Math.min(trees[i].maxq - used, Math.floor(rem / area));
+          if (canAdd > 0) { x1[i] += canAdd; A1 += canAdd * area; }
+        } else {
+          const rem = land2 - A2;
+          if (rem < 1e-9) continue;
+          const used = x1[i] + x2[i];
+          const canAdd = Math.min(trees[i].maxq - used, Math.floor(rem / area));
+          if (canAdd > 0) { x2[i] += canAdd; A2 += canAdd * area; }
+        }
+      }
+    }
+
     bestVal = 0;
     for (let i = 0; i < n; i++) bestVal += x1[i] * trees[i].price + x2[i] * trees[i].price * r;
     sol = trees.map((_, i) => [x1[i], x2[i]]);
