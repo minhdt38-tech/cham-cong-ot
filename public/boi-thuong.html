@@ -558,10 +558,15 @@ td.td-ctr{text-align:center}
     </div>
     <div class="modal-body">
       <p id="confirm-msg" style="font-size:14px;line-height:1.6"></p>
+      <div class="form-group" style="margin-top:14px">
+        <label>Nhập mật khẩu tài khoản để xác nhận xóa</label>
+        <input type="password" id="confirm-password" placeholder="Mật khẩu" autocomplete="current-password" onkeydown="if(event.key==='Enter'){event.preventDefault();confirmAction();}">
+      </div>
+      <p id="confirm-password-error" style="color:#e74c3c;font-size:12px;margin-top:6px;display:none"></p>
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeConfirm()">Hủy</button>
-      <button class="btn btn-danger" onclick="confirmAction()">Xóa</button>
+      <button class="btn btn-danger" id="confirm-btn" onclick="confirmAction()">Xóa</button>
     </div>
   </div>
 </div>
@@ -2428,8 +2433,49 @@ function exportExcel() {
 // ══════════════════════════════════════════════════════════════
 // CONFIRM MODAL
 // ══════════════════════════════════════════════════════════════
-function closeConfirm() { document.getElementById('modal-confirm').classList.remove('open'); confirmCb = null; }
-function confirmAction() { closeConfirm(); if (confirmCb) confirmCb(); }
+function closeConfirm() {
+  document.getElementById('modal-confirm').classList.remove('open');
+  confirmCb = null;
+  document.getElementById('confirm-password').value = '';
+  document.getElementById('confirm-password-error').style.display = 'none';
+}
+
+async function confirmAction() {
+  const cb = confirmCb;
+  if (!cb) return;
+  const pwd = document.getElementById('confirm-password').value;
+  const errEl = document.getElementById('confirm-password-error');
+  errEl.style.display = 'none';
+  if (!pwd) {
+    errEl.textContent = 'Vui lòng nhập mật khẩu để xác nhận';
+    errEl.style.display = 'block';
+    return;
+  }
+  const btn = document.getElementById('confirm-btn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Đang kiểm tra...';
+  let verified = false;
+  try {
+    const res = await fetch('/api/verify-password', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: pwd })
+    });
+    const data = await res.json();
+    verified = res.ok && data.ok;
+    if (!verified) {
+      errEl.textContent = data.error || 'Mật khẩu không đúng';
+      errEl.style.display = 'block';
+    }
+  } catch (e) {
+    errEl.textContent = 'Lỗi kết nối, vui lòng thử lại';
+    errEl.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.textContent = originalText;
+  if (!verified) return;
+  closeConfirm();
+  cb();
+}
 
 // ══════════════════════════════════════════════════════════════
 // TOAST

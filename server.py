@@ -1041,6 +1041,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             '/api/login':                    self.api_login,
             '/api/logout':                   self.api_logout,
             '/api/change-password':          self.api_change_password,
+            '/api/verify-password':          self.api_verify_password,
             '/api/overtime':                 self.api_submit_overtime,
             '/api/manager/users':            self.api_manager_create_user,
             '/api/notifications/read-all':   self.api_notifications_read_all,
@@ -1282,6 +1283,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json({'error': 'Not found'}, 404)
             return
         self.send_json(dict(row))
+
+    def api_verify_password(self):
+        """Xác thực lại mật khẩu tài khoản hiện tại — dùng để yêu cầu xác nhận trước các hành động xóa dữ liệu."""
+        sess = self.require_auth()
+        if not sess:
+            return
+        body = self.read_json()
+        pw = body.get('password', '')
+        with get_db() as db:
+            row = db.execute('SELECT password FROM users WHERE id=?', (sess['userId'],)).fetchone()
+        if not row or not check_password(pw, row['password']):
+            self.send_json({'ok': False, 'error': 'Mật khẩu không đúng'}, 401)
+            return
+        self.send_json({'ok': True})
 
     def api_change_password(self):
         sess = self.require_auth()
@@ -3566,8 +3581,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 'SELECT pl.id FROM bt_records r JOIN bt_parcels pl ON r.parcel_id=pl.id WHERE r.id=?',
                 (rid,)
             ).fetchone()
+            # Xoá thủ công bảng con vì foreign_keys pragma đang tắt (xem ghi chú get_db()).
+            db.execute('DELETE FROM bt_records WHERE id=?', (rid,))
             if row:
-                db.execute('DELETE FROM bt_parcels WHERE id=?', (row['id'],))
+                parcel_id = row['id']
+                db.execute('DELETE FROM bt_parcel_owners WHERE parcel_id=?', (parcel_id,))
+                db.execute('DELETE FROM bt_asset_parcels WHERE parcel_id=?', (parcel_id,))
+                db.execute('DELETE FROM bt_parcel_decisions WHERE parcel_id=?', (parcel_id,))
+                db.execute('DELETE FROM bt_parcels WHERE id=?', (parcel_id,))
             db.commit()
         self.send_json({'ok': True})
 

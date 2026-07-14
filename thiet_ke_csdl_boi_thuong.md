@@ -30,6 +30,23 @@ Cũng đã bổ sung: xoá 1 thửa đất riêng lẻ (không phải xoá cả 
 
 **Tổng kết: cả 5 module trong kế hoạch redesign CSDL Bồi thường đã hoàn thành** (Chủ thể/Nhân khẩu, Thửa đất+Bản đồ, Tài sản trên đất, Dự án mở rộng, Hồ sơ Hộ+Quyết định theo Thửa). Các việc còn lại nằm ngoài phạm vi thiết kế CSDL này (xem mục Backlog bên dưới): công cụ vẽ ranh giới bản đồ, engine tính đơn giá/thành tiền tài sản, logic áp dụng chính sách hỗ trợ tự động, và cân nhắc chuyển tab "Tổng quan" sang tính tiến độ dự án từ `bt_parcel_decisions` thay vì `bt_records` cũ khi phù hợp.
 
+## Cập nhật 2026-07-14 (sau khi Minh báo lỗi): sửa nút xóa không hoạt động + thêm xác nhận mật khẩu
+
+**Nguyên nhân nút xóa không hoạt động:** lỗi có từ trước (không phải do các module mới gây ra) trong hàm dùng chung cho toàn bộ hộp thoại "Xác nhận xóa" của cả module Bồi thường:
+
+```js
+function closeConfirm() { ...; confirmCb = null; }
+function confirmAction() { closeConfirm(); if (confirmCb) confirmCb(); }
+```
+
+`confirmAction()` gọi `closeConfirm()` trước — hàm này xóa `confirmCb` về `null` — rồi mới kiểm tra `if (confirmCb)`, lúc này luôn là `null` nên hành động xóa thật sự **không bao giờ được gọi**. Hộp thoại đóng lại như bình thường nên trông có vẻ "đã xóa", nhưng dữ liệu vẫn còn nguyên. Lỗi này ảnh hưởng **toàn bộ nút xóa trong module Bồi thường** (dự án, hồ sơ cũ, chủ thể, nhân khẩu, thửa đất, bản đồ, tệp bản đồ, tài sản, hồ sơ hộ) vì tất cả đều dùng chung 1 hộp thoại này. Không ảnh hưởng các trang khác của app (chấm công, tài liệu...) vì các trang đó không dùng chung cơ chế này.
+
+**Đã sửa:** `confirmAction()` giờ lưu `confirmCb` vào 1 biến tạm trước khi đóng hộp thoại, đảm bảo hành động xóa luôn được gọi đúng.
+
+**Đã thêm theo yêu cầu của Minh — xác nhận mật khẩu trước khi xóa:** hộp thoại xác nhận xóa giờ có thêm ô nhập mật khẩu. Trước khi thực sự xóa, hệ thống gọi API mới `/api/verify-password` để kiểm tra mật khẩu đúng với tài khoản đang đăng nhập; sai mật khẩu hoặc để trống sẽ báo lỗi ngay tại chỗ và không cho xóa. Vì toàn bộ nút xóa trong module dùng chung 1 hộp thoại, sửa 1 chỗ này áp dụng cho tất cả — không cần sửa từng nút riêng lẻ.
+
+**Tiện thể sửa luôn:** xóa 1 "hồ sơ" ở tab Hồ sơ cũ (`bt_records`) trước đây chỉ xóa thửa đất liên quan mà không dọn `bt_parcel_owners`/`bt_asset_parcels`/`bt_parcel_decisions` — vì bảng thửa đất (`bt_parcels`) giờ được dùng chung giữa tab Hồ sơ cũ và các module mới (Thửa đất, Tài sản, Hồ sơ Hộ), nên đã bổ sung dọn dẹp đầy đủ để tránh dữ liệu mồ côi.
+
 **2 điểm khác biệt nhỏ so với bản thiết kế gốc, làm vậy vì lý do an toàn:**
 
 - Bảng `bt_parcels` vẫn còn giữ 2 cột cũ không dùng nữa: `owner_id`, `dia_diem_thu_hoi` (thay vì xoá hẳn). Lý do: SQLite không hỗ trợ xoá cột an toàn dễ dàng, và xoá cột có rủi ro nếu môi trường Railway đã có dữ liệu khác với bản test cục bộ. 2 cột này không gây hại gì, chỉ là "thừa", có thể dọn sau khi mọi thứ chạy ổn định.
