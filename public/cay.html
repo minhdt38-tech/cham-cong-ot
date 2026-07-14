@@ -307,7 +307,6 @@ const defaultTrees = [
 const tbody = document.getElementById('treeBody');
 const fmtVN = n => Number(n).toLocaleString('vi-VN');
 
-// Format a number for display, VN style: "." thousands separator, "," decimal separator
 function fmtNum(n){
   if(n===null || n===undefined || n==='' || isNaN(n)) return '';
   const rounded = Math.round(n*100)/100;
@@ -320,16 +319,12 @@ function fmtNum(n){
   return sign + intPart + decPart;
 }
 
-// Parse a number string using VN convention: "," = decimal separator, "." = thousands separator
 function parseVN(str){
   if(str===null || str===undefined) return NaN;
   str = String(str).trim();
   if(str==='') return NaN;
-  // remove spaces and currency symbols
   str = str.replace(/[^\d,.\-]/g,'');
   if(str==='') return NaN;
-  // "." = thousands separator -> remove all dots
-  // "," = decimal separator -> convert to "."
   str = str.replace(/\./g,'').replace(',', '.');
   return parseFloat(str);
 }
@@ -389,7 +384,6 @@ document.getElementById('land1').addEventListener('input', updateHint);
 document.getElementById('land2ratio').addEventListener('input', updateHint);
 updateHint();
 
-// ---- Toast helper ----
 function showToast(msg, isErr){
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -399,8 +393,6 @@ function showToast(msg, isErr){
   t._timer = setTimeout(()=>t.classList.remove('show'), 3200);
 }
 
-// ---- Import rows from a 2D array of cell values ----
-// Expected columns per row: [Tên, SL tối đa, Diện tích, Giá] (header rows are skipped)
 function importRows(rows, {clearExisting} = {}){
   let added = 0, skipped = 0;
   const parsed = [];
@@ -408,7 +400,6 @@ function importRows(rows, {clearExisting} = {}){
     if(!row || row.length===0) continue;
     const name = (row[0]??'').toString().trim();
     if(!name) continue;
-    // skip header-like rows
     const lname = name.toLowerCase();
     if(['loại cây','loai cay','tên','ten','tree','name'].includes(lname)){ continue; }
     const maxq  = parseVN(row[1]);
@@ -430,7 +421,6 @@ function importRows(rows, {clearExisting} = {}){
   showToast(msg);
 }
 
-// ---- Paste from clipboard (TSV from Excel) ----
 document.getElementById('pasteBtn').addEventListener('click', async () => {
   try{
     const text = await navigator.clipboard.readText();
@@ -446,7 +436,6 @@ document.getElementById('pasteBtn').addEventListener('click', async () => {
   }
 });
 
-// ---- Paste a single column from clipboard ----
 const COL_CLASS = {name:'name', maxq:'maxq', area:'area', price:'price'};
 const COL_LABEL = {name:'Loại cây', maxq:'SL tối đa', area:'Diện tích / cây', price:'Giá gốc / cây'};
 
@@ -460,35 +449,28 @@ document.querySelectorAll('.col-paste').forEach(btn => {
         showToast('Clipboard rỗng. Hãy copy 1 cột dữ liệu trước.', true);
         return;
       }
-      // accept either single column (one value per line) or TSV/CSV with multiple columns (take first column)
       const values = text.split(/\r?\n/)
         .filter(l=>l.trim()!=='')
         .map(line => line.split('\t')[0].trim());
-
       if(values.length===0){
         showToast('Không có dữ liệu để dán.', true);
         return;
       }
-
       let rows = [...tbody.querySelectorAll('tr')];
-      // add rows if needed
       while(rows.length < values.length){
         addRow();
         rows = [...tbody.querySelectorAll('tr')];
       }
-
       const cls = COL_CLASS[col];
       values.forEach((val, i) => {
         const input = rows[i].querySelector('.'+cls);
         if(col==='name'){
           input.value = val;
         } else {
-          // store numeric value formatted VN-style, accept both , and . input
           const num = parseVN(val);
           input.value = isNaN(num) ? val : fmtNum(num);
         }
       });
-
       document.getElementById('results').classList.remove('show');
       showToast(`Đã dán ${values.length} giá trị vào cột "${COL_LABEL[col]}".`);
     }catch(err){
@@ -497,17 +479,15 @@ document.querySelectorAll('.col-paste').forEach(btn => {
   });
 });
 
-// ---- Scan image (camera or upload) using Tesseract.js OCR (offline-capable after first load) ----
 function parseOcrTextToRows(text){
   const lines = text.split(/\r?\n/).map(l=>l.trim()).filter(l=>l!=='');
   const rows = [];
   const numRe = /[\d][\d.,]*/g;
-
   for(const line of lines){
     const matches = [...line.matchAll(numRe)];
     if(matches.length < 3) continue;
     const last3 = matches.slice(-3);
-    const name = line.slice(0, last3[0].index).trim().replace(/[|:\-\u2013\u2014]+$/,'').trim();
+    const name = line.slice(0, last3[0].index).trim().replace(/[|:\-–—]+$/,'').trim();
     if(!name) continue;
     rows.push([name, last3[0][0], last3[1][0], last3[2][0]]);
   }
@@ -517,31 +497,25 @@ function parseOcrTextToRows(text){
 document.getElementById('imageInput').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if(!file) return;
-
   showToast('Đang nhận diện ảnh (OCR)... có thể mất vài giây.');
-
   if(typeof Tesseract === 'undefined'){
     showToast('Không tải được thư viện OCR. Cần kết nối internet ở lần dùng đầu tiên.', true);
-    e.target.value = '';
-    return;
+    e.target.value = ''; return;
   }
-
   Tesseract.recognize(file, 'vie+eng', {})
     .then(({data}) => {
       const text = data.text || '';
       const rows = parseOcrTextToRows(text);
       if(rows.length===0){
-        showToast('Không nhận diện được dòng dữ liệu nào (cần dạng: Tên ... SLtoida Dientich Gia). Hãy thử ảnh rõ hơn hoặc dùng Excel.', true);
+        showToast('Không nhận diện được dòng dữ liệu nào. Hãy thử ảnh rõ hơn hoặc dùng Excel.', true);
         return;
       }
       importRows(rows);
     })
-    .catch(err => {
-      console.error(err);
-      showToast('Lỗi OCR: ' + err.message, true);
-    })
+    .catch(err => { console.error(err); showToast('Lỗi OCR: ' + err.message, true); })
     .finally(() => { e.target.value = ''; });
 });
+
 document.getElementById('fileInput').addEventListener('change', (e) => {
   const file = e.target.files[0];
   if(!file) return;
@@ -561,313 +535,178 @@ document.getElementById('fileInput').addEventListener('change', (e) => {
   e.target.value = '';
 });
 
+// ============================================================
+// WEB WORKER: 2×1D Knapsack solver (phương án B)
+// Step 1: 1D bounded knapsack on L1+L2 → z_i (total per tree)
+// Step 2: 1D bounded knapsack on L1 or L2 → x1_i / x2_i split
+// Binary grouping: O(n × cap × log(maxq)), cap ≤ ~50 000
+// ============================================================
 const workerSrc = `
-function makeBnBSolver(trees, land1, land2, priceRatio){
-  const n = trees.length;
-  let bestVal = 0;
-  let bestSol = new Array(n).fill([0,0]);
-
-  const order = trees.map((t,i)=>i).sort((a,b)=>
-    (trees[b].price/trees[b].area) - (trees[a].price/trees[a].area)
-  );
-  const items = order.map(i=>trees[i]);
-
-  const cumArea = new Array(n+1).fill(0);
-  const cumVal1 = new Array(n+1).fill(0);
-  for(let i=0;i<n;i++){
-    cumArea[i+1] = cumArea[i] + items[i].maxq*items[i].area;
-    cumVal1[i+1] = cumVal1[i] + items[i].maxq*items[i].price;
-  }
-  function lpFillBound(startIdx, capacity, priceMul){
-    if(capacity<=0) return 0;
-    const base = cumArea[startIdx];
-    const target = base + capacity;
-    let lo=startIdx, hi=n;
-    while(lo<hi){
-      const mid=(lo+hi+1)>>1;
-      if(cumArea[mid]<=target) lo=mid; else hi=mid-1;
-    }
-    const j=lo;
-    let val = (cumVal1[j]-cumVal1[startIdx])*priceMul;
-    const usedArea = cumArea[j]-base;
-    const remCap = capacity-usedArea;
-    if(j<n && remCap>1e-9){
-      val += (remCap/items[j].area)*items[j].price*priceMul;
-    }
-    return val;
-  }
-  function bound(i, w1, w2, val){
-    if(i>=n) return val;
-    const rem1=land1-w1, rem2=land2-w2;
-    const v1 = lpFillBound(i, rem1, 1);
-    const v2 = lpFillBound(i, rem2, priceRatio);
-    return val+v1+v2;
-  }
-
-  const EPS=1e-9;
-  let nodes=0;
-  const sol = new Array(n);
-
-  function search(i,w1,w2,val){
-    nodes++;
-    if(val>bestVal){
-      bestVal=val;
-      bestSol=sol.slice(0,i).concat(new Array(n-i).fill([0,0]));
-    }
-    if(i===n) return;
-    if(bound(i,w1,w2,val) <= bestVal+EPS) return;
-    const t=items[i];
-    for(let x1=0;x1<=t.maxq;x1++){
-      const nw1=w1+x1*t.area;
-      if(nw1>land1+EPS) break;
-      for(let x2=0;x2<=t.maxq-x1;x2++){
-        const nw2=w2+x2*t.area;
-        if(nw2>land2+EPS) break;
-        sol[i]=[x1,x2];
-        search(i+1,nw1,nw2,val+x1*t.price+x2*t.price*priceRatio);
-      }
-    }
-  }
-
-  const t0item = n>0 ? items[0] : null;
-  const tasks = [];
-  if(n===0){
-    bestVal=0; bestSol=[];
-  } else if(n===1){
-    tasks.push(null);
-  } else {
-    for(let x1=0;x1<=t0item.maxq;x1++){
-      const nw1=x1*t0item.area;
-      if(nw1>land1+EPS) break;
-      for(let x2=0;x2<=t0item.maxq-x1;x2++){
-        const nw2=x2*t0item.area;
-        if(nw2>land2+EPS) break;
-        tasks.push([x1,x2,nw1,nw2]);
-      }
-    }
-  }
-
-  let taskIdx=0;
-  let cancelled=false;
-
-  function runChunk(maxMs){
-    const start=Date.now();
-    if(n<=1){
-      search(0,0,0,0);
-      taskIdx=tasks.length;
-      return;
-    }
-    while(taskIdx<tasks.length){
-      if(cancelled) return;
-      const [x1,x2,nw1,nw2]=tasks[taskIdx];
-      sol[0]=[x1,x2];
-      const val0=x1*t0item.price+x2*t0item.price*priceRatio;
-      if(val0>bestVal){ bestVal=val0; bestSol=[[x1,x2]].concat(new Array(n-1).fill([0,0])); }
-      search(1,nw1,nw2,val0);
-      taskIdx++;
-      if(Date.now()-start>maxMs) break;
-    }
-  }
-
-  return {
-    algo:'bnb',
-    runChunk,
-    cancel:()=>{cancelled=true;},
-    isDone:()=>taskIdx>=tasks.length || cancelled,
-    getNodes:()=>nodes,
-    getBest:()=>bestVal,
-    getTaskDone:()=>taskIdx,
-    getResult:()=>{
-      const result=new Array(n);
-      for(let k=0;k<n;k++) result[order[k]]=bestSol[k]||[0,0];
-      return result;
-    },
-    totalTasks: tasks.length
-  };
+function chooseScale(totalLand) {
+  if (totalLand <= 0) return 10;
+  return Math.max(0.001, Math.min(10, 50000 / totalLand));
 }
 
-// Exact 2D DP (knapsack) solver. Polynomial time: O(sum(maxq) * cap1 * cap2).
-// Discretizes area at 0.1 m2 resolution (scale=10) -- exact for areas with <=1 decimal,
-// negligible rounding (<=0.05 m2 per unit) for areas with 2 decimals.
-function makeDPSolver(trees, land1, land2, priceRatio){
-  const n = trees.length;
-  const SCALE = 10;
-  const cap1 = Math.max(0, Math.round(land1*SCALE));
-  const cap2 = Math.max(0, Math.round(land2*SCALE));
-  const W2 = cap2+1;
-  const size = (cap1+1)*W2;
-
-  const areasInt = trees.map(t=>Math.max(1, Math.round(t.area*SCALE)));
-  const totalQ = trees.reduce((s,t)=>s+t.maxq,0);
-
-  // snapshots[i] = dp state BEFORE processing item i
-  const snapshots = [new Float64Array(size)];
-  let bufA = new Float64Array(size), bufB = new Float64Array(size);
-  let dp = snapshots[0];
-
-  let itemIdx = 0;
-  let qDone = 0; // units processed for current item
-  let prev = null, cur = null;
-  let cancelled = false;
-  let qProgress = 0; // cumulative q across all items, for progress reporting
-
-  function initItem(){
-    const t = trees[itemIdx];
-    prev = dp;
-    cur = (prev===bufA) ? bufB : bufA;
-    qDone = 0;
-  }
-  if(n>0) initItem();
-
-  function stepQ(){
-    // process ONE unit (q) of the current item
-    const t = trees[itemIdx];
-    const a = areasInt[itemIdx];
-    const p = t.price, pr = p*priceRatio;
-    for(let w1=0;w1<=cap1;w1++){
-      const base=w1*W2;
-      const baseM=(w1-a>=0)?(w1-a)*W2:-1;
-      for(let w2=0;w2<=cap2;w2++){
-        let best=prev[base+w2];
-        if(baseM>=0){const v=prev[baseM+w2]+p; if(v>best)best=v;}
-        if(w2-a>=0){const v=prev[base+(w2-a)]+pr; if(v>best)best=v;}
-        cur[base+w2]=best;
-      }
-    }
-    const tmp=prev; prev=cur; cur=tmp;
-    qDone++;
-    qProgress++;
-  }
-
-  function finishItem(){
-    dp = prev;
-    snapshots.push(dp.slice());
-    itemIdx++;
-    if(itemIdx<n) initItem();
-  }
-
-  function traceback(){
-    const sol = new Array(n);
-    let w1=cap1, w2=cap2;
-    const EPS=1e-6;
-    for(let idx=n-1; idx>=0; idx--){
-      const t=trees[idx];
-      const a=areasInt[idx];
-      const m=t.maxq, p=t.price, pr=p*priceRatio;
-      const before=snapshots[idx];
-      const target=snapshots[idx+1][w1*W2+w2];
-      let found=[0,0];
-      outer:
-      for(let x1=0;x1<=m;x1++){
-        if(x1*a>w1) break;
-        for(let x2=0;x2<=m-x1;x2++){
-          if(x2*a>w2) continue;
-          const val=before[(w1-x1*a)*W2+(w2-x2*a)]+x1*p+x2*pr;
-          if(Math.abs(val-target)<EPS){ found=[x1,x2]; break outer; }
+function knapsack1D(cap, items) {
+  const n = items.length;
+  const snapshots = new Array(n + 1);
+  let dp = new Float64Array(cap + 1);
+  snapshots[0] = dp.slice();
+  for (let i = 0; i < n; i++) {
+    const {areaInt, value, qty} = items[i];
+    if (areaInt > 0 && value > 0 && qty > 0) {
+      let rem = qty, k = 1;
+      while (rem > 0) {
+        const g = Math.min(k, rem);
+        const ga = g * areaInt, gv = g * value;
+        for (let w = cap; w >= ga; w--) {
+          const nv = dp[w - ga] + gv;
+          if (nv > dp[w]) dp[w] = nv;
         }
+        rem -= g; k *= 2;
       }
-      sol[idx]=found;
-      w1-=found[0]*a; w2-=found[1]*a;
     }
-    return sol;
+    snapshots[i + 1] = dp.slice();
   }
+  return snapshots;
+}
 
-  function runChunk(maxMs){
-    const start=Date.now();
-    if(n===0) return;
-    while(itemIdx<n){
-      if(cancelled) return;
-      const t=trees[itemIdx];
-      while(qDone<t.maxq){
-        if(cancelled) return;
-        stepQ();
-        if(Date.now()-start>maxMs) return;
+function traceback1D(cap, items, snapshots) {
+  const n = items.length;
+  const qtys = new Array(n).fill(0);
+  let w = cap;
+  const EPS = 1e-6;
+  for (let i = n - 1; i >= 0; i--) {
+    const {areaInt, value, qty} = items[i];
+    if (areaInt <= 0 || value <= 0 || qty <= 0) continue;
+    const target = snapshots[i + 1][w];
+    const before = snapshots[i];
+    const maxX = Math.min(qty, Math.floor(w / areaInt));
+    for (let x = maxX; x >= 0; x--) {
+      if (Math.abs(before[w - x * areaInt] + x * value - target) < EPS) {
+        qtys[i] = x; w -= x * areaInt; break;
       }
-      finishItem();
-      if(Date.now()-start>maxMs) return;
     }
   }
-
-  return {
-    algo:'dp',
-    runChunk,
-    cancel:()=>{cancelled=true;},
-    isDone:()=>itemIdx>=n || cancelled,
-    getNodes:()=>qProgress,
-    getBest:()=>{
-      if(itemIdx===0 && qDone===0) return 0;
-      // best-so-far isn't meaningful mid-DP; report final once done, 0 otherwise
-      return (itemIdx>=n) ? snapshots[n][cap1*W2+cap2] : 0;
-    },
-    getTaskDone:()=>qProgress,
-    getResult:()=>{
-      if(itemIdx<n) return new Array(n).fill([0,0]);
-      return traceback();
-    },
-    totalTasks: Math.max(1,totalQ)
-  };
+  return qtys;
 }
 
 function makeSolver(trees, land1, land2, priceRatio){
   const n = trees.length;
-  // Estimate B&B top-level branching (tasks for item 0) to decide algorithm.
-  let bnbTasks = 1;
-  if(n>1){
-    const order = trees.map((t,i)=>i).sort((a,b)=>
-      (trees[b].price/trees[b].area) - (trees[a].price/trees[a].area)
-    );
-    const t0 = trees[order[0]];
-    const EPS=1e-9;
-    let cnt=0;
-    for(let x1=0;x1<=t0.maxq;x1++){
-      if(x1*t0.area>land1+EPS) break;
-      for(let x2=0;x2<=t0.maxq-x1;x2++){
-        if(x2*t0.area>land2+EPS) break;
-        cnt++;
+  const r = priceRatio;
+  const SCALE = chooseScale(land1 + land2);
+  const cap1 = Math.max(0, Math.round(land1 * SCALE));
+  const cap2 = Math.max(0, Math.round(land2 * SCALE));
+  const capT = cap1 + cap2;
+  const areasInt = trees.map(t => Math.max(1, Math.round(t.area * SCALE)));
+
+  let phase = 0, bestVal = 0, sol = null, cancelled = false;
+
+  function runChunk() {
+    if (cancelled || phase >= 2) return;
+    if (n === 0) { bestVal = 0; sol = []; phase = 2; return; }
+
+    postMessage({type:'progress', nodes:0, bestVal:0, done:false, totalTasks:100, taskDone:5, algo:'1d'});
+
+    const items1 = trees.map((t, i) => ({ areaInt: areasInt[i], value: t.price, qty: t.maxq }));
+    const snaps1 = knapsack1D(capT, items1);
+    const z = traceback1D(capT, items1, snaps1);
+
+    postMessage({type:'progress', nodes:1, bestVal:0, done:false, totalTasks:100, taskDone:50, algo:'1d'});
+
+    const T = z.reduce((s, zi, i) => s + zi * areasInt[i], 0);
+    const lb1 = Math.max(0, T - cap2);
+
+    let x1, x2;
+    if (r <= 1.0) {
+      const items2 = trees.map((t, i) => ({ areaInt: areasInt[i], value: t.price, qty: z[i] }));
+      const snaps2 = knapsack1D(cap1, items2);
+      x1 = traceback1D(cap1, items2, snaps2);
+      x2 = z.map((zi, i) => zi - x1[i]);
+      let S1 = x1.reduce((s, xi, i) => s + xi * areasInt[i], 0);
+      if (S1 < lb1) {
+        const idxs = trees.map((_, i) => i).filter(i => x2[i] > 0)
+          .sort((a, b) => (trees[b].price / trees[b].area) - (trees[a].price / trees[a].area));
+        for (const i of idxs) {
+          if (S1 >= lb1) break;
+          const a = areasInt[i];
+          const add = Math.min(x2[i], Math.ceil((lb1 - S1) / a));
+          x1[i] += add; x2[i] -= add; S1 += add * a;
+        }
+      }
+    } else {
+      const items2 = trees.map((t, i) => ({ areaInt: areasInt[i], value: t.price, qty: z[i] }));
+      const snaps2 = knapsack1D(cap2, items2);
+      x2 = traceback1D(cap2, items2, snaps2);
+      x1 = z.map((zi, i) => zi - x2[i]);
+      let S1 = x1.reduce((s, xi, i) => s + xi * areasInt[i], 0);
+      if (S1 > cap1) {
+        const idxs = trees.map((_, i) => i).filter(i => x1[i] > 0)
+          .sort((a, b) => (trees[b].price / trees[b].area) - (trees[a].price / trees[a].area));
+        for (const i of idxs) {
+          if (S1 <= cap1) break;
+          const a = areasInt[i];
+          const reduce = Math.min(x1[i], Math.ceil((S1 - cap1) / a));
+          x1[i] -= reduce; x2[i] += reduce; S1 -= reduce * a;
+        }
       }
     }
-    bnbTasks=cnt;
+
+    // Final repair: dùng diện tích GỐC (không scale) để đảm bảo không vượt giới hạn vườn
+    function repairActual(xArr, maxLand) {
+      let A = xArr.reduce((s, xi, i) => s + xi * trees[i].area, 0);
+      if (A <= maxLand + 1e-6) return;
+      // Loại bỏ từ cây có giá trị/m² thấp nhất trước (giảm thiệt hại ít nhất)
+      const order = trees.map((_, i) => i).filter(i => xArr[i] > 0)
+        .sort((a, b) => (trees[a].price / trees[a].area) - (trees[b].price / trees[b].area));
+      for (const i of order) {
+        if (A <= maxLand + 1e-6) break;
+        const excess = A - maxLand;
+        const remove = Math.min(xArr[i], Math.ceil(excess / trees[i].area));
+        xArr[i] -= remove;
+        A -= remove * trees[i].area;
+      }
+    }
+    repairActual(x1, land1);
+    repairActual(x2, land2);
+
+    bestVal = 0;
+    for (let i = 0; i < n; i++) bestVal += x1[i] * trees[i].price + x2[i] * trees[i].price * r;
+    sol = trees.map((_, i) => [x1[i], x2[i]]);
+    phase = 2;
   }
-  // Heuristic: B&B explores roughly bnbTasks^(n-1)-ish in the worst case (mitigated by bound).
-  // Use DP when n is large AND bnbTasks is large (high branching depth risk).
-  // For n<=10, B&B with LP bound is consistently fast in practice -> prefer B&B.
-  // For n>10, fall back to DP (polynomial, predictable).
-  if(n<=10){
-    return makeBnBSolver(trees, land1, land2, priceRatio);
-  }
-  return makeDPSolver(trees, land1, land2, priceRatio);
+
+  return {
+    algo: '1d', runChunk,
+    cancel: () => { cancelled = true; },
+    isDone: () => phase >= 2 || cancelled,
+    getNodes: () => phase,
+    getBest: () => bestVal,
+    getTaskDone: () => phase >= 2 ? 100 : 50,
+    getResult: () => sol || trees.map(() => [0, 0]),
+    totalTasks: 100
+  };
 }
 
-let solver=null;
-let cancelled=false;
+let solver = null, cancelled = false;
 
-onmessage = function(e){
-  if(e.data.type==='cancel'){
-    cancelled=true;
-    if(solver) solver.cancel();
-    return;
-  }
-  if(e.data.type==='start'){
+onmessage = function(e) {
+  if (e.data.type === 'cancel') { cancelled = true; if (solver) solver.cancel(); return; }
+  if (e.data.type === 'start') {
     const {trees, land1, land2, priceRatio} = e.data;
     solver = makeSolver(trees, land1, land2, priceRatio);
     const algo = solver.algo;
-    const n = trees.length;
-    function tick(){
-      if(cancelled){
+    function tick() {
+      if (cancelled) {
         postMessage({type:'done', value:solver.getBest(), sol:solver.getResult(), nodes:solver.getNodes(), exact:false, algo});
         return;
       }
-      solver.runChunk(80);
-      if(algo==='bnb'){
-        postMessage({type:'improved', value:solver.getBest(), sol:solver.getResult()});
-      }
-      postMessage({type:'progress', nodes:solver.getNodes(), bestVal:solver.getBest(), done:solver.isDone(), totalTasks:solver.totalTasks, taskDone:solver.getTaskDone(), algo});
-      if(!solver.isDone()){
+      solver.runChunk(2000);
+      if (!solver.isDone()) {
         setTimeout(tick, 0);
-      } else if(cancelled){
+      } else if (cancelled) {
         postMessage({type:'done', value:solver.getBest(), sol:solver.getResult(), nodes:solver.getNodes(), exact:false, algo});
       } else {
-        // DP at scale=10 (0.1 m2) has negligible rounding -> still reported as exact
         postMessage({type:'done', value:solver.getBest(), sol:solver.getResult(), nodes:solver.getNodes(), exact:true, algo});
       }
     }
@@ -877,7 +716,7 @@ onmessage = function(e){
 `;
 
 let currentWorker = null;
-let lastSolution = null; // {trees, sol}
+let lastSolution = null;
 
 function copyResultToClipboard(silent){
   if(!lastSolution){
@@ -899,14 +738,10 @@ function applyResult(trees, value, sol, land1, land2, priceRatio){
   const resBody = document.getElementById('resBody');
   resBody.innerHTML = '';
   let totalArea1=0, totalArea2=0, cost1=0, cost2=0;
-
   trees.forEach((t,i)=>{
     const [x1,x2] = sol[i];
-    totalArea1 += x1*t.area;
-    totalArea2 += x2*t.area;
-    cost1 += x1*t.price;
-    cost2 += x2*t.price*priceRatio;
-
+    totalArea1 += x1*t.area; totalArea2 += x2*t.area;
+    cost1 += x1*t.price; cost2 += x2*t.price*priceRatio;
     const tr = document.createElement('tr');
     if(x1===0 && x2===0) tr.classList.add('zero');
     tr.innerHTML = `
@@ -919,21 +754,17 @@ function applyResult(trees, value, sol, land1, land2, priceRatio){
     `;
     resBody.appendChild(tr);
   });
-
   document.getElementById('cost1').textContent = fmtVN(Math.round(cost1)) + ' đ';
   document.getElementById('cost2').textContent = fmtVN(Math.round(cost2)) + ' đ';
   document.getElementById('costTotal').textContent = fmtVN(Math.round(value)) + ' đ';
-
   const note1 = document.getElementById('areaNote1');
   const remain1 = land1-totalArea1;
   note1.textContent = `Vườn 1: dùng ${fmtNum(Math.round(totalArea1*100)/100)} / ${fmtNum(Math.round(land1*100)/100)} m² — còn trống ${fmtNum(Math.round(remain1*100)/100)} m²`;
   note1.classList.toggle('warn', remain1 < -1e-6);
-
   const note2 = document.getElementById('areaNote2');
   const remain2 = land2-totalArea2;
   note2.textContent = `Vườn 2: dùng ${fmtNum(Math.round(totalArea2*100)/100)} / ${fmtNum(Math.round(land2*100)/100)} m² — còn trống ${fmtNum(Math.round(remain2*100)/100)} m²`;
   note2.classList.toggle('warn', remain2 < -1e-6);
-
   document.getElementById('results').classList.add('show');
 }
 
@@ -980,10 +811,13 @@ document.getElementById('solveBtn').addEventListener('click', () => {
     const msg = e.data;
     if(msg.type==='progress'){
       const elapsed = ((performance.now()-t0)/1000).toFixed(1);
-      if(msg.algo==='dp'){
+      if(msg.algo==='dp' || msg.algo==='1d'){
         const pct = msg.totalTasks>0 ? Math.min(100,Math.round(100*msg.taskDone/msg.totalTasks)) : 0;
+        const lbl = msg.algo==='1d'
+          ? `Knapsack 1D — ${trees.length} loại`
+          : `Quy hoạch động — ${trees.length} loại`;
         document.getElementById('progressText').textContent =
-          `Đang tính (Quy hoạch động — ${trees.length} loại cây)... ${pct}% — ${elapsed}s`;
+          `Đang tính (${lbl})... ${pct}% — ${elapsed}s`;
       } else {
         const pctStr = msg.totalTasks>1 ? ` (${Math.min(100,Math.round(100*msg.taskDone/msg.totalTasks))}%)` : '';
         document.getElementById('progressText').textContent =
@@ -997,7 +831,10 @@ document.getElementById('solveBtn').addEventListener('click', () => {
       if(!dpCancelled){
         applyResult(trees, msg.value, msg.sol, land1, land2, priceRatio);
       }
-      if(msg.exact && msg.algo==='dp'){
+      if(msg.exact && msg.algo==='1d'){
+        document.getElementById('timing').textContent =
+          `Thời gian tính: ${elapsed.toFixed(0)} ms — thuật toán 2×1D Knapsack (${trees.length} loại cây, tối ưu nhanh)`;
+      } else if(msg.exact && msg.algo==='dp'){
         document.getElementById('timing').textContent =
           `Thời gian tính: ${(elapsed/1000).toFixed(1)}s — thuật toán Quy hoạch động (${trees.length} loại cây), chính xác tới 0,1 m²`;
       } else if(msg.exact){
