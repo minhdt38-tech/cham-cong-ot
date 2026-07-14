@@ -548,6 +548,15 @@ def init_db():
         if 'custom_fields' not in parcel_cols:
             db.execute("ALTER TABLE bt_parcels ADD COLUMN custom_fields TEXT DEFAULT '{}'")
 
+        # Bồi thường v2.1: Bản đồ GPMB là nguồn sinh Thửa đất
+        map_parcel_cols = [r[1] for r in db.execute("PRAGMA table_info(bt_map_parcels)").fetchall()]
+        if 'parcel_id' not in map_parcel_cols:
+            db.execute("ALTER TABLE bt_map_parcels ADD COLUMN parcel_id INTEGER DEFAULT NULL")
+        if 'dien_tich_thu_hoi_tren_ban_do' not in map_parcel_cols:
+            db.execute("ALTER TABLE bt_map_parcels ADD COLUMN dien_tich_thu_hoi_tren_ban_do REAL DEFAULT 0")
+        if 'toa_do' not in map_parcel_cols:
+            db.execute("ALTER TABLE bt_map_parcels ADD COLUMN toa_do TEXT DEFAULT NULL")
+
         row = db.execute("SELECT id FROM users WHERE username='admin'").fetchone()
         if not row:
             pwd = hash_password('admin123')
@@ -993,6 +1002,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/projects/(\d+)/stats$', path)
         if m:
             self.api_bt_project_stats(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/gpmb-status$', path)
+        if m:
+            self.api_bt_project_gpmb_status(int(m.group(1))); return
         m = re.match(r'^/api/bt/projects/(\d+)/records$', path)
         if m:
             self.api_bt_records_list(int(m.group(1)), qs); return
@@ -1137,6 +1149,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/maps/(\d+)$', path)
         if m:
             self.api_bt_maps_update(int(m.group(1))); return
+        m = re.match(r'^/api/bt/map-parcels/(\d+)$', path)
+        if m:
+            self.api_bt_map_parcels_update(int(m.group(1))); return
         m = re.match(r'^/api/bt/assets/(\d+)$', path)
         if m:
             self.api_bt_assets_update(int(m.group(1))); return
@@ -2828,9 +2843,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.execute('DELETE FROM bt_parcel_owners WHERE parcel_id=?', (parcel_id,))
             db.execute('DELETE FROM bt_asset_parcels WHERE parcel_id=?', (parcel_id,))
             db.execute('DELETE FROM bt_parcel_decisions WHERE parcel_id=?', (parcel_id,))
+            # Gỡ liên kết ở thửa trên Bản đồ GPMB (nếu có) để tránh tham chiếu treo,
+            # xoá trực tiếp ở tab Thửa đất chỉ nên dùng cho thửa cũ/không gắn Bản đồ GPMB.
+            db.execute('UPDATE bt_map_parcels SET parcel_id=NULL WHERE parcel_id=?', (parcel_id,))
             db.execute('DELETE FROM bt_parcels WHERE id=?', (parcel_id,))
             db.commit()
         self.send_json({'ok': True})
+
+    def api_bt_project_gpmb_status(self, pid):
+        """Kiểm tra dự án đã có Bản đồ GPMB với ít nhất 1 thửa hay chưa — dùng để khoá/mở khoá các tab khác."""
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            cnt = db.execute(
+                "SELECT COUNT(*) FROM bt_map_parcels mp JOIN bt_maps m ON m.id=mp.map_id "
+                "WHERE m.project_id=? AND m.loai_ban_do='Bản đồ GPMB' AND mp.parcel_id IS NOT NULL",
+                (pid,)
+            ).fetchone()[0]
+        self.send_json({'has_gpmb': cnt > 0, 'parcel_count': cnt})
 
     # ── BT v2: BẢN ĐỒ (theo dự án hoặc độc lập, đính kèm nhiều thửa gốc + nhiều file) ──
 
@@ -2929,26 +2959,100 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.commit()
         self.send_json({'ok': True})
 
+    def _create_parcel_from_map_entry(self, db, project_id, parcel_master_id, so_to, so_thua, tong_dt, thu_hoi_dt):
+        """Bản đồ GPMB là nguồn gốc của Thửa đất: mỗi thửa thêm trên Bản đồ GPMB tự sinh 1 bản ghi bt_parcels."""
+        con_lai = max((tong_dt or 0) - (thu_hoi_dt or 0), 0)
+        cur = db.execute(
+            'INSERT INTO bt_parcels (project_id, parcel_master_id, so_to, so_thua, tong_dien_tich, '
+            'dien_tich_thu_hoi, dien_tich_con_lai) VALUES (?,?,?,?,?,?,?)',
+            (project_id, parcel_master_id, so_to, so_thua, tong_dt or 0, thu_hoi_dt or 0, con_lai)
+        )
+        return cur.lastrowid
+
+    def _sync_parcel_from_map_entry(self, db, parcel_id, parcel_master_id, so_to, so_thua, tong_dt, thu_hoi_dt):
+        """Cập nhật lại các trường không gian của Thửa đất khi Bản đồ GPMB thay đổi.
+        Chỉ đồng bộ số tờ/số thửa/diện tích — các trường do người dùng nhập ở tab Thửa đất
+        (loại đất, GCN, chủ sử dụng...) được giữ nguyên."""
+        con_lai = max((tong_dt or 0) - (thu_hoi_dt or 0), 0)
+        db.execute(
+            'UPDATE bt_parcels SET parcel_master_id=?, so_to=?, so_thua=?, tong_dien_tich=?, '
+            'dien_tich_thu_hoi=?, dien_tich_con_lai=? WHERE id=?',
+            (parcel_master_id, so_to, so_thua, tong_dt or 0, thu_hoi_dt or 0, con_lai, parcel_id)
+        )
+
     def api_bt_map_parcels_add(self, map_id):
         sess = self.require_auth()
         if not sess: return
         body = self.read_json()
+        so_to = body.get('so_to_tren_ban_do', '')
+        so_thua = body.get('so_thua_tren_ban_do', '')
+        dien_tich = body.get('dien_tich_tren_ban_do') or 0
+        thu_hoi = body.get('dien_tich_thu_hoi_tren_ban_do') or 0
+        master_id = body.get('parcel_master_id') or None
+        toa_do = body.get('toa_do') or None
         with get_db() as db:
+            m = db.execute('SELECT project_id, loai_ban_do FROM bt_maps WHERE id=?', (map_id,)).fetchone()
+            parcel_id = None
+            if m and m['loai_ban_do'] == 'Bản đồ GPMB' and m['project_id']:
+                parcel_id = self._create_parcel_from_map_entry(
+                    db, m['project_id'], master_id, so_to, so_thua, dien_tich, thu_hoi
+                )
             cur = db.execute(
-                'INSERT INTO bt_map_parcels (map_id, parcel_master_id, so_to_tren_ban_do, so_thua_tren_ban_do, dien_tich_tren_ban_do) '
-                'VALUES (?,?,?,?,?)',
-                (map_id, body.get('parcel_master_id') or None, body.get('so_to_tren_ban_do', ''),
-                 body.get('so_thua_tren_ban_do', ''), body.get('dien_tich_tren_ban_do') or 0)
+                'INSERT INTO bt_map_parcels (map_id, parcel_master_id, so_to_tren_ban_do, so_thua_tren_ban_do, '
+                'dien_tich_tren_ban_do, dien_tich_thu_hoi_tren_ban_do, toa_do, parcel_id) VALUES (?,?,?,?,?,?,?,?)',
+                (map_id, master_id, so_to, so_thua, dien_tich, thu_hoi, toa_do, parcel_id)
             )
             db.commit()
             new_id = cur.lastrowid
-        self.send_json({'ok': True, 'id': new_id})
+        self.send_json({'ok': True, 'id': new_id, 'parcel_id': parcel_id})
+
+    def api_bt_map_parcels_update(self, link_id):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        so_to = body.get('so_to_tren_ban_do', '')
+        so_thua = body.get('so_thua_tren_ban_do', '')
+        dien_tich = body.get('dien_tich_tren_ban_do') or 0
+        thu_hoi = body.get('dien_tich_thu_hoi_tren_ban_do') or 0
+        master_id = body.get('parcel_master_id') or None
+        toa_do = body.get('toa_do') or None
+        with get_db() as db:
+            row = db.execute('SELECT map_id, parcel_id FROM bt_map_parcels WHERE id=?', (link_id,)).fetchone()
+            if not row:
+                self.send_json({'error': 'Không tìm thấy'}, 404); return
+            db.execute(
+                'UPDATE bt_map_parcels SET parcel_master_id=?, so_to_tren_ban_do=?, so_thua_tren_ban_do=?, '
+                'dien_tich_tren_ban_do=?, dien_tich_thu_hoi_tren_ban_do=?, toa_do=? WHERE id=?',
+                (master_id, so_to, so_thua, dien_tich, thu_hoi, toa_do, link_id)
+            )
+            parcel_id = row['parcel_id']
+            if parcel_id:
+                self._sync_parcel_from_map_entry(db, parcel_id, master_id, so_to, so_thua, dien_tich, thu_hoi)
+            else:
+                # Thửa này chưa từng được sinh (vd. dữ liệu cũ) — sinh mới nếu bản đồ là GPMB thuộc 1 dự án.
+                m = db.execute('SELECT project_id, loai_ban_do FROM bt_maps WHERE id=?', (row['map_id'],)).fetchone()
+                if m and m['loai_ban_do'] == 'Bản đồ GPMB' and m['project_id']:
+                    parcel_id = self._create_parcel_from_map_entry(
+                        db, m['project_id'], master_id, so_to, so_thua, dien_tich, thu_hoi
+                    )
+                    db.execute('UPDATE bt_map_parcels SET parcel_id=? WHERE id=?', (parcel_id, link_id))
+            db.commit()
+        self.send_json({'ok': True, 'parcel_id': parcel_id})
 
     def api_bt_map_parcels_delete(self, link_id):
         sess = self.require_auth()
         if not sess: return
         with get_db() as db:
+            row = db.execute('SELECT parcel_id FROM bt_map_parcels WHERE id=?', (link_id,)).fetchone()
             db.execute('DELETE FROM bt_map_parcels WHERE id=?', (link_id,))
+            if row and row['parcel_id']:
+                # Xoá thửa khỏi Bản đồ GPMB nghĩa là xoá luôn Thửa đất tương ứng — xoá thủ công bảng con
+                # vì foreign_keys pragma đang tắt (xem ghi chú get_db()).
+                pid = row['parcel_id']
+                db.execute('DELETE FROM bt_parcel_owners WHERE parcel_id=?', (pid,))
+                db.execute('DELETE FROM bt_asset_parcels WHERE parcel_id=?', (pid,))
+                db.execute('DELETE FROM bt_parcel_decisions WHERE parcel_id=?', (pid,))
+                db.execute('DELETE FROM bt_parcels WHERE id=?', (pid,))
             db.commit()
         self.send_json({'ok': True})
 

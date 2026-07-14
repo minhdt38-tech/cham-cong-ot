@@ -47,6 +47,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .tab-btn{padding:6px 14px;border-radius:6px;border:none;background:transparent;color:var(--muted);cursor:pointer;font-size:13px;font-weight:600;transition:all .15s}
 .tab-btn.active{background:var(--accent);color:#fff}
 .tab-btn:hover:not(.active){background:rgba(255,255,255,.07);color:#fff}
+.tab-btn.tab-locked{opacity:.5}
+.tab-btn.tab-locked::after{content:" 🔒";font-size:11px}
 
 /* ── DASHBOARD ─────────────────────────────────────────────── */
 #tab-dashboard{flex:1;overflow-y:auto;padding:20px;display:none}
@@ -173,10 +175,11 @@ td.td-ctr{text-align:center}
     <h1 id="proj-title">Quản lý Bồi thường, Hỗ trợ</h1>
     <div class="tab-bar" id="tab-bar" style="display:none">
       <button class="tab-btn active" onclick="switchTab('dashboard')">📊 Tổng quan</button>
-      <button class="tab-btn" onclick="switchTab('parcels')">🗺️ Thửa đất</button>
-      <button class="tab-btn" onclick="switchTab('maps')">🗂️ Bản đồ</button>
-      <button class="tab-btn" onclick="switchTab('assets')">🌳 Tài sản</button>
-      <button class="tab-btn" onclick="switchTab('dossiers')">💰 Hồ sơ Hộ</button>
+      <button class="tab-btn" onclick="switchTab('gpmb')">📐 Bản đồ GPMB</button>
+      <button class="tab-btn" id="tabbtn-parcels" onclick="switchTab('parcels')">🗺️ Thửa đất</button>
+      <button class="tab-btn" id="tabbtn-maps" onclick="switchTab('maps')">🗂️ Bản đồ</button>
+      <button class="tab-btn" id="tabbtn-assets" onclick="switchTab('assets')">🌳 Tài sản</button>
+      <button class="tab-btn" id="tabbtn-dossiers" onclick="switchTab('dossiers')">💰 Hồ sơ Hộ</button>
       <button class="tab-btn" onclick="switchTab('records')">📋 Hồ sơ</button>
     </div>
   </div>
@@ -199,13 +202,56 @@ td.td-ctr{text-align:center}
     <div id="proj-docs-list" style="display:flex;flex-direction:column;gap:6px"></div>
   </div>
 
+  <!-- GPMB MAP TAB (Bản đồ GPMB — nguồn gốc sinh Thửa đất) -->
+  <div id="tab-gpmb" style="flex:1;display:none;flex-direction:column;overflow:hidden">
+    <div class="toolbar">
+      <div class="search-box">
+        <input id="gpmb-search-inp" type="text" placeholder="Tìm tên đợt, đơn vị lập..." oninput="debouncedLoadGpmbMaps()">
+      </div>
+      <button class="btn btn-primary" onclick="openGpmbModal()">＋ Thêm đợt Bản đồ GPMB</button>
+    </div>
+    <div class="form-group form-full" style="font-size:12px;color:var(--muted);padding:0 16px 10px">
+      Bản đồ GPMB là bước đầu tiên của quy trình GPMB. Số tờ, số thửa, diện tích khai báo tại đây sẽ tự động sinh/cập nhật bản ghi Thửa đất tương ứng. Một dự án có thể có nhiều đợt Bản đồ GPMB; thửa đất được gộp từ tất cả các đợt.
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Tên đợt / Bản đồ GPMB</th>
+            <th>Ngày lập</th>
+            <th>Đơn vị lập</th>
+            <th style="text-align:center">Số thửa</th>
+            <th style="text-align:center">Tệp đính kèm</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="gpmb-tbl-body"></tbody>
+      </table>
+      <div id="gpmb-tbl-empty" class="empty-state" style="display:none">
+        <div class="es-icon">📐</div>
+        <p>Chưa có Bản đồ GPMB nào — hãy tạo đợt đầu tiên để bắt đầu quy trình GPMB</p>
+        <button class="btn btn-primary" onclick="openGpmbModal()">＋ Thêm đợt Bản đồ GPMB đầu tiên</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LOCKED PLACEHOLDER — khi dự án chưa có Bản đồ GPMB -->
+  <div id="tab-locked" style="display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--muted)">
+    <div style="font-size:48px">🔒</div>
+    <p style="font-size:14px;max-width:440px;text-align:center">Mục này chỉ mở khi dự án đã có Bản đồ GPMB với ít nhất 1 thửa đất. Vui lòng tạo Bản đồ GPMB trước.</p>
+    <button class="btn btn-primary" onclick="switchTab('gpmb')">📐 Đi tới Bản đồ GPMB</button>
+  </div>
+
   <!-- PARCELS TAB (Thửa đất) -->
   <div id="tab-parcels" style="flex:1;display:none;flex-direction:column;overflow:hidden">
     <div class="toolbar">
       <div class="search-box">
         <input id="parcel-search-inp" type="text" placeholder="Tìm số tờ, số thửa..." oninput="debouncedLoadParcels()">
       </div>
-      <button class="btn btn-primary" onclick="openParcelModal()">＋ Thêm thửa đất</button>
+    </div>
+    <div class="form-group form-full" style="font-size:12px;color:var(--muted);padding:0 16px 10px">
+      Thửa đất được tạo tự động từ Bản đồ GPMB. Để thêm/sửa/xóa thửa hoặc thay đổi số tờ, số thửa, diện tích — vào tab 📐 Bản đồ GPMB.
     </div>
     <div class="tbl-wrap">
       <table>
@@ -226,7 +272,6 @@ td.td-ctr{text-align:center}
       <div id="parcel-tbl-empty" class="empty-state" style="display:none">
         <div class="es-icon">🗺️</div>
         <p>Chưa có thửa đất nào trong dự án này</p>
-        <button class="btn btn-primary" onclick="openParcelModal()">＋ Thêm thửa đất đầu tiên</button>
       </div>
     </div>
   </div>
@@ -645,15 +690,9 @@ td.td-ctr{text-align:center}
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-section">🗺️ Thông tin thửa đất</div>
-        <div class="form-group"><label>Số tờ</label><input id="plf-so-to" type="text" oninput="debouncedCheckDup()"></div>
-        <div class="form-group"><label>Số thửa</label><input id="plf-so-thua" type="text" oninput="debouncedCheckDup()"></div>
-        <div class="form-group form-full" id="parcel-dup-area" style="display:none">
-          <div id="parcel-dup-suggestions" style="font-size:12px;color:var(--muted)"></div>
-        </div>
-        <div class="form-group form-full" id="parcel-master-chip-area" style="display:none">
-          <span class="chip" id="parcel-master-chip"></span>
-          <button class="btn btn-ghost btn-sm" onclick="unlinkParcelMaster()" style="margin-left:8px">Bỏ liên kết</button>
-        </div>
+        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">📐 Số tờ, số thửa, diện tích chỉ đọc tại đây — sửa tại Bản đồ GPMB</div>
+        <div class="form-group"><label>Số tờ</label><input id="plf-so-to" type="text" disabled></div>
+        <div class="form-group"><label>Số thửa</label><input id="plf-so-thua" type="text" disabled></div>
         <div class="form-group"><label>Loại đất</label>
           <select id="plf-loai-dat">
             <option value="">-- chọn --</option>
@@ -662,9 +701,9 @@ td.td-ctr{text-align:center}
           </select>
         </div>
         <div class="form-group"><label>Nguồn gốc sử dụng</label><input id="plf-nguon-goc" type="text" placeholder="Được giao, nhận chuyển nhượng..."></div>
-        <div class="form-group"><label>Tổng DT (m²)</label><input id="plf-tong-dt" type="number" step="0.1"></div>
-        <div class="form-group"><label>DT thu hồi (m²)</label><input id="plf-dt-thu-hoi" type="number" step="0.1"></div>
-        <div class="form-group"><label>DT còn lại (m²)</label><input id="plf-dt-con-lai" type="number" step="0.1"></div>
+        <div class="form-group"><label>Tổng DT (m²)</label><input id="plf-tong-dt" type="number" step="0.1" disabled></div>
+        <div class="form-group"><label>DT thu hồi (m²)</label><input id="plf-dt-thu-hoi" type="number" step="0.1" disabled></div>
+        <div class="form-group"><label>DT còn lại (m²)</label><input id="plf-dt-con-lai" type="number" step="0.1" disabled></div>
         <div class="form-group"><label>Số GCN</label><input id="plf-so-gcn" type="text"></div>
         <div class="form-group"><label>Ngày cấp GCN</label><input id="plf-ngay-cap-gcn" type="date"></div>
         <div class="form-group form-full"><label>Ghi chú</label><textarea id="plf-ghi-chu"></textarea></div>
@@ -700,10 +739,10 @@ td.td-ctr{text-align:center}
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-section">🗂️ Thông tin bản đồ</div>
+        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">Mục này chỉ dùng cho bản đồ tham khảo/đối chiếu (chồng ghép để xác định quá trình sử dụng đất). Để lập Bản đồ GPMB (sinh Thửa đất), dùng tab 📐 Bản đồ GPMB.</div>
         <div class="form-group"><label>Loại bản đồ</label>
           <select id="mf-loai-ban-do">
             <option value="">-- chọn --</option>
-            <option>Bản đồ GPMB</option>
             <option>Bản đồ trích lục</option>
             <option>Bản đồ giao ruộng thời kỳ trước</option>
             <option>Bản đồ địa chính</option>
@@ -717,7 +756,7 @@ td.td-ctr{text-align:center}
       </div>
 
       <div id="map-sub-sections" style="display:none;margin-top:18px">
-        <div class="form-section">🗺️ Thửa đất trên bản đồ</div>
+        <div class="form-section">🗺️ Thửa đất trên bản đồ (chỉ để tham khảo, không sinh Thửa đất)</div>
         <div id="map-parcels-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
         <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
           <div class="form-group" style="flex:1"><label>Số tờ trên bản đồ</label><input id="mpf-so-to" type="text" oninput="debouncedMapDupCheck()"></div>
@@ -737,6 +776,56 @@ td.td-ctr{text-align:center}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeMapModal()">Đóng</button>
       <button class="btn btn-primary" onclick="saveMap()">Lưu bản đồ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ GPMB MAP MODAL ═════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-gpmb-map">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="gpmb-modal-title">Thêm đợt Bản đồ GPMB</h3>
+      <button class="modal-close" onclick="closeGpmbModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-section">📐 Thông tin đợt Bản đồ GPMB</div>
+        <div class="form-group"><label>Tên đợt / bản đồ</label><input id="gf-ten-ban-do" type="text" placeholder="VD: Bản đồ GPMB đợt 1"></div>
+        <div class="form-group"><label>Ngày lập</label><input id="gf-ngay-lap" type="date"></div>
+        <div class="form-group"><label>Đơn vị lập</label><input id="gf-don-vi-lap" type="text"></div>
+        <div class="form-group form-full"><label>Ghi chú</label><textarea id="gf-ghi-chu"></textarea></div>
+      </div>
+
+      <div id="gpmb-sub-sections" style="display:none;margin-top:18px">
+        <div class="form-section">🗺️ Thửa đất trên Bản đồ GPMB (tự động sinh Thửa đất)</div>
+        <div id="gpmb-parcels-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+          <div class="form-group" style="flex:1"><label>Số tờ</label><input id="gpf-so-to" type="text" oninput="debouncedGpmbDupCheck()"></div>
+          <div class="form-group" style="flex:1"><label>Số thửa</label><input id="gpf-so-thua" type="text" oninput="debouncedGpmbDupCheck()"></div>
+          <div class="form-group" style="flex:1"><label>Diện tích thửa (m²)</label><input id="gpf-dien-tich" type="number" step="0.1"></div>
+          <div class="form-group" style="flex:1"><label>Diện tích thu hồi (m²)</label><input id="gpf-dt-thu-hoi" type="number" step="0.1"></div>
+        </div>
+        <div class="form-group form-full">
+          <label>Tọa độ ranh giới thửa (GeoJSON, tùy chọn)</label>
+          <textarea id="gpf-toa-do" placeholder='VD: {"type":"Polygon","coordinates":[...]}' style="font-family:monospace;font-size:12px" oninput="debouncedGpmbPreview()"></textarea>
+        </div>
+        <div id="gpmb-shape-preview" style="display:none;margin:6px 0"></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" id="gpmb-parcel-submit-btn" onclick="submitGpmbParcelRow()">＋ Thêm thửa</button>
+          <button class="btn btn-ghost" id="gpmb-parcel-cancel-btn" onclick="cancelEditGpmbParcelRow()" style="display:none">Hủy sửa</button>
+        </div>
+        <div id="gpmb-parcel-dup-area" style="display:none;font-size:12px;color:var(--muted);margin-top:4px"></div>
+
+        <div class="form-section" style="margin-top:16px">📎 Tệp đính kèm</div>
+        <div id="gpmb-files-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+        <input type="file" id="gpmb-file-input" style="display:none" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png,.dwg,.dxf" onchange="uploadGpmbFile(this.files[0])">
+        <button class="btn btn-ghost" onclick="document.getElementById('gpmb-file-input').click()">📎 Tải tệp lên</button>
+      </div>
+      <div id="gpmb-sub-hint" style="margin-top:14px;font-size:12px;color:var(--muted)">Lưu thông tin đợt trước để có thể thêm thửa đất và tệp đính kèm.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeGpmbModal()">Đóng</button>
+      <button class="btn btn-primary" onclick="saveGpmbMap()">Lưu đợt Bản đồ GPMB</button>
     </div>
   </div>
 </div>
@@ -876,6 +965,7 @@ let editProjId = null;
 let confirmCb = null;
 let importFile = null;
 let currentTab = 'dashboard';
+let currentProjGpmbOk = false;
 
 // ══════════════════════════════════════════════════════════════
 // INIT
@@ -941,7 +1031,7 @@ async function loadProjects() {
   });
 }
 
-function selectProject(id, name) {
+async function selectProject(id, name) {
   hidePartiesView();
   currentProjId = id;
   currentProjName = name;
@@ -950,7 +1040,23 @@ function selectProject(id, name) {
   document.getElementById('tab-bar').style.display = 'flex';
   document.querySelectorAll('.proj-item').forEach(el => el.classList.toggle('active', +el.dataset.id === id));
   page = 1;
-  switchTab(currentTab);
+  await refreshGpmbStatus();
+  updateTabLockUI();
+  switchTab(currentProjGpmbOk ? currentTab : 'gpmb');
+}
+
+async function refreshGpmbStatus() {
+  if (!currentProjId) { currentProjGpmbOk = false; return; }
+  const res = await fetch(`/api/bt/projects/${currentProjId}/gpmb-status`);
+  currentProjGpmbOk = res.ok ? (await res.json()).has_gpmb : false;
+}
+
+function updateTabLockUI() {
+  ['tabbtn-parcels','tabbtn-maps','tabbtn-assets','tabbtn-dossiers'].forEach(elId => {
+    const btn = document.getElementById(elId);
+    if (!btn) return;
+    btn.classList.toggle('tab-locked', !currentProjGpmbOk);
+  });
 }
 
 // ── Project Modal
@@ -1292,8 +1398,6 @@ async function openParcelModal(id) {
   selectedMasterId = null;
   currentParcelOwners = [];
   document.getElementById('parcel-modal-title').textContent = id ? 'Sửa thửa đất' : 'Thêm thửa đất';
-  document.getElementById('parcel-dup-area').style.display = 'none';
-  document.getElementById('parcel-master-chip-area').style.display = 'none';
 
   const pres = await fetch('/api/bt/parties');
   ownerPickerParties = pres.ok ? await pres.json() : [];
@@ -1321,52 +1425,12 @@ async function openParcelModal(id) {
       currentParcelOwners = (p.owners || []).map(o => ({
         chu_the_id: o.chu_the_id, ho_ten: o.ho_ten, vai_tro: o.vai_tro, ty_le_so_huu: o.ty_le_so_huu
       }));
-      if (selectedMasterId) showMasterChip(selectedMasterId);
     }
   }
   renderOwnersList();
   document.getElementById('modal-parcel').classList.add('open');
 }
 function closeParcelModal() { document.getElementById('modal-parcel').classList.remove('open'); editParcelId = null; }
-
-function debouncedCheckDup() {
-  clearTimeout(dupCheckTimer);
-  dupCheckTimer = setTimeout(checkDup, 400);
-}
-
-async function checkDup() {
-  const soTo = document.getElementById('plf-so-to').value.trim();
-  const soThua = document.getElementById('plf-so-thua').value.trim();
-  const area = document.getElementById('parcel-dup-area');
-  const box = document.getElementById('parcel-dup-suggestions');
-  if (!soTo && !soThua) { area.style.display = 'none'; return; }
-  const q = soTo || soThua;
-  const res = await fetch(`/api/bt/parcel-master/search?q=${encodeURIComponent(q)}`);
-  if (!res.ok) return;
-  const results = await res.json();
-  if (!results.length) { area.style.display = 'none'; return; }
-  area.style.display = 'block';
-  box.innerHTML = 'Có thể trùng với thửa gốc đã có: ' + results.map(m =>
-    `<span class="chip chip-link" style="margin-right:6px" onclick="linkParcelMaster(${m.id},'${esc(m.so_to_hien_hanh)}','${esc(m.so_thua_hien_hanh)}')">Tờ ${esc(m.so_to_hien_hanh)} - Thửa ${esc(m.so_thua_hien_hanh)}</span>`
-  ).join('');
-}
-
-function linkParcelMaster(id, soTo, soThua) {
-  selectedMasterId = id;
-  showMasterChip(id, soTo, soThua);
-  document.getElementById('parcel-dup-area').style.display = 'none';
-}
-
-function unlinkParcelMaster() {
-  selectedMasterId = null;
-  document.getElementById('parcel-master-chip-area').style.display = 'none';
-}
-
-function showMasterChip(id, soTo, soThua) {
-  document.getElementById('parcel-master-chip-area').style.display = 'block';
-  document.getElementById('parcel-master-chip').textContent =
-    soTo ? `Đã liên kết: Tờ ${soTo} - Thửa ${soThua}` : `Đã liên kết thửa gốc #${id}`;
-}
 
 function addOwnerRow() {
   const sel = document.getElementById('plf-owner-select');
@@ -1686,6 +1750,348 @@ async function reloadMapDetail() {
   currentMapFiles = m.files || [];
   renderMapParcelsList();
   renderMapFilesList();
+}
+
+// ══════════════════════════════════════════════════════════════
+// GPMB MAP (Bản đồ GPMB — bước đầu tiên, tự sinh Thửa đất)
+// ══════════════════════════════════════════════════════════════
+let gpmbMapsList = [];
+let editGpmbMapId = null;
+let gpmbSearchTimer = null;
+let gpmbDupCheckTimer = null;
+let gpmbPreviewTimer = null;
+let selectedGpmbParcelMasterId = null;
+let currentGpmbParcels = [];
+let currentGpmbFiles = [];
+let editingGpmbParcelId = null;
+
+function debouncedLoadGpmbMaps() {
+  clearTimeout(gpmbSearchTimer);
+  gpmbSearchTimer = setTimeout(loadGpmbMaps, 300);
+}
+
+async function loadGpmbMaps() {
+  if (!currentProjId) return;
+  const q = document.getElementById('gpmb-search-inp').value.trim();
+  const params = new URLSearchParams({ project_id: currentProjId });
+  if (q) params.set('q', q);
+  const res = await fetch(`/api/bt/maps?${params}`);
+  if (!res.ok) return;
+  gpmbMapsList = (await res.json()).filter(m => m.loai_ban_do === 'Bản đồ GPMB');
+  renderGpmbMapsTable();
+}
+
+function renderGpmbMapsTable() {
+  const body = document.getElementById('gpmb-tbl-body');
+  const empty = document.getElementById('gpmb-tbl-empty');
+  if (!gpmbMapsList.length) { body.innerHTML = ''; empty.style.display = 'flex'; return; }
+  empty.style.display = 'none';
+  body.innerHTML = gpmbMapsList.map((m, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td>${esc(m.ten_ban_do)}</td>
+      <td>${esc(m.ngay_lap || '')}</td>
+      <td>${esc(m.don_vi_lap)}</td>
+      <td class="td-ctr">${m.so_thua || 0}</td>
+      <td class="td-ctr">${m.so_file || 0}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="openGpmbModal(${m.id})">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="askDeleteGpmbMap(${m.id})">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function openGpmbModal(id) {
+  editGpmbMapId = id || null;
+  selectedGpmbParcelMasterId = null;
+  currentGpmbParcels = [];
+  currentGpmbFiles = [];
+  editingGpmbParcelId = null;
+  document.getElementById('gpmb-modal-title').textContent = id ? 'Sửa đợt Bản đồ GPMB' : 'Thêm đợt Bản đồ GPMB';
+  ['ten-ban-do','ngay-lap','don-vi-lap','ghi-chu'].forEach(f => {
+    const el = document.getElementById('gf-'+f);
+    if (el) el.value = '';
+  });
+  resetGpmbParcelForm();
+
+  if (id) {
+    const res = await fetch(`/api/bt/maps/${id}`);
+    if (res.ok) {
+      const m = await res.json();
+      document.getElementById('gf-ten-ban-do').value = m.ten_ban_do || '';
+      document.getElementById('gf-ngay-lap').value = m.ngay_lap || '';
+      document.getElementById('gf-don-vi-lap').value = m.don_vi_lap || '';
+      document.getElementById('gf-ghi-chu').value = m.ghi_chu || '';
+      currentGpmbParcels = m.parcels || [];
+      currentGpmbFiles = m.files || [];
+    }
+    document.getElementById('gpmb-sub-sections').style.display = 'block';
+    document.getElementById('gpmb-sub-hint').style.display = 'none';
+  } else {
+    document.getElementById('gpmb-sub-sections').style.display = 'none';
+    document.getElementById('gpmb-sub-hint').style.display = 'block';
+  }
+  renderGpmbParcelsList();
+  renderGpmbFilesList();
+  document.getElementById('modal-gpmb-map').classList.add('open');
+}
+
+async function closeGpmbModal() {
+  document.getElementById('modal-gpmb-map').classList.remove('open');
+  editGpmbMapId = null;
+  await loadGpmbMaps();
+  await refreshGpmbStatus();
+  updateTabLockUI();
+}
+
+async function saveGpmbMap() {
+  const body = {
+    project_id: currentProjId,
+    loai_ban_do: 'Bản đồ GPMB',
+    ten_ban_do: document.getElementById('gf-ten-ban-do').value,
+    ngay_lap: document.getElementById('gf-ngay-lap').value || null,
+    don_vi_lap: document.getElementById('gf-don-vi-lap').value,
+    ghi_chu: document.getElementById('gf-ghi-chu').value,
+  };
+  const url = editGpmbMapId ? `/api/bt/maps/${editGpmbMapId}` : '/api/bt/maps';
+  const method = editGpmbMapId ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) {
+    const data = await res.json();
+    if (!editGpmbMapId) {
+      editGpmbMapId = data.id;
+      document.getElementById('gpmb-modal-title').textContent = 'Sửa đợt Bản đồ GPMB';
+      document.getElementById('gpmb-sub-sections').style.display = 'block';
+      document.getElementById('gpmb-sub-hint').style.display = 'none';
+    }
+    toast('Đã lưu đợt Bản đồ GPMB');
+    loadGpmbMaps();
+  } else { toast('Lỗi khi lưu Bản đồ GPMB', true); }
+}
+
+function askDeleteGpmbMap(id) {
+  document.getElementById('confirm-msg').textContent = 'Xóa đợt Bản đồ GPMB này? Toàn bộ Thửa đất được sinh ra từ đợt này (và các liên kết chủ sở hữu, tài sản, quyết định gắn với các thửa đó) cũng sẽ bị xóa. Hành động này không thể hoàn tác.';
+  confirmCb = async () => {
+    const res = await fetch(`/api/bt/maps/${id}`, {method:'DELETE'});
+    if (res.ok) {
+      await loadGpmbMaps();
+      await refreshGpmbStatus();
+      updateTabLockUI();
+      toast('Đã xóa đợt Bản đồ GPMB');
+    } else toast('Lỗi khi xóa', true);
+  };
+  document.getElementById('modal-confirm').classList.add('open');
+}
+
+function debouncedGpmbDupCheck() {
+  clearTimeout(gpmbDupCheckTimer);
+  gpmbDupCheckTimer = setTimeout(checkGpmbParcelDup, 400);
+}
+
+async function checkGpmbParcelDup() {
+  const soTo = document.getElementById('gpf-so-to').value.trim();
+  const soThua = document.getElementById('gpf-so-thua').value.trim();
+  const area = document.getElementById('gpmb-parcel-dup-area');
+  if (!soTo && !soThua) { area.style.display = 'none'; selectedGpmbParcelMasterId = null; return; }
+  const q = soTo || soThua;
+  const res = await fetch(`/api/bt/parcel-master/search?q=${encodeURIComponent(q)}`);
+  if (!res.ok) return;
+  const results = await res.json();
+  if (!results.length) { area.style.display = 'none'; selectedGpmbParcelMasterId = null; return; }
+  area.style.display = 'block';
+  area.innerHTML = 'Có thể trùng với thửa gốc đã có (đối chiếu quá trình sử dụng đất): ' + results.map(m =>
+    `<span class="chip chip-link" style="margin-right:6px" onclick="linkGpmbParcelMaster(${m.id},'${esc(m.so_to_hien_hanh)}','${esc(m.so_thua_hien_hanh)}')">Tờ ${esc(m.so_to_hien_hanh)} - Thửa ${esc(m.so_thua_hien_hanh)}</span>`
+  ).join('') + ' <span style="opacity:.7">(hoặc bỏ qua nếu là thửa mới)</span>';
+}
+
+function linkGpmbParcelMaster(id, soTo, soThua) {
+  selectedGpmbParcelMasterId = id;
+  document.getElementById('gpmb-parcel-dup-area').innerHTML =
+    `<span class="chip">Đã liên kết: Tờ ${esc(soTo)} - Thửa ${esc(soThua)}</span> <button class="btn btn-ghost btn-sm" onclick="unlinkGpmbParcelMaster()">Bỏ liên kết</button>`;
+}
+
+function unlinkGpmbParcelMaster() {
+  selectedGpmbParcelMasterId = null;
+  document.getElementById('gpmb-parcel-dup-area').style.display = 'none';
+}
+
+function resetGpmbParcelForm() {
+  editingGpmbParcelId = null;
+  document.getElementById('gpf-so-to').value = '';
+  document.getElementById('gpf-so-thua').value = '';
+  document.getElementById('gpf-dien-tich').value = '';
+  document.getElementById('gpf-dt-thu-hoi').value = '';
+  document.getElementById('gpf-toa-do').value = '';
+  document.getElementById('gpmb-parcel-dup-area').style.display = 'none';
+  document.getElementById('gpmb-shape-preview').style.display = 'none';
+  document.getElementById('gpmb-parcel-submit-btn').textContent = '＋ Thêm thửa';
+  document.getElementById('gpmb-parcel-cancel-btn').style.display = 'none';
+  selectedGpmbParcelMasterId = null;
+}
+
+async function submitGpmbParcelRow() {
+  if (!editGpmbMapId) { toast('Vui lòng lưu thông tin đợt trước', true); return; }
+  const soTo = document.getElementById('gpf-so-to').value.trim();
+  const soThua = document.getElementById('gpf-so-thua').value.trim();
+  const dienTich = parseFloat(document.getElementById('gpf-dien-tich').value) || 0;
+  const dtThuHoi = parseFloat(document.getElementById('gpf-dt-thu-hoi').value) || 0;
+  const toaDo = document.getElementById('gpf-toa-do').value.trim();
+  if (!soTo && !soThua) { toast('Vui lòng nhập số tờ hoặc số thửa', true); return; }
+  const body = {
+    parcel_master_id: selectedGpmbParcelMasterId,
+    so_to_tren_ban_do: soTo, so_thua_tren_ban_do: soThua,
+    dien_tich_tren_ban_do: dienTich, dien_tich_thu_hoi_tren_ban_do: dtThuHoi,
+    toa_do: toaDo || null,
+  };
+  const url = editingGpmbParcelId ? `/api/bt/map-parcels/${editingGpmbParcelId}` : `/api/bt/maps/${editGpmbMapId}/parcels`;
+  const method = editingGpmbParcelId ? 'PUT' : 'POST';
+  const wasEditing = !!editingGpmbParcelId;
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) {
+    resetGpmbParcelForm();
+    await reloadGpmbDetail();
+    await refreshGpmbStatus();
+    updateTabLockUI();
+    toast(wasEditing ? 'Đã cập nhật thửa — Thửa đất tương ứng đã được đồng bộ' : 'Đã thêm thửa — đã tự động sinh Thửa đất');
+  } else { toast('Lỗi khi lưu thửa', true); }
+}
+
+function editGpmbParcelRow(linkId) {
+  const p = currentGpmbParcels.find(x => x.id === linkId);
+  if (!p) return;
+  editingGpmbParcelId = linkId;
+  document.getElementById('gpf-so-to').value = p.so_to_tren_ban_do || '';
+  document.getElementById('gpf-so-thua').value = p.so_thua_tren_ban_do || '';
+  document.getElementById('gpf-dien-tich').value = p.dien_tich_tren_ban_do || '';
+  document.getElementById('gpf-dt-thu-hoi').value = p.dien_tich_thu_hoi_tren_ban_do || '';
+  document.getElementById('gpf-toa-do').value = p.toa_do || '';
+  selectedGpmbParcelMasterId = p.parcel_master_id || null;
+  document.getElementById('gpmb-parcel-submit-btn').textContent = '✔ Cập nhật thửa';
+  document.getElementById('gpmb-parcel-cancel-btn').style.display = 'inline-block';
+  renderGeoJSONPreview(p.toa_do);
+}
+
+function cancelEditGpmbParcelRow() {
+  resetGpmbParcelForm();
+}
+
+async function removeGpmbParcelRow(linkId) {
+  const res = await fetch(`/api/bt/map-parcels/${linkId}`, {method:'DELETE'});
+  if (res.ok) {
+    if (editingGpmbParcelId === linkId) resetGpmbParcelForm();
+    await reloadGpmbDetail();
+    await refreshGpmbStatus();
+    updateTabLockUI();
+    toast('Đã xóa thửa khỏi Bản đồ GPMB — Thửa đất tương ứng cũng đã bị xóa');
+  } else toast('Lỗi khi xóa thửa', true);
+}
+
+function renderGpmbParcelsList() {
+  const box = document.getElementById('gpmb-parcels-list');
+  if (!currentGpmbParcels.length) {
+    box.innerHTML = '<div style="color:var(--muted);font-size:12px">Chưa có thửa đất nào trên đợt này</div>';
+    return;
+  }
+  box.innerHTML = currentGpmbParcels.map(p => `
+    <div style="display:flex;align-items:center;gap:8px;background:var(--card);padding:6px 10px;border-radius:6px">
+      <span style="flex:1;font-size:13px">Tờ ${esc(p.so_to_tren_ban_do)} - Thửa ${esc(p.so_thua_tren_ban_do)}${p.dien_tich_tren_ban_do ? ' — ' + fmt1(p.dien_tich_tren_ban_do) + ' m²' : ''}${p.dien_tich_thu_hoi_tren_ban_do ? ' (thu hồi ' + fmt1(p.dien_tich_thu_hoi_tren_ban_do) + ' m²)' : ''}${p.parcel_master_id ? ' <span class="chip" style="margin-left:4px">liên kết thửa gốc</span>' : ''}${p.toa_do ? ' <span class="chip" style="margin-left:4px">có tọa độ</span>' : ''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="editGpmbParcelRow(${p.id})">✏️</button>
+      <button class="btn btn-ghost btn-sm" onclick="removeGpmbParcelRow(${p.id})">✕</button>
+    </div>
+  `).join('');
+}
+
+async function uploadGpmbFile(file) {
+  if (!file || !editGpmbMapId) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`/api/bt/maps/${editGpmbMapId}/files`, { method: 'POST', body: fd });
+  document.getElementById('gpmb-file-input').value = '';
+  if (res.ok) { await reloadGpmbDetail(); toast('Đã tải tệp lên'); }
+  else { const data = await res.json().catch(()=>({})); toast(data.error || 'Lỗi khi tải tệp lên', true); }
+}
+
+function askDeleteGpmbFile(fileId) {
+  document.getElementById('confirm-msg').textContent = 'Xóa tệp đính kèm này? Hành động không thể hoàn tác.';
+  confirmCb = async () => {
+    const res = await fetch(`/api/bt/map-files/${fileId}`, {method:'DELETE'});
+    if (res.ok) { await reloadGpmbDetail(); toast('Đã xóa tệp'); }
+    else toast('Lỗi khi xóa tệp', true);
+  };
+  document.getElementById('modal-confirm').classList.add('open');
+}
+
+function renderGpmbFilesList() {
+  const box = document.getElementById('gpmb-files-list');
+  if (!currentGpmbFiles.length) {
+    box.innerHTML = '<div style="color:var(--muted);font-size:12px">Chưa có tệp đính kèm nào</div>';
+    return;
+  }
+  box.innerHTML = currentGpmbFiles.map(f => `
+    <div style="display:flex;align-items:center;gap:8px;background:var(--card);padding:6px 10px;border-radius:6px">
+      <span style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 ${esc(f.file_name)}</span>
+      <button class="btn btn-ghost btn-sm" onclick="window.open('/api/bt/map-files/${f.id}/download','_blank')">⬇️</button>
+      <button class="btn btn-ghost btn-sm" onclick="askDeleteGpmbFile(${f.id})">✕</button>
+    </div>
+  `).join('');
+}
+
+async function reloadGpmbDetail() {
+  if (!editGpmbMapId) return;
+  const res = await fetch(`/api/bt/maps/${editGpmbMapId}`);
+  if (!res.ok) return;
+  const m = await res.json();
+  currentGpmbParcels = m.parcels || [];
+  currentGpmbFiles = m.files || [];
+  renderGpmbParcelsList();
+  renderGpmbFilesList();
+}
+
+function debouncedGpmbPreview() {
+  clearTimeout(gpmbPreviewTimer);
+  gpmbPreviewTimer = setTimeout(() => renderGeoJSONPreview(document.getElementById('gpf-toa-do').value), 350);
+}
+
+function renderGeoJSONPreview(text) {
+  const box = document.getElementById('gpmb-shape-preview');
+  text = (text || '').trim();
+  if (!text) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  let geo;
+  try { geo = JSON.parse(text); } catch (e) {
+    box.style.display = 'block';
+    box.innerHTML = '<div style="font-size:12px;color:#e74c3c">GeoJSON không hợp lệ — không thể xem trước hình dạng</div>';
+    return;
+  }
+  let rings = [];
+  try {
+    if (geo.type === 'Polygon') rings = geo.coordinates;
+    else if (geo.type === 'MultiPolygon') rings = geo.coordinates.flat();
+    else if (geo.coordinates) rings = [geo.coordinates];
+  } catch (e) { rings = []; }
+  const pts = rings.flat().filter(p => Array.isArray(p) && p.length >= 2);
+  if (!pts.length) {
+    box.style.display = 'block';
+    box.innerHTML = '<div style="font-size:12px;color:var(--muted)">Chưa nhận diện được toạ độ để xem trước</div>';
+    return;
+  }
+  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const w = 220, h = 160, pad = 10;
+  const spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1;
+  const scale = Math.min((w - pad*2) / spanX, (h - pad*2) / spanY);
+  const toXY = (p) => {
+    const x = pad + (p[0] - minX) * scale;
+    const y = h - pad - (p[1] - minY) * scale; // lật trục Y cho đúng hướng bản đồ
+    return `${x.toFixed(1)},${y.toFixed(1)}`;
+  };
+  const polys = rings.map(ring => {
+    const pointsStr = ring.filter(p => Array.isArray(p) && p.length >= 2).map(toXY).join(' ');
+    return `<polygon points="${pointsStr}" fill="rgba(52,152,219,.25)" stroke="#3498db" stroke-width="1.5"/>`;
+  }).join('');
+  box.style.display = 'block';
+  box.innerHTML = `<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Xem trước hình dạng (đơn giản, chưa theo tỉ lệ bản đồ thực)</div>
+    <svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" style="background:var(--card);border-radius:6px">${polys}</svg>`;
 }
 
 // ══════════════════════════════════════════════════════════════
@@ -2098,16 +2504,22 @@ function askDeleteDossier(id) {
 // TABS
 // ══════════════════════════════════════════════════════════════
 function switchTab(tab) {
+  const gated = ['parcels','maps','assets','dossiers'];
+  const isLocked = gated.includes(tab) && !currentProjGpmbOk;
   currentTab = tab;
-  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active',
-    (i===0&&tab==='dashboard')||(i===1&&tab==='parcels')||(i===2&&tab==='maps')||(i===3&&tab==='assets')||(i===4&&tab==='dossiers')||(i===5&&tab==='records')));
+  const tabOrder = ['dashboard','gpmb','parcels','maps','assets','dossiers','records'];
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', tabOrder[i] === tab));
   document.getElementById('tab-dashboard').classList.toggle('show', tab==='dashboard');
-  document.getElementById('tab-parcels').style.display = (tab==='parcels') ? 'flex' : 'none';
-  document.getElementById('tab-maps').style.display = (tab==='maps') ? 'flex' : 'none';
-  document.getElementById('tab-assets').style.display = (tab==='assets') ? 'flex' : 'none';
-  document.getElementById('tab-dossiers').style.display = (tab==='dossiers') ? 'flex' : 'none';
+  document.getElementById('tab-gpmb').style.display = (tab==='gpmb') ? 'flex' : 'none';
+  document.getElementById('tab-parcels').style.display = (tab==='parcels' && !isLocked) ? 'flex' : 'none';
+  document.getElementById('tab-maps').style.display = (tab==='maps' && !isLocked) ? 'flex' : 'none';
+  document.getElementById('tab-assets').style.display = (tab==='assets' && !isLocked) ? 'flex' : 'none';
+  document.getElementById('tab-dossiers').style.display = (tab==='dossiers' && !isLocked) ? 'flex' : 'none';
   document.getElementById('tab-records').classList.toggle('show', tab==='records');
+  document.getElementById('tab-locked').style.display = isLocked ? 'flex' : 'none';
+  if (isLocked) return;
   if (tab==='dashboard') loadDashboard();
+  else if (tab==='gpmb') loadGpmbMaps();
   else if (tab==='parcels') loadParcels();
   else if (tab==='maps') loadMaps();
   else if (tab==='assets') loadAssets();

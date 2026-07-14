@@ -52,6 +52,23 @@ function confirmAction() { closeConfirm(); if (confirmCb) confirmCb(); }
 - Bảng `bt_parcels` vẫn còn giữ 2 cột cũ không dùng nữa: `owner_id`, `dia_diem_thu_hoi` (thay vì xoá hẳn). Lý do: SQLite không hỗ trợ xoá cột an toàn dễ dàng, và xoá cột có rủi ro nếu môi trường Railway đã có dữ liệu khác với bản test cục bộ. 2 cột này không gây hại gì, chỉ là "thừa", có thể dọn sau khi mọi thứ chạy ổn định.
 - Bảng `bt_owners` (Chủ sử dụng đất kiểu cũ) và `bt_records` (Hồ sơ bồi thường kiểu cũ) vẫn còn tồn tại trong CSDL nhưng **không còn được dùng nữa** — toàn bộ chức năng mới sẽ dùng `bt_parties`, `bt_dossiers`, `bt_parcel_decisions` thay thế. 2 bảng cũ này để yên, không xoá, phòng trường hợp cần đối chiếu lại.
 
+## Cập nhật 2026-07-14 (thay đổi kiến trúc lớn): Bản đồ GPMB là nguồn gốc sinh Thửa đất
+
+Theo yêu cầu của Minh, quan hệ giữa Bản đồ và Thửa đất được thiết kế lại để đúng với quy trình GPMB thật: **Bản đồ GPMB là bước đầu tiên** (phải lập được bản đồ GPMB trước), số tờ/số thửa/hình thể trên Bản đồ GPMB **sinh ra** bản ghi Thửa đất — không phải 2 luồng nhập liệu độc lập như trước. Các loại bản đồ khác (trích lục, giao ruộng thời kỳ trước, địa chính...) chỉ dùng để tham khảo/đối chiếu (chồng ghép xác định quá trình sử dụng đất), không sinh Thửa đất.
+
+**Thay đổi schema:** bảng `bt_map_parcels` (đã có từ Module 2b) được bổ sung 3 cột: `parcel_id` (liên kết tới bản ghi `bt_parcels` do thửa này sinh ra), `dien_tich_thu_hoi_tren_ban_do`, `toa_do` (GeoJSON tuỳ chọn cho từng thửa, dùng để xem trước hình dạng).
+
+**Thay đổi luồng nghiệp vụ:**
+- Tab mới **"📐 Bản đồ GPMB"** (tách riêng khỏi tab "🗂️ Bản đồ" cũ — tab cũ giữ nguyên, chỉ còn dùng cho bản đồ tham khảo). Một dự án có thể có **nhiều đợt** Bản đồ GPMB (đợt 1, đợt 2...); Thửa đất được gộp từ tất cả các đợt.
+- Thêm 1 thửa trên Bản đồ GPMB → backend tự tạo 1 bản ghi `bt_parcels` (số tờ, số thửa, tổng diện tích, diện tích thu hồi, diện tích còn lại = tổng − thu hồi). Sửa thửa trên Bản đồ GPMB → đồng bộ lại các trường không gian đó vào `bt_parcels`, **giữ nguyên** các trường người dùng nhập ở tab Thửa đất (loại đất, nguồn gốc sử dụng, GCN, ghi chú, chủ sở hữu). Xóa thửa khỏi Bản đồ GPMB → xóa luôn `bt_parcels` tương ứng và cascade dọn `bt_parcel_owners`/`bt_asset_parcels`/`bt_parcel_decisions` (thủ công, vì `foreign_keys` pragma vẫn tắt như toàn bộ hệ thống).
+- Tab "🗺️ Thửa đất" giờ chỉ còn dùng để **sửa các trường phi không gian**: loại đất, nguồn gốc sử dụng, GCN, ghi chú, chủ sở hữu. Số tờ/số thửa/diện tích hiển thị dạng chỉ đọc kèm ghi chú "sửa tại Bản đồ GPMB". Đã bỏ nút "Thêm thửa đất" và toàn bộ cơ chế cảnh báo trùng thửa ở tab này (chuyển hẳn sang tab Bản đồ GPMB, nơi thửa thật sự được tạo).
+- **Khóa tab** cho đến khi đủ điều kiện: Thửa đất, Bản đồ (tham khảo), Tài sản, Hồ sơ Hộ chỉ mở khi dự án đã có Bản đồ GPMB với **ít nhất 1 thửa**; nếu chưa, hiển thị màn hình khóa hướng dẫn quay lại tạo Bản đồ GPMB. Tab Tổng quan và tab Hồ sơ cũ (`bt_records`, ngoài phạm vi redesign) không bị khóa. Khi chọn 1 dự án chưa đủ điều kiện, hệ thống tự chuyển vào tab Bản đồ GPMB — đúng tinh thần "việc đầu tiên phải làm là lập Bản đồ GPMB".
+- Có thể dán tọa độ (GeoJSON Polygon/MultiPolygon) cho từng thửa trên Bản đồ GPMB để xem trước hình dạng đơn giản (vẽ bằng SVG dựng từ bounding box, không theo tỉ lệ bản đồ thực). **Chưa làm công cụ vẽ bằng chuột** (Leaflet) — nằm trong Backlog.
+- Endpoint mới `GET /api/bt/projects/:id/gpmb-status` trả về `{has_gpmb, parcel_count}` để giao diện quyết định khóa/mở tab.
+- Trường hợp thửa cũ/mồ côi (được tạo trực tiếp ở tab Thửa đất từ trước khi có thay đổi này, hoặc từ Import Excel) không có `bt_map_parcels.parcel_id` liên kết: xóa trực tiếp ở tab Thửa đất vẫn hoạt động bình thường (đã bổ sung: tự gỡ liên kết `parcel_id` phía `bt_map_parcels` nếu có, tránh tham chiếu treo).
+
+Đã kiểm tra kỹ theo đúng phương pháp các module trước (SQL mô phỏng đầy đủ luồng tạo/sửa/xóa thửa trên Bản đồ GPMB + đồng bộ + cascade xóa + gpmb-status khóa/mở khóa; JS mô phỏng logic gating của `switchTab`/`selectProject` và logic phân tích GeoJSON của phần xem trước hình dạng).
+
 ---
 
 ## Nguyên tắc thiết kế chung
