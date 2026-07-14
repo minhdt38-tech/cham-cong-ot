@@ -670,36 +670,41 @@ function makeSolver(trees, land1, land2, priceRatio){
     repairActual(x1, land1);
     repairActual(x2, land2);
 
-    // Greedy fill: lấp khoảng trống còn lại sau repair
-    // Duyệt tất cả (mùa, loại cây) theo hiệu quả giá/m² giảm dần
-    {
-      let A1 = x1.reduce((s, xi, i) => s + xi * trees[i].area, 0);
-      let A2 = x2.reduce((s, xi, i) => s + xi * trees[i].area, 0);
-      // Tạo danh sách ứng viên: mỗi loại cây × 2 mùa
-      const cands = [];
+    // Optimal fill: chạy 1D knapsack chính xác trên diện tích dư của từng vườn
+    // r≤1 → lấp vườn 1 (giá đủ) trước rồi vườn 2; r>1 → ngược lại
+    function knapsackFill(xFill, xOther, maxLand) {
+      // Tính diện tích thực đã dùng
+      let A = 0;
+      for (let i = 0; i < n; i++) A += xFill[i] * trees[i].area;
+      const remLand = maxLand - A;
+      if (remLand < 1e-9) return;
+      // Số lượng còn có thể thêm (chung cho cả 2 vườn)
+      const remQ = trees.map((_, i) => Math.max(0, trees[i].maxq - xFill[i] - xOther[i]));
+      if (!remQ.some((q, i) => q > 0 && trees[i].area <= remLand + 1e-9)) return;
+      // Scale cao cho diện tích nhỏ → chính xác hơn (cap luôn ≤ 50 000)
+      const SCALE_F = Math.min(1e6, 50000 / remLand);
+      const capF = Math.max(1, Math.round(remLand * SCALE_F));
+      const fillItems = trees.map((t, i) => ({
+        areaInt: Math.max(1, Math.round(t.area * SCALE_F)),
+        value: t.price,
+        qty: remQ[i]
+      }));
+      const snaps = knapsack1D(capF, fillItems);
+      const added = traceback1D(capF, fillItems, snaps);
+      // Áp kết quả với kiểm tra diện tích thực (xử lý sai số scale)
+      let curA = A;
       for (let i = 0; i < n; i++) {
-        if (trees[i].area > 0) {
-          cands.push({i, s:1, ratio: trees[i].price / trees[i].area});
-          cands.push({i, s:2, ratio: trees[i].price * r / trees[i].area});
-        }
+        if (added[i] <= 0) continue;
+        const fit = Math.min(added[i], Math.floor((maxLand - curA) / trees[i].area + 1e-9));
+        if (fit > 0) { xFill[i] += fit; curA += fit * trees[i].area; }
       }
-      cands.sort((a, b) => b.ratio - a.ratio);
-      for (const {i, s} of cands) {
-        const area = trees[i].area;
-        if (s === 1) {
-          const rem = land1 - A1;
-          if (rem < 1e-9) continue;
-          const used = x1[i] + x2[i];
-          const canAdd = Math.min(trees[i].maxq - used, Math.floor(rem / area));
-          if (canAdd > 0) { x1[i] += canAdd; A1 += canAdd * area; }
-        } else {
-          const rem = land2 - A2;
-          if (rem < 1e-9) continue;
-          const used = x1[i] + x2[i];
-          const canAdd = Math.min(trees[i].maxq - used, Math.floor(rem / area));
-          if (canAdd > 0) { x2[i] += canAdd; A2 += canAdd * area; }
-        }
-      }
+    }
+    if (r <= 1.0) {
+      knapsackFill(x1, x2, land1);   // vườn 1 trước (giá đầy đủ)
+      knapsackFill(x2, x1, land2);   // vườn 2 sau (giá giảm), số lượng đã bớt
+    } else {
+      knapsackFill(x2, x1, land2);   // vườn 2 trước (giá cao hơn)
+      knapsackFill(x1, x2, land1);
     }
 
     bestVal = 0;
