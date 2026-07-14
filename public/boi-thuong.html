@@ -816,6 +816,14 @@ td.td-ctr{text-align:center}
         </div>
         <div id="gpmb-parcel-dup-area" style="display:none;font-size:12px;color:var(--muted);margin-top:4px"></div>
 
+        <div class="form-section" style="margin-top:16px">📥 Nhập nhiều thửa cùng lúc từ Excel</div>
+        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">Tải file mẫu, điền theo cột hướng dẫn (số tờ, số thửa, diện tích, tọa độ tùy chọn) rồi import lại. Nếu thửa trong file đã có sẵn trên đợt này, hệ thống sẽ hỏi trước khi ghi đè.</div>
+        <input type="file" id="gpmb-import-file-input" style="display:none" accept=".xlsx,.xls" onchange="importGpmbExcel(this.files[0])">
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="document.getElementById('gpmb-import-file-input').click()">📥 Import Excel nhiều thửa</button>
+          <button class="btn btn-ghost" onclick="downloadGpmbTemplate()">📄 Tải file mẫu</button>
+        </div>
+
         <div class="form-section" style="margin-top:16px">📎 Tệp đính kèm</div>
         <div id="gpmb-files-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
         <input type="file" id="gpmb-file-input" style="display:none" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png,.dwg,.dxf" onchange="uploadGpmbFile(this.files[0])">
@@ -826,6 +834,23 @@ td.td-ctr{text-align:center}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeGpmbModal()">Đóng</button>
       <button class="btn btn-primary" onclick="saveGpmbMap()">Lưu đợt Bản đồ GPMB</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ IMPORT OVERWRITE CONFIRM MODAL (không phải hành động xóa — không yêu cầu mật khẩu) ══ -->
+<div class="modal-overlay" id="modal-import-confirm">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <h3>Xác nhận ghi đè dữ liệu</h3>
+      <button class="modal-close" onclick="closeImportConfirm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="import-confirm-msg" style="font-size:14px;line-height:1.6"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeImportConfirm()">Hủy</button>
+      <button class="btn btn-primary" onclick="confirmImportOverwrite()">Ghi đè và tiếp tục</button>
     </div>
   </div>
 </div>
@@ -2092,6 +2117,56 @@ function renderGeoJSONPreview(text) {
   box.style.display = 'block';
   box.innerHTML = `<div style="font-size:11px;color:var(--muted);margin-bottom:4px">Xem trước hình dạng (đơn giản, chưa theo tỉ lệ bản đồ thực)</div>
     <svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" style="background:var(--card);border-radius:6px">${polys}</svg>`;
+}
+
+function downloadGpmbTemplate() {
+  window.open('/api/bt/gpmb-template', '_blank');
+}
+
+let pendingGpmbImportFile = null;
+
+function importGpmbExcel(file) {
+  if (!file || !editGpmbMapId) { toast('Vui lòng lưu thông tin đợt trước', true); return; }
+  pendingGpmbImportFile = file;
+  sendGpmbImport(false);
+}
+
+async function sendGpmbImport(confirmOverwrite) {
+  if (!pendingGpmbImportFile || !editGpmbMapId) return;
+  const fd = new FormData();
+  fd.append('file', pendingGpmbImportFile);
+  if (confirmOverwrite) fd.append('confirm_overwrite', '1');
+  const res = await fetch(`/api/bt/maps/${editGpmbMapId}/parcels/import`, { method: 'POST', body: fd });
+  if (res.status === 409) {
+    const data = await res.json();
+    document.getElementById('import-confirm-msg').textContent =
+      `${data.conflicts.length} thửa trong file đã tồn tại trên đợt này: ${data.conflicts.join(', ')}. Bạn có muốn ghi đè dữ liệu các thửa này không? Các thửa mới khác trong file (nếu có) vẫn sẽ được thêm bình thường.`;
+    document.getElementById('modal-import-confirm').classList.add('open');
+    return;
+  }
+  document.getElementById('gpmb-import-file-input').value = '';
+  pendingGpmbImportFile = null;
+  if (res.ok) {
+    const data = await res.json();
+    await reloadGpmbDetail();
+    await refreshGpmbStatus();
+    updateTabLockUI();
+    toast(`Đã import: thêm mới ${data.created}, cập nhật ${data.updated} thửa`);
+  } else {
+    const data = await res.json().catch(()=>({}));
+    toast(data.error || 'Lỗi khi import file', true);
+  }
+}
+
+function closeImportConfirm() {
+  document.getElementById('modal-import-confirm').classList.remove('open');
+  document.getElementById('gpmb-import-file-input').value = '';
+  pendingGpmbImportFile = null;
+}
+
+async function confirmImportOverwrite() {
+  document.getElementById('modal-import-confirm').classList.remove('open');
+  await sendGpmbImport(true);
 }
 
 // ══════════════════════════════════════════════════════════════

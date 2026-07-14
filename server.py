@@ -1018,6 +1018,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_bt_members_list(int(m.group(1))); return
         if path == '/api/bt/parcel-master/search':
             self.api_bt_parcel_master_search(qs); return
+        if path == '/api/bt/gpmb-template':
+            self.api_bt_gpmb_template(); return
         m = re.match(r'^/api/bt/projects/(\d+)/parcels$', path)
         if m:
             self.api_bt_parcels_list(int(m.group(1)), qs); return
@@ -1085,6 +1087,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/maps/(\d+)/parcels$', path)
         if m:
             self.api_bt_map_parcels_add(int(m.group(1))); return
+        m = re.match(r'^/api/bt/maps/(\d+)/parcels/import$', path)
+        if m:
+            self.api_bt_map_parcels_import(int(m.group(1))); return
         m = re.match(r'^/api/bt/maps/(\d+)/files$', path)
         if m:
             self.api_bt_map_files_upload(int(m.group(1))); return
@@ -3055,6 +3060,218 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 db.execute('DELETE FROM bt_parcels WHERE id=?', (pid,))
             db.commit()
         self.send_json({'ok': True})
+
+    def _parse_gpmb_toa_do(self, raw):
+        """Chuyển chuỗi tọa độ đơn giản 'X1,Y1; X2,Y2; ...' (nhập tay trong Excel) sang GeoJSON Polygon.
+        Tự động khép kín vòng nếu điểm đầu và điểm cuối chưa trùng nhau."""
+        raw = str(raw).strip() if raw is not None else ''
+        if not raw:
+            return None
+        try:
+            pts = []
+            for pair in raw.split(';'):
+                pair = pair.strip()
+                if not pair:
+                    continue
+                x_str, y_str = pair.split(',')
+                pts.append([float(x_str.strip()), float(y_str.strip())])
+            if len(pts) < 3:
+                return None
+            if pts[0] != pts[-1]:
+                pts.append(pts[0])
+            return json.dumps({'type': 'Polygon', 'coordinates': [pts]}, ensure_ascii=False)
+        except Exception:
+            return None
+
+    def api_bt_map_parcels_import(self, map_id):
+        """Import hàng loạt thửa đất vào 1 đợt Bản đồ GPMB từ file Excel mẫu.
+        Nếu số tờ+số thửa trong file đã tồn tại trên đợt này, yêu cầu xác nhận ghi đè (field confirm_overwrite=1)
+        trước khi thực sự áp dụng — không âm thầm ghi đè dữ liệu đã có."""
+        sess = self.require_auth()
+        if not sess: return
+        ct = self.headers.get('Content-Type', '')
+        if 'multipart/form-data' not in ct:
+            self.send_json({'error': 'multipart required'}, 400); return
+        fields, files = self.read_multipart()
+        if 'file' not in files:
+            self.send_json({'error': 'Thiếu file'}, 400); return
+        confirm_overwrite = fields.get('confirm_overwrite', '') == '1'
+        fitem = files['file']
+        file_bytes = fitem.file.read()
+        try:
+            import openpyxl
+            wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+            ws = wb.active
+            raw_rows = list(ws.iter_rows(values_only=True))
+        except Exception as e:
+            self.send_json({'error': f'Không đọc được file: {e}'}, 400); return
+
+        if not raw_rows:
+            self.send_json({'error': 'File rỗng'}, 400); return
+        header = [str(c).strip().lower() if c else '' for c in raw_rows[0]]
+
+        def find(keywords):
+            for kw in keywords:
+                for i, v in enumerate(header):
+                    if kw in v:
+                        return i
+            return None
+
+        COL = {
+            'so_to':     find(['số tờ', 'so to']),
+            'so_thua':   find(['số thửa', 'so thua']),
+            'dien_tich': find(['diện tích thửa', 'dien tich thua', 'diện tích (', 'dien tich (']),
+            'thu_hoi':   find(['thu hồi', 'thu hoi']),
+            'toa_do':    find(['tọa độ', 'toa do']),
+        }
+        if COL['so_to'] is None and COL['so_thua'] is None:
+            self.send_json({'error': 'Không tìm thấy cột Số tờ / Số thửa trong file. Vui lòng dùng đúng file mẫu.'}, 400)
+            return
+
+        def cell(row, key):
+            idx = COL.get(key)
+            if idx is None or idx >= len(row):
+                return None
+            return row[idx]
+
+        parsed_rows = []
+        for row in raw_rows[1:]:
+            if not any(row):
+                continue
+            so_to = cell(row, 'so_to')
+            so_thua = cell(row, 'so_thua')
+            so_to = str(so_to).strip() if so_to is not None else ''
+            so_thua = str(so_thua).strip() if so_thua is not None else ''
+            if not so_to and not so_thua:
+                continue
+            try:
+                dien_tich = float(cell(row, 'dien_tich') or 0)
+            except Exception:
+                dien_tich = 0
+            try:
+                thu_hoi = float(cell(row, 'thu_hoi') or 0)
+            except Exception:
+                thu_hoi = 0
+            toa_do = self._parse_gpmb_toa_do(cell(row, 'toa_do'))
+            parsed_rows.append({'so_to': so_to, 'so_thua': so_thua, 'dien_tich': dien_tich, 'thu_hoi': thu_hoi, 'toa_do': toa_do})
+
+        if not parsed_rows:
+            self.send_json({'error': 'Không có dòng dữ liệu hợp lệ trong file'}, 400); return
+
+        with get_db() as db:
+            m = db.execute('SELECT project_id, loai_ban_do FROM bt_maps WHERE id=?', (map_id,)).fetchone()
+            if not m:
+                self.send_json({'error': 'Không tìm thấy Bản đồ'}, 404); return
+            existing = db.execute(
+                'SELECT id, so_to_tren_ban_do, so_thua_tren_ban_do, parcel_id FROM bt_map_parcels WHERE map_id=?',
+                (map_id,)
+            ).fetchall()
+            existing_map = {}
+            for e in existing:
+                key = (str(e['so_to_tren_ban_do'] or '').strip().lower(), str(e['so_thua_tren_ban_do'] or '').strip().lower())
+                existing_map[key] = e
+
+            conflicts = []
+            for r in parsed_rows:
+                key = (r['so_to'].lower(), r['so_thua'].lower())
+                if key in existing_map:
+                    conflicts.append(f"Tờ {r['so_to']} - Thửa {r['so_thua']}")
+
+            if conflicts and not confirm_overwrite:
+                self.send_json({'conflict': True, 'conflicts': conflicts, 'total': len(parsed_rows)}, 409)
+                return
+
+            created, updated = 0, 0
+            for r in parsed_rows:
+                key = (r['so_to'].lower(), r['so_thua'].lower())
+                existing_row = existing_map.get(key)
+                if existing_row:
+                    link_id = existing_row['id']
+                    pid = existing_row['parcel_id']
+                    db.execute(
+                        'UPDATE bt_map_parcels SET so_to_tren_ban_do=?, so_thua_tren_ban_do=?, dien_tich_tren_ban_do=?, '
+                        'dien_tich_thu_hoi_tren_ban_do=?, toa_do=? WHERE id=?',
+                        (r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi'], r['toa_do'], link_id)
+                    )
+                    if pid:
+                        self._sync_parcel_from_map_entry(db, pid, None, r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi'])
+                    elif m['loai_ban_do'] == 'Bản đồ GPMB' and m['project_id']:
+                        pid = self._create_parcel_from_map_entry(
+                            db, m['project_id'], None, r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi']
+                        )
+                        db.execute('UPDATE bt_map_parcels SET parcel_id=? WHERE id=?', (pid, link_id))
+                    updated += 1
+                else:
+                    pid = None
+                    if m['loai_ban_do'] == 'Bản đồ GPMB' and m['project_id']:
+                        pid = self._create_parcel_from_map_entry(
+                            db, m['project_id'], None, r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi']
+                        )
+                    db.execute(
+                        'INSERT INTO bt_map_parcels (map_id, parcel_master_id, so_to_tren_ban_do, so_thua_tren_ban_do, '
+                        'dien_tich_tren_ban_do, dien_tich_thu_hoi_tren_ban_do, toa_do, parcel_id) VALUES (?,?,?,?,?,?,?,?)',
+                        (map_id, None, r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi'], r['toa_do'], pid)
+                    )
+                    created += 1
+            db.commit()
+        self.send_json({'ok': True, 'created': created, 'updated': updated})
+
+    def api_bt_gpmb_template(self):
+        """Trả về file Excel mẫu để import hàng loạt thửa vào Bản đồ GPMB."""
+        sess = self.require_auth()
+        if not sess: return
+        try:
+            import openpyxl
+            from openpyxl.styles import Font, PatternFill, Alignment
+        except ImportError:
+            self.send_json({'error': 'openpyxl chưa cài'}, 500); return
+        wb = openpyxl.Workbook()
+        ws = wb.active
+        ws.title = 'Dữ liệu'
+        headers = ['Số tờ', 'Số thửa', 'Diện tích thửa (m²)', 'Diện tích thu hồi (m²)', 'Tọa độ các đỉnh (tùy chọn)']
+        hdr_fill = PatternFill('solid', start_color='1B2A4A')
+        hdr_font = Font(bold=True, color='FFFFFF', name='Arial', size=10)
+        for ci, h in enumerate(headers, 1):
+            c = ws.cell(row=1, column=ci, value=h)
+            c.fill = hdr_fill
+            c.font = hdr_font
+            c.alignment = Alignment(horizontal='center', wrap_text=True)
+        ws.cell(row=2, column=1, value='12')
+        ws.cell(row=2, column=2, value='45')
+        ws.cell(row=2, column=3, value=300)
+        ws.cell(row=2, column=4, value=120)
+        ws.cell(row=2, column=5, value='0,0; 20,0; 20,15; 0,15')
+        for ci, w in enumerate([10, 10, 20, 22, 40], 1):
+            ws.column_dimensions[chr(64+ci)].width = w
+
+        ws2 = wb.create_sheet('Hướng dẫn')
+        guide = [
+            ('Cột', 'Ý nghĩa'),
+            ('Số tờ / Số thửa', 'Bắt buộc — theo hồ sơ địa chính. Mỗi dòng là 1 thửa đất.'),
+            ('Diện tích thửa (m²)', 'Tổng diện tích thửa đất, để trống hoặc 0 nếu chưa có.'),
+            ('Diện tích thu hồi (m²)', 'Phần diện tích thu hồi trong dự án, để trống hoặc 0 nếu chưa có.'),
+            ('Tọa độ các đỉnh (tùy chọn)',
+             'Danh sách tọa độ các đỉnh thửa theo thứ tự, mỗi đỉnh 1 cặp "X,Y", các đỉnh cách nhau bởi dấu ";". '
+             'Ví dụ: 0,0; 20,0; 20,15; 0,15 — không cần lặp lại đỉnh đầu tiên ở cuối, hệ thống tự khép kín. '
+             'Nếu chưa có tọa độ thực tế, có thể để trống — chỉ ảnh hưởng phần xem trước hình dạng, không ảnh hưởng dữ liệu khác.'),
+            ('Nếu thửa đã tồn tại', 'Hệ thống nhận diện trùng theo Số tờ + Số thửa trong cùng đợt Bản đồ GPMB, '
+             'và sẽ hỏi xác nhận trước khi ghi đè — không tự động ghi đè.'),
+        ]
+        for ri, (a, b) in enumerate(guide, 1):
+            ws2.cell(row=ri, column=1, value=a).font = Font(bold=(ri == 1))
+            ws2.cell(row=ri, column=2, value=b).alignment = Alignment(wrap_text=True, vertical='top')
+        ws2.column_dimensions['A'].width = 26
+        ws2.column_dimensions['B'].width = 80
+
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.send_header('Content-Disposition', 'attachment; filename="mau-import-ban-do-gpmb.xlsx"')
+        self.send_header('Content-Length', str(len(buf.getvalue())))
+        self.end_headers()
+        self.wfile.write(buf.getvalue())
 
     def api_bt_map_files_upload(self, map_id):
         sess = self.require_auth()
