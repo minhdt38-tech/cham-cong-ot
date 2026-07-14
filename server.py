@@ -2994,7 +2994,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         dien_tich = body.get('dien_tich_tren_ban_do') or 0
         thu_hoi = body.get('dien_tich_thu_hoi_tren_ban_do') or 0
         master_id = body.get('parcel_master_id') or None
-        toa_do = body.get('toa_do') or None
+        toa_do = self._normalize_toa_do(body.get('toa_do'))
         with get_db() as db:
             m = db.execute('SELECT project_id, loai_ban_do FROM bt_maps WHERE id=?', (map_id,)).fetchone()
             parcel_id = None
@@ -3020,7 +3020,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         dien_tich = body.get('dien_tich_tren_ban_do') or 0
         thu_hoi = body.get('dien_tich_thu_hoi_tren_ban_do') or 0
         master_id = body.get('parcel_master_id') or None
-        toa_do = body.get('toa_do') or None
+        toa_do = self._normalize_toa_do(body.get('toa_do'))
         with get_db() as db:
             row = db.execute('SELECT map_id, parcel_id FROM bt_map_parcels WHERE id=?', (link_id,)).fetchone()
             if not row:
@@ -3061,12 +3061,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.commit()
         self.send_json({'ok': True})
 
-    def _parse_gpmb_toa_do(self, raw):
-        """Chuyển chuỗi tọa độ đơn giản 'X1,Y1; X2,Y2; ...' (nhập tay trong Excel) sang GeoJSON Polygon.
-        Tự động khép kín vòng nếu điểm đầu và điểm cuối chưa trùng nhau."""
+    def _normalize_toa_do(self, raw):
+        """Chuẩn hóa ô nhập tọa độ thửa về GeoJSON, chấp nhận 2 kiểu nhập — dùng chung cho thêm/sửa 1 thửa
+        (form tay) và import Excel hàng loạt, để không ai phải tự tay viết đúng cú pháp GeoJSON:
+        1) Định dạng đơn giản 'X1,Y1; X2,Y2; X3,Y3; ...' — liệt kê các đỉnh theo thứ tự, tự động khép kín vòng.
+        2) GeoJSON đầy đủ (bắt đầu bằng '{') — dành cho ai đã có sẵn dữ liệu chuẩn, giữ nguyên nếu hợp lệ."""
         raw = str(raw).strip() if raw is not None else ''
         if not raw:
             return None
+        if raw.startswith('{') or raw.startswith('['):
+            try:
+                json.loads(raw)
+                return raw
+            except Exception:
+                return None
         try:
             pts = []
             for pair in raw.split(';'):
@@ -3152,7 +3160,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 thu_hoi = float(cell(row, 'thu_hoi') or 0)
             except Exception:
                 thu_hoi = 0
-            toa_do = self._parse_gpmb_toa_do(cell(row, 'toa_do'))
+            toa_do = self._normalize_toa_do(cell(row, 'toa_do'))
             parsed_rows.append({'so_to': so_to, 'so_thua': so_thua, 'dien_tich': dien_tich, 'thu_hoi': thu_hoi, 'toa_do': toa_do})
 
         if not parsed_rows:

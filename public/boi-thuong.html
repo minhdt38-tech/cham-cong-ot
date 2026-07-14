@@ -799,6 +799,7 @@ td.td-ctr{text-align:center}
       <div id="gpmb-sub-sections" style="display:none;margin-top:18px">
         <div class="form-section">🗺️ Thửa đất trên Bản đồ GPMB (tự động sinh Thửa đất)</div>
         <div id="gpmb-parcels-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+        <div id="gpmb-combined-preview" style="display:none;margin-bottom:10px"></div>
         <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
           <div class="form-group" style="flex:1"><label>Số tờ</label><input id="gpf-so-to" type="text" oninput="debouncedGpmbDupCheck()"></div>
           <div class="form-group" style="flex:1"><label>Số thửa</label><input id="gpf-so-thua" type="text" oninput="debouncedGpmbDupCheck()"></div>
@@ -806,8 +807,8 @@ td.td-ctr{text-align:center}
           <div class="form-group" style="flex:1"><label>Diện tích thu hồi (m²)</label><input id="gpf-dt-thu-hoi" type="number" step="0.1"></div>
         </div>
         <div class="form-group form-full">
-          <label>Tọa độ ranh giới thửa (GeoJSON, tùy chọn)</label>
-          <textarea id="gpf-toa-do" placeholder='VD: {"type":"Polygon","coordinates":[...]}' style="font-family:monospace;font-size:12px" oninput="debouncedGpmbPreview()"></textarea>
+          <label>Tọa độ các đỉnh thửa (tùy chọn) — không bắt buộc biết GeoJSON</label>
+          <textarea id="gpf-toa-do" placeholder="VD: 0,0; 20,0; 20,15; 0,15  (liệt kê các đỉnh theo thứ tự, cách nhau bởi dấu ; — hệ thống tự khép kín hình)" style="font-family:monospace;font-size:12px" oninput="debouncedGpmbPreview()"></textarea>
         </div>
         <div id="gpmb-shape-preview" style="display:none;margin:6px 0"></div>
         <div style="display:flex;gap:8px">
@@ -2016,6 +2017,7 @@ function renderGpmbParcelsList() {
   const box = document.getElementById('gpmb-parcels-list');
   if (!currentGpmbParcels.length) {
     box.innerHTML = '<div style="color:var(--muted);font-size:12px">Chưa có thửa đất nào trên đợt này</div>';
+    renderGpmbCombinedPreview();
     return;
   }
   box.innerHTML = currentGpmbParcels.map(p => `
@@ -2025,6 +2027,79 @@ function renderGpmbParcelsList() {
       <button class="btn btn-ghost btn-sm" onclick="removeGpmbParcelRow(${p.id})">✕</button>
     </div>
   `).join('');
+  renderGpmbCombinedPreview();
+}
+
+function parseSimpleCoordsList(text) {
+  try {
+    const pts = text.split(';').map(s => s.trim()).filter(Boolean).map(pair => {
+      const parts = pair.split(',').map(v => parseFloat(v.trim()));
+      if (parts.length < 2 || parts.some(v => Number.isNaN(v))) throw new Error('bad');
+      return [parts[0], parts[1]];
+    });
+    if (pts.length < 3) return null;
+    return pts;
+  } catch (e) { return null; }
+}
+
+function parseToaDoToRings(text) {
+  text = (text || '').trim();
+  if (!text) return null;
+  if (text.startsWith('{') || text.startsWith('[')) {
+    let geo;
+    try { geo = JSON.parse(text); } catch (e) { return null; }
+    let rings = [];
+    try {
+      if (geo.type === 'Polygon') rings = geo.coordinates;
+      else if (geo.type === 'MultiPolygon') rings = geo.coordinates.flat();
+      else if (geo.coordinates) rings = [geo.coordinates];
+    } catch (e) { rings = []; }
+    return rings.length ? rings : null;
+  }
+  const pts = parseSimpleCoordsList(text);
+  if (!pts) return null;
+  const first = pts[0], last = pts[pts.length - 1];
+  if (first[0] !== last[0] || first[1] !== last[1]) pts.push(first);
+  return [pts];
+}
+
+function renderGpmbCombinedPreview() {
+  const box = document.getElementById('gpmb-combined-preview');
+  const palette = ['#3498db','#e67e22','#2ecc71','#e74c3c','#9b59b6','#1abc9c','#f1c40f','#95a5a6'];
+  const parsed = [];
+  (currentGpmbParcels || []).forEach((p, idx) => {
+    const rings = parseToaDoToRings(p.toa_do);
+    if (!rings) return;
+    const pts = rings.flat().filter(pt => Array.isArray(pt) && pt.length >= 2);
+    if (!pts.length) return;
+    parsed.push({
+      label: `T${esc(p.so_to_tren_ban_do)}-${esc(p.so_thua_tren_ban_do)}`,
+      rings, pts, color: palette[idx % palette.length]
+    });
+  });
+  if (parsed.length < 1) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const allPts = parsed.flatMap(pp => pp.pts);
+  const xs = allPts.map(p => p[0]), ys = allPts.map(p => p[1]);
+  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const w = 320, h = 220, pad = 16;
+  const spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1;
+  const scale = Math.min((w - pad*2) / spanX, (h - pad*2) / spanY);
+  const toXY = (p) => [pad + (p[0]-minX)*scale, h - pad - (p[1]-minY)*scale];
+  let svgParts = '';
+  parsed.forEach(pp => {
+    pp.rings.forEach(ring => {
+      const ptsStr = ring.filter(pt => Array.isArray(pt) && pt.length >= 2)
+        .map(toXY).map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
+      svgParts += `<polygon points="${ptsStr}" fill="${pp.color}66" stroke="${pp.color}" stroke-width="1.5"/>`;
+    });
+    const px = pp.pts.map(p=>p[0]), py = pp.pts.map(p=>p[1]);
+    const cx = (Math.min(...px)+Math.max(...px))/2, cy = (Math.min(...py)+Math.max(...py))/2;
+    const [lx, ly] = toXY([cx, cy]);
+    svgParts += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="10" font-weight="600" fill="#fff" text-anchor="middle" dominant-baseline="middle">${pp.label}</text>`;
+  });
+  box.style.display = 'block';
+  box.innerHTML = `<div style="font-size:11px;color:var(--muted);margin-bottom:4px">🗺️ Xem trước tổng thể ${parsed.length} thửa đã có tọa độ trên đợt này (đơn giản, chưa theo tỉ lệ bản đồ thực)</div>
+    <svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" style="background:var(--card);border-radius:6px">${svgParts}</svg>`;
 }
 
 async function uploadGpmbFile(file) {
@@ -2082,18 +2157,12 @@ function renderGeoJSONPreview(text) {
   const box = document.getElementById('gpmb-shape-preview');
   text = (text || '').trim();
   if (!text) { box.style.display = 'none'; box.innerHTML = ''; return; }
-  let geo;
-  try { geo = JSON.parse(text); } catch (e) {
+  const rings = parseToaDoToRings(text);
+  if (!rings) {
     box.style.display = 'block';
-    box.innerHTML = '<div style="font-size:12px;color:#e74c3c">GeoJSON không hợp lệ — không thể xem trước hình dạng</div>';
+    box.innerHTML = '<div style="font-size:12px;color:#e74c3c">Chưa đọc được tọa độ — kiểm tra lại định dạng "X,Y; X,Y; ..." (hoặc GeoJSON hợp lệ)</div>';
     return;
   }
-  let rings = [];
-  try {
-    if (geo.type === 'Polygon') rings = geo.coordinates;
-    else if (geo.type === 'MultiPolygon') rings = geo.coordinates.flat();
-    else if (geo.coordinates) rings = [geo.coordinates];
-  } catch (e) { rings = []; }
   const pts = rings.flat().filter(p => Array.isArray(p) && p.length >= 2);
   if (!pts.length) {
     box.style.display = 'block';
