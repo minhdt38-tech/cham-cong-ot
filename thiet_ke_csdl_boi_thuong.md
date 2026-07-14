@@ -82,6 +82,25 @@ Sau khi thấy Minh gặp khó với việc tự tay điền GeoJSON, bổ sung 
 
 Đã kiểm tra kỹ bằng test mô phỏng đầy đủ (`/tmp/sql_verify_import/test_import.py`): import lần đầu tạo đúng 4 thửa + đúng dữ liệu Thửa đất sinh ra + tọa độ đơn giản chuyển đúng sang GeoJSON; import lại cùng file bị chặn và báo đúng danh sách trùng, không âm thầm tạo trùng; sau khi xác nhận ghi đè thì cập nhật đúng dữ liệu mà không tạo thêm bản ghi thừa. File Excel mẫu thực tế đã tạo cũng được đọc lại và xác nhận đúng cấu trúc mong đợi trước khi gửi cho Minh.
 
+## Cập nhật 2026-07-14 (bổ sung): xem trước tổng thể nhiều thửa + chuẩn hóa tọa độ ở mọi nơi
+
+Minh thử import xong nhưng không thấy hình dạng thửa ở đâu — hóa ra thiết kế ban đầu chỉ hiện hình khi sửa **từng thửa một** (bấm ✏️), chưa có chỗ xem tất cả thửa ghép lại. Đã bổ sung:
+
+- Khung **"🗺️ Xem trước tổng thể"** trong hộp thoại mảnh trích đo (`renderGpmbCombinedPreview()`): tự động gộp tất cả thửa đã có tọa độ trên mảnh đang sửa thành 1 hình duy nhất, mỗi thửa 1 màu + nhãn tờ-thửa, để thấy các thửa liền nhau ghép ra sao — không cần bấm sửa từng thửa nữa.
+- **Chuẩn hóa 1 hàm dùng chung** (`_normalize_toa_do` phía backend, `parseToaDoToRings` phía frontend) cho cả 3 chỗ nhập tọa độ: thêm/sửa 1 thửa bằng tay, xem trước khi gõ, và import Excel — tất cả đều chấp nhận định dạng đơn giản `X,Y; X,Y; ...` (không bắt biết GeoJSON), đồng thời vẫn nhận GeoJSON đầy đủ nếu ai đó đã có sẵn. Trước đó ô nhập tay cho 1 thửa vẫn bắt gõ GeoJSON thô — đây có thể là một phần lý do Minh thấy khó hiểu.
+
+## Cập nhật 2026-07-14 (bổ sung, theo phác thảo tay của Minh): giao diện 2 nửa + đổi thuật ngữ "đợt" → "mảnh trích đo"
+
+Minh vẽ tay lên ảnh chụp màn hình, yêu cầu chia tab Bản đồ GPMB thành 2 nửa có thanh kéo chỉnh tỉ lệ, và giải thích rõ thuật ngữ đúng theo thông tư đo đạc: 1 dự án thường trải nhiều xã → mỗi xã lập 1 **mảnh trích đo** riêng → 1 mảnh có nhiều tờ → 1 tờ có nhiều thửa. Trước đó hệ thống gọi sai là "đợt Bản đồ GPMB", đã đổi toàn bộ giao diện (nút, tiêu đề, thông báo, toast) sang "mảnh trích đo Bản đồ GPMB". **Không** đổi số tờ (`so_to`) thành 1 bảng/thực thể riêng — vẫn là 1 trường trên mỗi thửa như cũ, vì mục tiêu của Minh là sửa thuật ngữ hiển thị chứ không yêu cầu thêm tầng phân cấp mới trong CSDL.
+
+Giao diện tab Bản đồ GPMB giờ có 2 nửa (`.gpmb-split`), chỉnh được tỉ lệ bằng cách kéo thanh chia (`#gpmb-split-resizer`, giới hạn 20%-75%):
+- **Nửa trái** (`#gpmb-split-left`): danh sách các mảnh trích đo (bảng như cũ, đổi tên cột). Bấm vào 1 dòng (ngoài nút ✏️/🗑️) sẽ chọn mảnh đó (`selectGpmbMap()`).
+- **Nửa phải** (`#gpmb-split-right`): bản đồ của mảnh đang chọn (`renderGpmbMapCanvas()`) — vẽ tất cả thửa có tọa độ dạng **polyline kín, không tô màu, cùng 1 màu viền** (`stroke="#5dade2"`, `fill="none"`) đúng yêu cầu — cố ý chưa tô màu vì màu tô sẽ dành để thể hiện tiến độ GPMB từng thửa (tính năng sau này, chưa làm ở bước này).
+
+Khi mở lại tab, tự động chọn mảnh đầu tiên trong danh sách nếu chưa chọn gì (tránh nửa phải trống trơn ngay từ đầu). Lưu/sửa 1 mảnh xong sẽ tự chọn lại đúng mảnh đó để thấy ngay bản đồ cập nhật.
+
+Đã kiểm tra bằng test mô phỏng thuần logic (`/tmp/js_verify_gpmb/split_ui.mjs`): tính đúng bounding box gộp cho 4 thửa demo (0-40 x 0-30), bỏ qua an toàn thửa chưa có tọa độ mà không crash, báo đúng trạng thái rỗng khi mảnh chưa có thửa nào có tọa độ, và giới hạn % thanh kéo hoạt động đúng (20%-75%).
+
 ---
 
 ## Nguyên tắc thiết kế chung
