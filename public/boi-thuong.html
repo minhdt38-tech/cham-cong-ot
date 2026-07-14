@@ -34,6 +34,10 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .sb-nav{padding:8px 6px;border-top:1px solid var(--border)}
 .sb-nav a{display:flex;align-items:center;gap:8px;padding:8px 10px;color:rgba(255,255,255,.6);text-decoration:none;font-size:13px;border-radius:var(--radius);transition:background .15s}
 .sb-nav a:hover{background:rgba(255,255,255,.06);color:#fff}
+.sb-nav a.active{background:rgba(41,128,185,.22);color:#fff}
+.chip{display:inline-block;padding:2px 8px;border-radius:20px;font-size:11px;font-weight:600;background:rgba(255,255,255,.08);color:var(--text)}
+.chip-link{cursor:pointer}
+.chip-link:hover{background:rgba(41,128,185,.3)}
 
 /* ── MAIN CONTENT ─────────────────────────────────────────── */
 #main{flex:1;display:flex;flex-direction:column;overflow:hidden}
@@ -158,6 +162,7 @@ td.td-ctr{text-align:center}
   </div>
   <div id="proj-list"></div>
   <div class="sb-nav">
+    <a href="#" onclick="showPartiesView();return false;">👤 Chủ thể / Hộ dân</a>
     <a href="/">⬅ Trang chủ</a>
   </div>
 </div>
@@ -168,6 +173,10 @@ td.td-ctr{text-align:center}
     <h1 id="proj-title">Quản lý Bồi thường, Hỗ trợ</h1>
     <div class="tab-bar" id="tab-bar" style="display:none">
       <button class="tab-btn active" onclick="switchTab('dashboard')">📊 Tổng quan</button>
+      <button class="tab-btn" onclick="switchTab('parcels')">🗺️ Thửa đất</button>
+      <button class="tab-btn" onclick="switchTab('maps')">🗂️ Bản đồ</button>
+      <button class="tab-btn" onclick="switchTab('assets')">🌳 Tài sản</button>
+      <button class="tab-btn" onclick="switchTab('dossiers')">💰 Hồ sơ Hộ</button>
       <button class="tab-btn" onclick="switchTab('records')">📋 Hồ sơ</button>
     </div>
   </div>
@@ -186,6 +195,137 @@ td.td-ctr{text-align:center}
     <div class="status-chart" id="status-chart"></div>
     <div class="section-title" style="margin-top:20px">Tài chính</div>
     <div class="finance-grid" id="finance-grid"></div>
+    <div class="section-title" style="margin-top:20px">📄 Tài liệu pháp lý dự án</div>
+    <div id="proj-docs-list" style="display:flex;flex-direction:column;gap:6px"></div>
+  </div>
+
+  <!-- PARCELS TAB (Thửa đất) -->
+  <div id="tab-parcels" style="flex:1;display:none;flex-direction:column;overflow:hidden">
+    <div class="toolbar">
+      <div class="search-box">
+        <input id="parcel-search-inp" type="text" placeholder="Tìm số tờ, số thửa..." oninput="debouncedLoadParcels()">
+      </div>
+      <button class="btn btn-primary" onclick="openParcelModal()">＋ Thêm thửa đất</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Số tờ</th>
+            <th>Số thửa</th>
+            <th>Loại đất</th>
+            <th style="text-align:right">Tổng DT (m²)</th>
+            <th style="text-align:right">DT thu hồi (m²)</th>
+            <th>Chủ sở hữu</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="parcel-tbl-body"></tbody>
+      </table>
+      <div id="parcel-tbl-empty" class="empty-state" style="display:none">
+        <div class="es-icon">🗺️</div>
+        <p>Chưa có thửa đất nào trong dự án này</p>
+        <button class="btn btn-primary" onclick="openParcelModal()">＋ Thêm thửa đất đầu tiên</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MAPS TAB (Bản đồ) -->
+  <div id="tab-maps" style="flex:1;display:none;flex-direction:column;overflow:hidden">
+    <div class="toolbar">
+      <div class="search-box">
+        <input id="map-search-inp" type="text" placeholder="Tìm tên bản đồ, loại bản đồ..." oninput="debouncedLoadMaps()">
+      </div>
+      <button class="btn btn-primary" onclick="openMapModal()">＋ Thêm bản đồ</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Loại bản đồ</th>
+            <th>Tên bản đồ</th>
+            <th>Ngày lập</th>
+            <th>Đơn vị lập</th>
+            <th style="text-align:center">Số thửa</th>
+            <th style="text-align:center">Tệp đính kèm</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="map-tbl-body"></tbody>
+      </table>
+      <div id="map-tbl-empty" class="empty-state" style="display:none">
+        <div class="es-icon">🗂️</div>
+        <p>Chưa có bản đồ nào trong dự án này</p>
+        <button class="btn btn-primary" onclick="openMapModal()">＋ Thêm bản đồ đầu tiên</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ASSETS TAB (Tài sản trên đất) -->
+  <div id="tab-assets" style="flex:1;display:none;flex-direction:column;overflow:hidden">
+    <div class="toolbar">
+      <div class="search-box">
+        <input id="asset-search-inp" type="text" placeholder="Tìm loại tài sản..." oninput="debouncedLoadAssets()">
+      </div>
+      <button class="btn btn-primary" onclick="openAssetModal()">＋ Thêm tài sản</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Nhóm</th>
+            <th>Loại cụ thể</th>
+            <th style="text-align:right">SL/Khối lượng</th>
+            <th>ĐVT</th>
+            <th>Chủ tài sản</th>
+            <th>Thửa đất</th>
+            <th>Tình trạng pháp lý</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="asset-tbl-body"></tbody>
+      </table>
+      <div id="asset-tbl-empty" class="empty-state" style="display:none">
+        <div class="es-icon">🌳</div>
+        <p>Chưa có tài sản nào trong dự án này</p>
+        <button class="btn btn-primary" onclick="openAssetModal()">＋ Thêm tài sản đầu tiên</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- DOSSIERS TAB (Hồ sơ Hộ + Quyết định theo Thửa) -->
+  <div id="tab-dossiers" style="flex:1;display:none;flex-direction:column;overflow:hidden">
+    <div class="toolbar">
+      <div class="search-box">
+        <input id="dossier-search-inp" type="text" placeholder="Tìm tên chủ hộ..." oninput="debouncedLoadDossiers()">
+      </div>
+      <button class="btn btn-primary" onclick="openDossierModal()">＋ Thêm hồ sơ hộ</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Chủ hộ</th>
+            <th style="text-align:center">Số quyết định</th>
+            <th style="text-align:right">Tổng BT đất</th>
+            <th style="text-align:right">Thưởng+Hỗ trợ hộ</th>
+            <th style="text-align:right">Tạm ứng</th>
+            <th style="text-align:right">Đã chi trả</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="dossier-tbl-body"></tbody>
+      </table>
+      <div id="dossier-tbl-empty" class="empty-state" style="display:none">
+        <div class="es-icon">💰</div>
+        <p>Chưa có hồ sơ hộ nào trong dự án này</p>
+        <button class="btn btn-primary" onclick="openDossierModal()">＋ Thêm hồ sơ hộ đầu tiên</button>
+      </div>
+    </div>
   </div>
 
   <!-- RECORDS TAB -->
@@ -240,28 +380,70 @@ td.td-ctr{text-align:center}
       <span id="pg-total" style="margin-left:auto"></span>
     </div>
   </div>
+
+  <!-- PARTIES VIEW (Chủ thể / Hộ dân — không gắn theo dự án) -->
+  <div id="view-parties" style="flex:1;display:none;flex-direction:column;overflow:hidden">
+    <div class="toolbar">
+      <div class="search-box">
+        <input id="party-search-inp" type="text" placeholder="Tìm họ tên, CCCD, số điện thoại..." oninput="debouncedLoadParties()">
+      </div>
+      <button class="btn btn-primary" onclick="openPartyModal()">＋ Thêm chủ thể</button>
+    </div>
+    <div class="tbl-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Họ và tên</th>
+            <th>Loại chủ thể</th>
+            <th>Số CCCD</th>
+            <th>Số điện thoại</th>
+            <th>Địa chỉ thường trú</th>
+            <th style="text-align:center">Nhân khẩu</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="party-tbl-body"></tbody>
+      </table>
+      <div id="party-tbl-empty" class="empty-state" style="display:none">
+        <div class="es-icon">👤</div>
+        <p>Chưa có chủ thể nào</p>
+        <button class="btn btn-primary" onclick="openPartyModal()">＋ Thêm chủ thể đầu tiên</button>
+      </div>
+    </div>
+  </div>
 </div>
 
 <!-- ══ PROJECT MODAL ══════════════════════════════════════════════ -->
 <div class="modal-overlay" id="modal-proj">
-  <div class="modal modal-sm">
+  <div class="modal">
     <div class="modal-head">
       <h3 id="proj-modal-title">Tạo dự án mới</h3>
       <button class="modal-close" onclick="closeProjModal()">✕</button>
     </div>
     <div class="modal-body">
-      <div style="display:flex;flex-direction:column;gap:14px">
-        <div class="form-group">
-          <label>Tên dự án *</label>
-          <input id="pf-name" type="text" placeholder="VD: Dự án mở rộng QL1A">
+      <div class="form-grid">
+        <div class="form-section">🏗️ Thông tin chung</div>
+        <div class="form-group form-full"><label>Tên dự án *</label><input id="pf-name" type="text" placeholder="VD: Dự án mở rộng QL1A"></div>
+        <div class="form-group"><label>Địa điểm</label><input id="pf-dia-diem" type="text" placeholder="Xã, huyện, tỉnh..."></div>
+        <div class="form-group"><label>Chủ đầu tư</label><input id="pf-chu-dau-tu" type="text"></div>
+        <div class="form-group form-full"><label>Mô tả</label><textarea id="pf-mo-ta" placeholder="Thông tin thêm về dự án..."></textarea></div>
+
+        <div class="form-section">📐 Quy mô & Mốc thời gian</div>
+        <div class="form-group"><label>Diện tích dự án (m²)</label><input id="pf-dien-tich" type="number" step="0.1" placeholder="Theo pháp lý phê duyệt"></div>
+        <div class="form-group"><label>Ngày thông báo thu hồi đất</label><input id="pf-ngay-thong-bao-thu-hoi" type="date"></div>
+        <div class="form-group"><label>Ngày bắt đầu</label><input id="pf-ngay-bat-dau" type="date"></div>
+        <div class="form-group"><label>Ngày kết thúc dự kiến</label><input id="pf-ngay-ket-thuc" type="date"></div>
+
+        <div class="form-section">🗺️ Ranh giới dự án (nâng cao)</div>
+        <div class="form-group form-full">
+          <label>Ranh giới (GeoJSON) — có thể để trống, sẽ bổ sung khi có công cụ vẽ bản đồ</label>
+          <textarea id="pf-ranh-gioi" placeholder='VD: {"type":"Polygon","coordinates":[...]}' style="font-family:monospace;font-size:12px"></textarea>
         </div>
-        <div class="form-group">
-          <label>Địa điểm</label>
-          <input id="pf-dia-diem" type="text" placeholder="Xã, huyện, tỉnh...">
-        </div>
-        <div class="form-group">
-          <label>Mô tả</label>
-          <textarea id="pf-mo-ta" placeholder="Thông tin thêm về dự án..."></textarea>
+
+        <div class="form-section">📄 Tài liệu pháp lý dự án</div>
+        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">
+          Hệ thống tận dụng module <strong>Tài liệu</strong> sẵn có: khi tải văn bản pháp lý của dự án lên mục Tài liệu, hãy gắn thẻ (tag) đúng bằng tên dự án — các văn bản này sẽ tự động hiện trong tab "Tổng quan" của dự án.
         </div>
       </div>
     </div>
@@ -384,6 +566,294 @@ td.td-ctr{text-align:center}
   </div>
 </div>
 
+<!-- ══ PARTY MODAL (Chủ thể) ══════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-party">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="party-modal-title">Thêm chủ thể</h3>
+      <button class="modal-close" onclick="closePartyModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Loại chủ thể</label>
+          <select id="pf2-loai-chu-the">
+            <option>Cá nhân</option>
+            <option>Hộ gia đình</option>
+            <option>Tổ chức</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Họ và tên *</label><input id="pf2-ho-ten" type="text"></div>
+        <div class="form-group"><label>Giới tính</label>
+          <select id="pf2-gioi-tinh"><option value="">-- chọn --</option><option>Nam</option><option>Nữ</option><option>Khác</option></select>
+        </div>
+        <div class="form-group"><label>Ngày sinh</label><input id="pf2-ngay-sinh" type="date"></div>
+        <div class="form-group"><label>Số CCCD/CMND</label><input id="pf2-cccd" type="text"></div>
+        <div class="form-group"><label>Ngày cấp CCCD</label><input id="pf2-ngay-cap-cccd" type="date"></div>
+        <div class="form-group"><label>Nơi cấp CCCD</label><input id="pf2-noi-cap-cccd" type="text"></div>
+        <div class="form-group"><label>Số điện thoại</label><input id="pf2-sdt" type="text"></div>
+        <div class="form-group form-full"><label>Địa chỉ thường trú</label><input id="pf2-dia-chi" type="text"></div>
+        <div class="form-group form-full"><label>Ghi chú</label><textarea id="pf2-ghi-chu"></textarea></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closePartyModal()">Hủy</button>
+      <button class="btn btn-primary" onclick="saveParty()">Lưu</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MEMBERS MODAL (Nhân khẩu) ══════════════════════════════════ -->
+<div class="modal-overlay" id="modal-members">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <h3 id="members-modal-title">Nhân khẩu trong hộ</h3>
+      <button class="modal-close" onclick="closeMembersModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <table style="margin-bottom:12px">
+        <thead><tr><th>Họ tên</th><th>Quan hệ</th><th>Ngày sinh</th><th></th></tr></thead>
+        <tbody id="members-tbl-body"></tbody>
+      </table>
+      <div id="members-empty" style="display:none;color:var(--muted);font-size:13px;text-align:center;padding:16px 0">Chưa có nhân khẩu nào</div>
+      <div class="form-section" style="margin-top:4px">＋ Thêm nhân khẩu</div>
+      <div class="form-grid">
+        <div class="form-group form-full"><label>Họ và tên *</label><input id="mf-ho-ten" type="text"></div>
+        <div class="form-group"><label>Quan hệ với chủ hộ</label><input id="mf-quan-he" type="text" placeholder="Vợ/chồng, con, cha mẹ..."></div>
+        <div class="form-group"><label>Ngày sinh</label><input id="mf-ngay-sinh" type="date"></div>
+        <div class="form-group form-full"><label>Số CCCD/CMND</label><input id="mf-cccd" type="text"></div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeMembersModal()">Đóng</button>
+      <button class="btn btn-primary" onclick="addMember()">＋ Thêm vào danh sách</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ PARCEL MODAL (Thửa đất) ═══════════════════════════════════ -->
+<div class="modal-overlay" id="modal-parcel">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="parcel-modal-title">Thêm thửa đất</h3>
+      <button class="modal-close" onclick="closeParcelModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-section">🗺️ Thông tin thửa đất</div>
+        <div class="form-group"><label>Số tờ</label><input id="plf-so-to" type="text" oninput="debouncedCheckDup()"></div>
+        <div class="form-group"><label>Số thửa</label><input id="plf-so-thua" type="text" oninput="debouncedCheckDup()"></div>
+        <div class="form-group form-full" id="parcel-dup-area" style="display:none">
+          <div id="parcel-dup-suggestions" style="font-size:12px;color:var(--muted)"></div>
+        </div>
+        <div class="form-group form-full" id="parcel-master-chip-area" style="display:none">
+          <span class="chip" id="parcel-master-chip"></span>
+          <button class="btn btn-ghost btn-sm" onclick="unlinkParcelMaster()" style="margin-left:8px">Bỏ liên kết</button>
+        </div>
+        <div class="form-group"><label>Loại đất</label>
+          <select id="plf-loai-dat">
+            <option value="">-- chọn --</option>
+            <option>CLN</option><option>ONT</option><option>LUC</option>
+            <option>BHK</option><option>NTS</option><option>TMD</option><option>SKC</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Nguồn gốc sử dụng</label><input id="plf-nguon-goc" type="text" placeholder="Được giao, nhận chuyển nhượng..."></div>
+        <div class="form-group"><label>Tổng DT (m²)</label><input id="plf-tong-dt" type="number" step="0.1"></div>
+        <div class="form-group"><label>DT thu hồi (m²)</label><input id="plf-dt-thu-hoi" type="number" step="0.1"></div>
+        <div class="form-group"><label>DT còn lại (m²)</label><input id="plf-dt-con-lai" type="number" step="0.1"></div>
+        <div class="form-group"><label>Số GCN</label><input id="plf-so-gcn" type="text"></div>
+        <div class="form-group"><label>Ngày cấp GCN</label><input id="plf-ngay-cap-gcn" type="date"></div>
+        <div class="form-group form-full"><label>Ghi chú</label><textarea id="plf-ghi-chu"></textarea></div>
+
+        <div class="form-section">👥 Chủ sở hữu (có thể đồng sở hữu nhiều người)</div>
+        <div class="form-group form-full">
+          <div id="parcel-owners-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+          <div style="display:flex;gap:8px;align-items:flex-end">
+            <div class="form-group" style="flex:2"><label>Chủ thể</label><select id="plf-owner-select"></select></div>
+            <div class="form-group" style="flex:1"><label>Vai trò</label>
+              <select id="plf-owner-vai-tro"><option>Đại diện đứng tên</option><option>Đồng sở hữu</option></select>
+            </div>
+            <div class="form-group" style="flex:1"><label>Tỷ lệ (%)</label><input id="plf-owner-ty-le" type="number" step="0.1"></div>
+            <button class="btn btn-ghost" onclick="addOwnerRow()">＋ Thêm</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeParcelModal()">Hủy</button>
+      <button class="btn btn-primary" onclick="saveParcel()">Lưu thửa đất</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MAP MODAL ══════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-map">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="map-modal-title">Thêm bản đồ</h3>
+      <button class="modal-close" onclick="closeMapModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-section">🗂️ Thông tin bản đồ</div>
+        <div class="form-group"><label>Loại bản đồ</label>
+          <select id="mf-loai-ban-do">
+            <option value="">-- chọn --</option>
+            <option>Bản đồ GPMB</option>
+            <option>Bản đồ trích lục</option>
+            <option>Bản đồ giao ruộng thời kỳ trước</option>
+            <option>Bản đồ địa chính</option>
+            <option>Khác</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Tên bản đồ</label><input id="mf-ten-ban-do" type="text"></div>
+        <div class="form-group"><label>Ngày lập</label><input id="mf-ngay-lap" type="date"></div>
+        <div class="form-group"><label>Đơn vị lập</label><input id="mf-don-vi-lap" type="text"></div>
+        <div class="form-group form-full"><label>Ghi chú</label><textarea id="mf-ghi-chu"></textarea></div>
+      </div>
+
+      <div id="map-sub-sections" style="display:none;margin-top:18px">
+        <div class="form-section">🗺️ Thửa đất trên bản đồ</div>
+        <div id="map-parcels-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+        <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+          <div class="form-group" style="flex:1"><label>Số tờ trên bản đồ</label><input id="mpf-so-to" type="text" oninput="debouncedMapDupCheck()"></div>
+          <div class="form-group" style="flex:1"><label>Số thửa trên bản đồ</label><input id="mpf-so-thua" type="text" oninput="debouncedMapDupCheck()"></div>
+          <div class="form-group" style="flex:1"><label>Diện tích trên bản đồ (m²)</label><input id="mpf-dien-tich" type="number" step="0.1"></div>
+          <button class="btn btn-ghost" onclick="addMapParcelRow()">＋ Thêm thửa</button>
+        </div>
+        <div id="map-parcel-dup-area" style="display:none;font-size:12px;color:var(--muted);margin-top:4px"></div>
+
+        <div class="form-section" style="margin-top:16px">📎 Tệp đính kèm</div>
+        <div id="map-files-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+        <input type="file" id="map-file-input" style="display:none" accept=".pdf,.docx,.xlsx,.jpg,.jpeg,.png,.dwg,.dxf" onchange="uploadMapFile(this.files[0])">
+        <button class="btn btn-ghost" onclick="document.getElementById('map-file-input').click()">📎 Tải tệp lên</button>
+      </div>
+      <div id="map-sub-hint" style="margin-top:14px;font-size:12px;color:var(--muted)">Lưu thông tin bản đồ trước để có thể thêm thửa đất và tệp đính kèm.</div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeMapModal()">Đóng</button>
+      <button class="btn btn-primary" onclick="saveMap()">Lưu bản đồ</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ ASSET MODAL ════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modal-asset">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="asset-modal-title">Thêm tài sản</h3>
+      <button class="modal-close" onclick="closeAssetModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-section">🌳 Thông tin tài sản (chỉ kiểm đếm, chưa tính đơn giá)</div>
+        <div class="form-group"><label>Nhóm tài sản</label>
+          <select id="af-loai-nhom">
+            <option value="">-- chọn --</option>
+            <option>Nhà ở</option>
+            <option>Công trình xây dựng khác</option>
+            <option>Vật kiến trúc</option>
+            <option>Cây cối</option>
+            <option>Hoa màu</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Loại cụ thể</label><input id="af-loai-cu-the" type="text" placeholder="VD: Nhà cấp 4 mái tôn, Xoài trên 5 năm tuổi..."></div>
+        <div class="form-group"><label>Chủ tài sản</label>
+          <select id="af-chu-tai-san"><option value="">-- chưa rõ / giống chủ đất --</option></select>
+        </div>
+        <div class="form-group"><label>Đơn vị tính</label><input id="af-don-vi-tinh" type="text" placeholder="m², m³, cái, cây..."></div>
+        <div class="form-group"><label>Số lượng/Khối lượng</label><input id="af-so-luong" type="number" step="0.1"></div>
+        <div class="form-group"><label>Thời điểm hình thành</label><input id="af-thoi-diem-hinh-thanh" type="date"></div>
+        <div class="form-group"><label>Tình trạng pháp lý</label>
+          <select id="af-tinh-trang-phap-ly">
+            <option>Đúng quy định</option>
+            <option>Sai mục đích SDD</option>
+            <option>Xây dựng-trồng trái phép</option>
+            <option>Khác</option>
+          </select>
+        </div>
+        <div class="form-group"><label>Ngày kiểm đếm</label><input id="af-ngay-kiem-dem" type="date"></div>
+        <div class="form-group"><label>Người kiểm đếm</label><input id="af-nguoi-kiem-dem" type="text"></div>
+        <div class="form-group form-full"><label>Ghi chú</label><textarea id="af-ghi-chu"></textarea></div>
+
+        <div class="form-section">🗺️ Thửa đất liên quan (tài sản có thể nằm trên nhiều thửa)</div>
+        <div class="form-group form-full">
+          <div id="asset-parcels-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+          <div style="display:flex;gap:8px;align-items:flex-end">
+            <div class="form-group" style="flex:1"><label>Thửa đất</label><select id="af-parcel-select"></select></div>
+            <button class="btn btn-ghost" onclick="addAssetParcelRow()">＋ Thêm thửa</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeAssetModal()">Hủy</button>
+      <button class="btn btn-primary" onclick="saveAsset()">Lưu tài sản</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ DOSSIER MODAL (Hồ sơ Hộ) ═══════════════════════════════════ -->
+<div class="modal-overlay" id="modal-dossier">
+  <div class="modal">
+    <div class="modal-head">
+      <h3 id="dossier-modal-title">Thêm hồ sơ hộ</h3>
+      <button class="modal-close" onclick="closeDossierModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-section">👤 Chủ hộ</div>
+        <div class="form-group form-full">
+          <label>Chủ hộ *</label>
+          <select id="hf-chu-ho" onchange="onDossierChuHoChange()"><option value="">-- chọn chủ hộ --</option></select>
+        </div>
+
+        <div class="form-section">💰 Thưởng tiến độ & Hỗ trợ theo hộ</div>
+        <div class="form-group"><label>Thưởng tiến độ (đồng)</label><input id="hf-tien-thuong-tien-do" type="number"></div>
+        <div class="form-group"><label>Hỗ trợ ổn định đời sống (đồng)</label><input id="hf-ho-tro-on-dinh" type="number"></div>
+        <div class="form-group"><label>Hỗ trợ đào tạo, chuyển đổi nghề (đồng)</label><input id="hf-ho-tro-dao-tao" type="number"></div>
+        <div class="form-group"><label>Hỗ trợ tái định cư (đồng)</label><input id="hf-ho-tro-tdc" type="number"></div>
+        <div class="form-group"><label>Hỗ trợ khác (đồng)</label><input id="hf-ho-tro-khac" type="number"></div>
+        <div class="form-group"><label>Tạm ứng (đồng)</label><input id="hf-tam-ung" type="number"></div>
+        <div class="form-group"><label>Đã chi trả (đồng)</label><input id="hf-da-chi-tra" type="number"></div>
+        <div class="form-group"><label>Ngày chi trả</label><input id="hf-ngay-chi-tra" type="date"></div>
+
+        <div class="form-section">📝 Ý kiến & Ghi chú</div>
+        <div class="form-group form-full">
+          <label>Có đơn ý kiến</label>
+          <select id="hf-co-don"><option value="0">Không</option><option value="1">Có</option></select>
+        </div>
+        <div class="form-group form-full"><label>Nội dung ý kiến</label><textarea id="hf-y-kien"></textarea></div>
+        <div class="form-group form-full"><label>Ghi chú</label><textarea id="hf-ghi-chu"></textarea></div>
+
+        <div class="form-section">🗺️ Quyết định theo thửa (có thể phê duyệt từng thửa vào thời điểm khác nhau)</div>
+        <div class="form-group form-full">
+          <div id="dossier-decisions-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
+          <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
+            <div class="form-group" style="flex:1"><label>Thửa đất</label><select id="hdf-parcel"></select></div>
+            <div class="form-group" style="flex:1"><label>Số QĐ phê duyệt</label><input id="hdf-so-qd" type="text"></div>
+            <div class="form-group" style="flex:1"><label>Ngày QĐ</label><input id="hdf-ngay-qd" type="date"></div>
+            <div class="form-group" style="flex:1"><label>Tiền BT đất</label><input id="hdf-tien-dat" type="number"></div>
+            <div class="form-group" style="flex:1"><label>Tiền BT tài sản</label><input id="hdf-tien-tai-san" type="number"></div>
+            <div class="form-group" style="flex:1"><label>Trạng thái</label><select id="hdf-trang-thai"></select></div>
+            <button class="btn btn-ghost" onclick="addDecisionRow()">＋ Thêm quyết định</button>
+          </div>
+        </div>
+
+        <div class="form-section">🌾 Đối tượng trực tiếp sản xuất nông nghiệp (Nghị định 88/2024/NĐ-CP)</div>
+        <div class="form-group form-full">
+          <div id="dossier-persons-list" style="display:flex;flex-direction:column;gap:4px;font-size:13px;color:var(--muted)">
+            Vui lòng chọn chủ hộ trước để hiện danh sách nhân khẩu.
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeDossierModal()">Hủy</button>
+      <button class="btn btn-primary" onclick="saveDossier()">Lưu hồ sơ hộ</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -438,17 +908,19 @@ function statusColor(ten) {
 // ══════════════════════════════════════════════════════════════
 // PROJECTS
 // ══════════════════════════════════════════════════════════════
+let projectsList = [];
+
 async function loadProjects() {
   const res = await fetch('/api/bt/projects');
   if (!res.ok) return;
-  const projects = await res.json();
+  projectsList = await res.json();
   const list = document.getElementById('proj-list');
   list.innerHTML = '';
-  if (!projects.length) {
+  if (!projectsList.length) {
     list.innerHTML = '<div style="padding:20px;text-align:center;color:var(--muted);font-size:13px">Chưa có dự án nào</div>';
     return;
   }
-  projects.forEach(p => {
+  projectsList.forEach(p => {
     const div = document.createElement('div');
     div.className = 'proj-item' + (p.id === currentProjId ? ' active' : '');
     div.dataset.id = p.id;
@@ -456,7 +928,7 @@ async function loadProjects() {
       <span class="proj-name" title="${esc(p.name)}">${esc(p.name)}</span>
       <span class="proj-cnt">${p.so_ho_so || 0}</span>
       <span class="proj-actions">
-        <button title="Sửa" onclick="event.stopPropagation();openProjModal(${p.id},'${esc(p.name)}','${esc(p.dia_diem||'')}','${esc(p.mo_ta||'')}')">✏️</button>
+        <button title="Sửa" onclick="event.stopPropagation();openProjModal(${p.id})">✏️</button>
         <button title="Xóa" onclick="event.stopPropagation();askDeleteProject(${p.id},'${esc(p.name)}')">🗑️</button>
       </span>`;
     div.addEventListener('click', () => selectProject(p.id, p.name));
@@ -465,6 +937,7 @@ async function loadProjects() {
 }
 
 function selectProject(id, name) {
+  hidePartiesView();
   currentProjId = id;
   currentProjName = name;
   document.getElementById('proj-title').textContent = name;
@@ -476,12 +949,19 @@ function selectProject(id, name) {
 }
 
 // ── Project Modal
-function openProjModal(id, name, diaDiem, moTa) {
+function openProjModal(id) {
   editProjId = id || null;
+  const p = id ? projectsList.find(x => x.id === id) : null;
   document.getElementById('proj-modal-title').textContent = id ? 'Sửa dự án' : 'Tạo dự án mới';
-  document.getElementById('pf-name').value = name || '';
-  document.getElementById('pf-dia-diem').value = diaDiem || '';
-  document.getElementById('pf-mo-ta').value = moTa || '';
+  document.getElementById('pf-name').value = p ? (p.name || '') : '';
+  document.getElementById('pf-dia-diem').value = p ? (p.dia_diem || '') : '';
+  document.getElementById('pf-chu-dau-tu').value = p ? (p.chu_dau_tu || '') : '';
+  document.getElementById('pf-mo-ta').value = p ? (p.mo_ta || '') : '';
+  document.getElementById('pf-dien-tich').value = p ? (p.dien_tich_du_an || '') : '';
+  document.getElementById('pf-ngay-thong-bao-thu-hoi').value = p ? (p.ngay_thong_bao_thu_hoi || '') : '';
+  document.getElementById('pf-ngay-bat-dau').value = p ? (p.ngay_bat_dau || '') : '';
+  document.getElementById('pf-ngay-ket-thuc').value = p ? (p.ngay_ket_thuc_du_kien || '') : '';
+  document.getElementById('pf-ranh-gioi').value = p ? (p.ranh_gioi_du_an || '') : '';
   document.getElementById('modal-proj').classList.add('open');
   setTimeout(() => document.getElementById('pf-name').focus(), 50);
 }
@@ -490,14 +970,29 @@ function closeProjModal() { document.getElementById('modal-proj').classList.remo
 async function saveProject() {
   const name = document.getElementById('pf-name').value.trim();
   if (!name) { toast('Vui lòng nhập tên dự án', true); return; }
-  const body = { name, dia_diem: document.getElementById('pf-dia-diem').value, mo_ta: document.getElementById('pf-mo-ta').value };
+  const ranhGioi = document.getElementById('pf-ranh-gioi').value.trim();
+  if (ranhGioi) {
+    try { JSON.parse(ranhGioi); } catch(e) { toast('Ranh giới dự án phải là GeoJSON hợp lệ (hoặc để trống)', true); return; }
+  }
+  const body = {
+    name,
+    dia_diem: document.getElementById('pf-dia-diem').value,
+    chu_dau_tu: document.getElementById('pf-chu-dau-tu').value,
+    mo_ta: document.getElementById('pf-mo-ta').value,
+    dien_tich_du_an: parseFloat(document.getElementById('pf-dien-tich').value) || 0,
+    ngay_thong_bao_thu_hoi: document.getElementById('pf-ngay-thong-bao-thu-hoi').value || null,
+    ngay_bat_dau: document.getElementById('pf-ngay-bat-dau').value || null,
+    ngay_ket_thuc_du_kien: document.getElementById('pf-ngay-ket-thuc').value || null,
+    ranh_gioi_du_an: ranhGioi || null,
+  };
+  const wasEditing = !!editProjId;
   const url  = editProjId ? `/api/bt/projects/${editProjId}` : '/api/bt/projects';
   const method = editProjId ? 'PUT' : 'POST';
   const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
   if (res.ok) {
     closeProjModal();
     await loadProjects();
-    toast(editProjId ? 'Đã cập nhật dự án' : 'Đã tạo dự án mới');
+    toast(wasEditing ? 'Đã cập nhật dự án' : 'Đã tạo dự án mới');
   } else { toast('Lỗi khi lưu dự án', true); }
 }
 
@@ -512,6 +1007,10 @@ function askDeleteProject(id, name) {
         document.getElementById('no-project').style.display = 'flex';
         document.getElementById('tab-bar').style.display = 'none';
         document.getElementById('tab-dashboard').classList.remove('show');
+        document.getElementById('tab-parcels').style.display = 'none';
+        document.getElementById('tab-maps').style.display = 'none';
+        document.getElementById('tab-assets').style.display = 'none';
+        document.getElementById('tab-dossiers').style.display = 'none';
         document.getElementById('tab-records').classList.remove('show');
       }
       await loadProjects();
@@ -522,14 +1021,1092 @@ function askDeleteProject(id, name) {
 }
 
 // ══════════════════════════════════════════════════════════════
+// PARTIES (Chủ thể / Hộ dân — không gắn theo dự án cụ thể)
+// ══════════════════════════════════════════════════════════════
+let partiesList = [];
+let editPartyId = null;
+let currentMembersPartyId = null;
+let editMemberId = null;
+let partySearchTimer = null;
+
+function showPartiesView() {
+  document.getElementById('proj-title').textContent = 'Chủ thể / Hộ dân';
+  document.getElementById('tab-bar').style.display = 'none';
+  document.getElementById('no-project').style.display = 'none';
+  document.getElementById('tab-dashboard').classList.remove('show');
+  document.getElementById('tab-parcels').style.display = 'none';
+  document.getElementById('tab-maps').style.display = 'none';
+  document.getElementById('tab-assets').style.display = 'none';
+  document.getElementById('tab-dossiers').style.display = 'none';
+  document.getElementById('tab-records').classList.remove('show');
+  document.getElementById('view-parties').style.display = 'flex';
+  document.querySelectorAll('.proj-item').forEach(el => el.classList.remove('active'));
+  const navLink = document.querySelector('.sb-nav a[href="#"]');
+  if (navLink) navLink.classList.add('active');
+  loadParties();
+}
+
+function hidePartiesView() {
+  document.getElementById('view-parties').style.display = 'none';
+  const navLink = document.querySelector('.sb-nav a[href="#"]');
+  if (navLink) navLink.classList.remove('active');
+}
+
+function debouncedLoadParties() {
+  clearTimeout(partySearchTimer);
+  partySearchTimer = setTimeout(loadParties, 300);
+}
+
+async function loadParties() {
+  const q = document.getElementById('party-search-inp').value.trim();
+  const url = q ? `/api/bt/parties?q=${encodeURIComponent(q)}` : '/api/bt/parties';
+  const res = await fetch(url);
+  if (!res.ok) return;
+  partiesList = await res.json();
+  renderPartiesTable();
+}
+
+function renderPartiesTable() {
+  const body = document.getElementById('party-tbl-body');
+  const empty = document.getElementById('party-tbl-empty');
+  if (!partiesList.length) {
+    body.innerHTML = '';
+    empty.style.display = 'flex';
+    return;
+  }
+  empty.style.display = 'none';
+  body.innerHTML = partiesList.map((p, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td>${esc(p.ho_ten)}</td>
+      <td>${esc(p.loai_chu_the)}</td>
+      <td>${esc(p.so_cccd)}</td>
+      <td>${esc(p.so_dien_thoai)}</td>
+      <td>${esc(p.dia_chi_thuong_tru)}</td>
+      <td class="td-ctr"><span class="chip chip-link" onclick="openMembersModal(${p.id},'${esc(p.ho_ten)}')">${p.so_nhan_khau || 0} người</span></td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="openPartyModal(${p.id})">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="askDeleteParty(${p.id},'${esc(p.ho_ten)}')">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function openPartyModal(id) {
+  const p = id ? partiesList.find(x => x.id === id) : null;
+  editPartyId = p ? p.id : null;
+  document.getElementById('party-modal-title').textContent = p ? 'Sửa chủ thể' : 'Thêm chủ thể';
+  document.getElementById('pf2-loai-chu-the').value = p ? p.loai_chu_the : 'Cá nhân';
+  document.getElementById('pf2-ho-ten').value = p ? p.ho_ten : '';
+  document.getElementById('pf2-gioi-tinh').value = p ? (p.gioi_tinh || '') : '';
+  document.getElementById('pf2-ngay-sinh').value = p ? (p.ngay_sinh || '') : '';
+  document.getElementById('pf2-cccd').value = p ? (p.so_cccd || '') : '';
+  document.getElementById('pf2-ngay-cap-cccd').value = p ? (p.ngay_cap_cccd || '') : '';
+  document.getElementById('pf2-noi-cap-cccd').value = p ? (p.noi_cap_cccd || '') : '';
+  document.getElementById('pf2-sdt').value = p ? (p.so_dien_thoai || '') : '';
+  document.getElementById('pf2-dia-chi').value = p ? (p.dia_chi_thuong_tru || '') : '';
+  document.getElementById('pf2-ghi-chu').value = p ? (p.ghi_chu || '') : '';
+  document.getElementById('modal-party').classList.add('open');
+  setTimeout(() => document.getElementById('pf2-ho-ten').focus(), 50);
+}
+function closePartyModal() { document.getElementById('modal-party').classList.remove('open'); editPartyId = null; }
+
+async function saveParty() {
+  const ho_ten = document.getElementById('pf2-ho-ten').value.trim();
+  if (!ho_ten) { toast('Vui lòng nhập họ tên', true); return; }
+  const body = {
+    loai_chu_the: document.getElementById('pf2-loai-chu-the').value,
+    ho_ten,
+    gioi_tinh: document.getElementById('pf2-gioi-tinh').value,
+    ngay_sinh: document.getElementById('pf2-ngay-sinh').value || null,
+    so_cccd: document.getElementById('pf2-cccd').value,
+    ngay_cap_cccd: document.getElementById('pf2-ngay-cap-cccd').value || null,
+    noi_cap_cccd: document.getElementById('pf2-noi-cap-cccd').value,
+    so_dien_thoai: document.getElementById('pf2-sdt').value,
+    dia_chi_thuong_tru: document.getElementById('pf2-dia-chi').value,
+    ghi_chu: document.getElementById('pf2-ghi-chu').value,
+  };
+  const url = editPartyId ? `/api/bt/parties/${editPartyId}` : '/api/bt/parties';
+  const method = editPartyId ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) {
+    closePartyModal();
+    await loadParties();
+    toast(editPartyId ? 'Đã cập nhật chủ thể' : 'Đã thêm chủ thể mới');
+  } else { toast('Lỗi khi lưu chủ thể', true); }
+}
+
+function askDeleteParty(id, name) {
+  document.getElementById('confirm-msg').textContent = `Xóa chủ thể "${name}"? Toàn bộ nhân khẩu của chủ thể này cũng sẽ bị xóa. Hành động này không thể hoàn tác.`;
+  confirmCb = async () => {
+    const res = await fetch(`/api/bt/parties/${id}`, {method:'DELETE'});
+    if (res.ok) { await loadParties(); toast('Đã xóa chủ thể'); }
+    else toast('Lỗi khi xóa', true);
+  };
+  document.getElementById('modal-confirm').classList.add('open');
+}
+
+// ── Household members (Nhân khẩu) ──
+async function openMembersModal(partyId, partyName) {
+  currentMembersPartyId = partyId;
+  document.getElementById('members-modal-title').textContent = `Nhân khẩu — ${partyName}`;
+  resetMemberForm();
+  document.getElementById('modal-members').classList.add('open');
+  await loadMembers();
+}
+function closeMembersModal() {
+  document.getElementById('modal-members').classList.remove('open');
+  currentMembersPartyId = null;
+  loadParties(); // refresh member counts on parent table
+}
+function resetMemberForm() {
+  editMemberId = null;
+  document.getElementById('mf-ho-ten').value = '';
+  document.getElementById('mf-quan-he').value = '';
+  document.getElementById('mf-ngay-sinh').value = '';
+  document.getElementById('mf-cccd').value = '';
+}
+
+let currentMembersList = [];
+
+async function loadMembers() {
+  const res = await fetch(`/api/bt/parties/${currentMembersPartyId}/members`);
+  if (!res.ok) return;
+  currentMembersList = await res.json();
+  const body = document.getElementById('members-tbl-body');
+  const empty = document.getElementById('members-empty');
+  if (!currentMembersList.length) {
+    body.innerHTML = '';
+    empty.style.display = 'block';
+    return;
+  }
+  empty.style.display = 'none';
+  body.innerHTML = currentMembersList.map(m => `
+    <tr>
+      <td>${esc(m.ho_ten)}</td>
+      <td>${esc(m.quan_he_voi_chu_ho)}</td>
+      <td>${esc(m.ngay_sinh || '')}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="editMemberRow(${m.id})">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="deleteMember(${m.id})">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+function editMemberRow(id) {
+  const m = currentMembersList.find(x => x.id === id);
+  if (!m) return;
+  editMemberId = m.id;
+  document.getElementById('mf-ho-ten').value = m.ho_ten;
+  document.getElementById('mf-quan-he').value = m.quan_he_voi_chu_ho || '';
+  document.getElementById('mf-ngay-sinh').value = m.ngay_sinh || '';
+  document.getElementById('mf-cccd').value = m.so_cccd || '';
+}
+
+async function addMember() {
+  const ho_ten = document.getElementById('mf-ho-ten').value.trim();
+  if (!ho_ten) { toast('Vui lòng nhập họ tên nhân khẩu', true); return; }
+  const body = {
+    ho_ten,
+    quan_he_voi_chu_ho: document.getElementById('mf-quan-he').value,
+    ngay_sinh: document.getElementById('mf-ngay-sinh').value || null,
+    so_cccd: document.getElementById('mf-cccd').value,
+  };
+  const url = editMemberId ? `/api/bt/members/${editMemberId}` : `/api/bt/parties/${currentMembersPartyId}/members`;
+  const method = editMemberId ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) {
+    resetMemberForm();
+    await loadMembers();
+    toast(editMemberId ? 'Đã cập nhật nhân khẩu' : 'Đã thêm nhân khẩu');
+  } else { toast('Lỗi khi lưu nhân khẩu', true); }
+}
+
+function deleteMember(id) {
+  document.getElementById('confirm-msg').textContent = 'Xóa nhân khẩu này? Hành động này không thể hoàn tác.';
+  confirmCb = async () => {
+    const res = await fetch(`/api/bt/members/${id}`, {method:'DELETE'});
+    if (res.ok) { await loadMembers(); toast('Đã xóa nhân khẩu'); }
+    else toast('Lỗi khi xóa', true);
+  };
+  document.getElementById('modal-confirm').classList.add('open');
+}
+
+// ══════════════════════════════════════════════════════════════
+// PARCELS (Thửa đất — gắn theo dự án)
+// ══════════════════════════════════════════════════════════════
+let parcelsList = [];
+let editParcelId = null;
+let parcelSearchTimer = null;
+let dupCheckTimer = null;
+let selectedMasterId = null;
+let currentParcelOwners = [];
+let ownerPickerParties = [];
+
+function debouncedLoadParcels() {
+  clearTimeout(parcelSearchTimer);
+  parcelSearchTimer = setTimeout(loadParcels, 300);
+}
+
+async function loadParcels() {
+  if (!currentProjId) return;
+  const q = document.getElementById('parcel-search-inp').value.trim();
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  const res = await fetch(`/api/bt/projects/${currentProjId}/parcels?${params}`);
+  if (!res.ok) return;
+  parcelsList = await res.json();
+  renderParcelsTable();
+}
+
+function renderParcelsTable() {
+  const body = document.getElementById('parcel-tbl-body');
+  const empty = document.getElementById('parcel-tbl-empty');
+  if (!parcelsList.length) { body.innerHTML = ''; empty.style.display = 'flex'; return; }
+  empty.style.display = 'none';
+  body.innerHTML = parcelsList.map((p, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td>${esc(p.so_to)}</td>
+      <td>${esc(p.so_thua)}</td>
+      <td>${esc(p.loai_dat)}</td>
+      <td class="td-num">${fmt1(p.tong_dien_tich)}</td>
+      <td class="td-num">${fmt1(p.dien_tich_thu_hoi)}</td>
+      <td>${esc(p.chu_so_huu || '')}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="openParcelModal(${p.id})">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="askDeleteParcel(${p.id})">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function openParcelModal(id) {
+  editParcelId = id || null;
+  selectedMasterId = null;
+  currentParcelOwners = [];
+  document.getElementById('parcel-modal-title').textContent = id ? 'Sửa thửa đất' : 'Thêm thửa đất';
+  document.getElementById('parcel-dup-area').style.display = 'none';
+  document.getElementById('parcel-master-chip-area').style.display = 'none';
+
+  const pres = await fetch('/api/bt/parties');
+  ownerPickerParties = pres.ok ? await pres.json() : [];
+  document.getElementById('plf-owner-select').innerHTML =
+    ownerPickerParties.map(p => `<option value="${p.id}">${esc(p.ho_ten)}</option>`).join('');
+
+  const fields = ['so-to','so-thua','loai-dat','nguon-goc','tong-dt','dt-thu-hoi','dt-con-lai','so-gcn','ngay-cap-gcn','ghi-chu'];
+  fields.forEach(f => document.getElementById('plf-'+f).value = '');
+
+  if (id) {
+    const res = await fetch(`/api/bt/parcels/${id}`);
+    if (res.ok) {
+      const p = await res.json();
+      document.getElementById('plf-so-to').value = p.so_to || '';
+      document.getElementById('plf-so-thua').value = p.so_thua || '';
+      document.getElementById('plf-loai-dat').value = p.loai_dat || '';
+      document.getElementById('plf-nguon-goc').value = p.nguon_goc_su_dung || '';
+      document.getElementById('plf-tong-dt').value = p.tong_dien_tich || '';
+      document.getElementById('plf-dt-thu-hoi').value = p.dien_tich_thu_hoi || '';
+      document.getElementById('plf-dt-con-lai').value = p.dien_tich_con_lai || '';
+      document.getElementById('plf-so-gcn').value = p.so_gcn || '';
+      document.getElementById('plf-ngay-cap-gcn').value = p.ngay_cap_gcn || '';
+      document.getElementById('plf-ghi-chu').value = p.ghi_chu || '';
+      selectedMasterId = p.parcel_master_id || null;
+      currentParcelOwners = (p.owners || []).map(o => ({
+        chu_the_id: o.chu_the_id, ho_ten: o.ho_ten, vai_tro: o.vai_tro, ty_le_so_huu: o.ty_le_so_huu
+      }));
+      if (selectedMasterId) showMasterChip(selectedMasterId);
+    }
+  }
+  renderOwnersList();
+  document.getElementById('modal-parcel').classList.add('open');
+}
+function closeParcelModal() { document.getElementById('modal-parcel').classList.remove('open'); editParcelId = null; }
+
+function debouncedCheckDup() {
+  clearTimeout(dupCheckTimer);
+  dupCheckTimer = setTimeout(checkDup, 400);
+}
+
+async function checkDup() {
+  const soTo = document.getElementById('plf-so-to').value.trim();
+  const soThua = document.getElementById('plf-so-thua').value.trim();
+  const area = document.getElementById('parcel-dup-area');
+  const box = document.getElementById('parcel-dup-suggestions');
+  if (!soTo && !soThua) { area.style.display = 'none'; return; }
+  const q = soTo || soThua;
+  const res = await fetch(`/api/bt/parcel-master/search?q=${encodeURIComponent(q)}`);
+  if (!res.ok) return;
+  const results = await res.json();
+  if (!results.length) { area.style.display = 'none'; return; }
+  area.style.display = 'block';
+  box.innerHTML = 'Có thể trùng với thửa gốc đã có: ' + results.map(m =>
+    `<span class="chip chip-link" style="margin-right:6px" onclick="linkParcelMaster(${m.id},'${esc(m.so_to_hien_hanh)}','${esc(m.so_thua_hien_hanh)}')">Tờ ${esc(m.so_to_hien_hanh)} - Thửa ${esc(m.so_thua_hien_hanh)}</span>`
+  ).join('');
+}
+
+function linkParcelMaster(id, soTo, soThua) {
+  selectedMasterId = id;
+  showMasterChip(id, soTo, soThua);
+  document.getElementById('parcel-dup-area').style.display = 'none';
+}
+
+function unlinkParcelMaster() {
+  selectedMasterId = null;
+  document.getElementById('parcel-master-chip-area').style.display = 'none';
+}
+
+function showMasterChip(id, soTo, soThua) {
+  document.getElementById('parcel-master-chip-area').style.display = 'block';
+  document.getElementById('parcel-master-chip').textContent =
+    soTo ? `Đã liên kết: Tờ ${soTo} - Thửa ${soThua}` : `Đã liên kết thửa gốc #${id}`;
+}
+
+function addOwnerRow() {
+  const sel = document.getElementById('plf-owner-select');
+  const chuTheId = parseInt(sel.value);
+  if (!chuTheId) { toast('Vui lòng chọn chủ thể', true); return; }
+  if (currentParcelOwners.some(o => o.chu_the_id === chuTheId)) { toast('Chủ thể này đã có trong danh sách', true); return; }
+  const party = ownerPickerParties.find(p => p.id === chuTheId);
+  const vaiTro = document.getElementById('plf-owner-vai-tro').value;
+  const tyLe = document.getElementById('plf-owner-ty-le').value;
+  currentParcelOwners.push({
+    chu_the_id: chuTheId, ho_ten: party ? party.ho_ten : '', vai_tro: vaiTro,
+    ty_le_so_huu: tyLe ? parseFloat(tyLe) : null
+  });
+  document.getElementById('plf-owner-ty-le').value = '';
+  renderOwnersList();
+}
+
+function removeOwnerRow(chuTheId) {
+  currentParcelOwners = currentParcelOwners.filter(o => o.chu_the_id !== chuTheId);
+  renderOwnersList();
+}
+
+function renderOwnersList() {
+  const box = document.getElementById('parcel-owners-list');
+  if (!currentParcelOwners.length) {
+    box.innerHTML = '<div style="color:var(--muted);font-size:12px">Chưa có chủ sở hữu nào</div>';
+    return;
+  }
+  box.innerHTML = currentParcelOwners.map(o => `
+    <div style="display:flex;align-items:center;gap:8px;background:var(--card);padding:6px 10px;border-radius:6px">
+      <span style="flex:1;font-size:13px">${esc(o.ho_ten)} — ${esc(o.vai_tro)}${o.ty_le_so_huu ? ' ('+o.ty_le_so_huu+'%)' : ''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="removeOwnerRow(${o.chu_the_id})">✕</button>
+    </div>
+  `).join('');
+}
+
+async function saveParcel() {
+  const body = {
+    parcel_master_id: selectedMasterId,
+    so_to: document.getElementById('plf-so-to').value,
+    so_thua: document.getElementById('plf-so-thua').value,
+    loai_dat: document.getElementById('plf-loai-dat').value,
+    nguon_goc_su_dung: document.getElementById('plf-nguon-goc').value,
+    tong_dien_tich: parseFloat(document.getElementById('plf-tong-dt').value) || 0,
+    dien_tich_thu_hoi: parseFloat(document.getElementById('plf-dt-thu-hoi').value) || 0,
+    dien_tich_con_lai: parseFloat(document.getElementById('plf-dt-con-lai').value) || 0,
+    so_gcn: document.getElementById('plf-so-gcn').value,
+    ngay_cap_gcn: document.getElementById('plf-ngay-cap-gcn').value || null,
+    ghi_chu: document.getElementById('plf-ghi-chu').value,
+    owners: currentParcelOwners.map(o => ({ chu_the_id: o.chu_the_id, vai_tro: o.vai_tro, ty_le_so_huu: o.ty_le_so_huu })),
+  };
+  const wasEditing = !!editParcelId;
+  const url = editParcelId ? `/api/bt/parcels/${editParcelId}` : `/api/bt/projects/${currentProjId}/parcels`;
+  const method = editParcelId ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) {
+    closeParcelModal();
+    await loadParcels();
+    toast(wasEditing ? 'Đã cập nhật thửa đất' : 'Đã thêm thửa đất mới');
+  } else { toast('Lỗi khi lưu thửa đất', true); }
+  return body;
+}
+
+function askDeleteParcel(id) {
+  document.getElementById('confirm-msg').textContent = 'Xóa thửa đất này? Toàn bộ liên kết chủ sở hữu, tài sản gắn với thửa cũng sẽ bị xóa. Hành động này không thể hoàn tác.';
+  confirmCb = async () => {
+    const res = await fetch(`/api/bt/parcels/${id}`, {method:'DELETE'});
+    if (res.ok) { await loadParcels(); toast('Đã xóa thửa đất'); }
+    else toast('Lỗi khi xóa', true);
+  };
+  document.getElementById('modal-confirm').classList.add('open');
+}
+
+// ══════════════════════════════════════════════════════════════
+// MAPS (Bản đồ — gắn theo dự án, đính kèm thửa gốc + file)
+// ══════════════════════════════════════════════════════════════
+let mapsList = [];
+let editMapId = null;
+let mapSearchTimer = null;
+let mapDupCheckTimer = null;
+let selectedMapParcelMasterId = null;
+let currentMapParcels = [];
+let currentMapFiles = [];
+
+function debouncedLoadMaps() {
+  clearTimeout(mapSearchTimer);
+  mapSearchTimer = setTimeout(loadMaps, 300);
+}
+
+async function loadMaps() {
+  if (!currentProjId) return;
+  const q = document.getElementById('map-search-inp').value.trim();
+  const params = new URLSearchParams({ project_id: currentProjId });
+  if (q) params.set('q', q);
+  const res = await fetch(`/api/bt/maps?${params}`);
+  if (!res.ok) return;
+  mapsList = await res.json();
+  renderMapsTable();
+}
+
+function renderMapsTable() {
+  const body = document.getElementById('map-tbl-body');
+  const empty = document.getElementById('map-tbl-empty');
+  if (!mapsList.length) { body.innerHTML = ''; empty.style.display = 'flex'; return; }
+  empty.style.display = 'none';
+  body.innerHTML = mapsList.map((m, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td>${esc(m.loai_ban_do)}</td>
+      <td>${esc(m.ten_ban_do)}</td>
+      <td>${esc(m.ngay_lap || '')}</td>
+      <td>${esc(m.don_vi_lap)}</td>
+      <td class="td-ctr">${m.so_thua || 0}</td>
+      <td class="td-ctr">${m.so_file || 0}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="openMapModal(${m.id})">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="askDeleteMap(${m.id})">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function openMapModal(id) {
+  editMapId = id || null;
+  selectedMapParcelMasterId = null;
+  currentMapParcels = [];
+  currentMapFiles = [];
+  document.getElementById('map-modal-title').textContent = id ? 'Sửa bản đồ' : 'Thêm bản đồ';
+  ['loai-ban-do','ten-ban-do','ngay-lap','don-vi-lap','ghi-chu'].forEach(f => {
+    const el = document.getElementById('mf-'+f);
+    if (el) el.value = '';
+  });
+  document.getElementById('mpf-so-to').value = '';
+  document.getElementById('mpf-so-thua').value = '';
+  document.getElementById('mpf-dien-tich').value = '';
+  document.getElementById('map-parcel-dup-area').style.display = 'none';
+
+  if (id) {
+    const res = await fetch(`/api/bt/maps/${id}`);
+    if (res.ok) {
+      const m = await res.json();
+      document.getElementById('mf-loai-ban-do').value = m.loai_ban_do || '';
+      document.getElementById('mf-ten-ban-do').value = m.ten_ban_do || '';
+      document.getElementById('mf-ngay-lap').value = m.ngay_lap || '';
+      document.getElementById('mf-don-vi-lap').value = m.don_vi_lap || '';
+      document.getElementById('mf-ghi-chu').value = m.ghi_chu || '';
+      currentMapParcels = m.parcels || [];
+      currentMapFiles = m.files || [];
+    }
+    document.getElementById('map-sub-sections').style.display = 'block';
+    document.getElementById('map-sub-hint').style.display = 'none';
+  } else {
+    document.getElementById('map-sub-sections').style.display = 'none';
+    document.getElementById('map-sub-hint').style.display = 'block';
+  }
+  renderMapParcelsList();
+  renderMapFilesList();
+  document.getElementById('modal-map').classList.add('open');
+}
+
+function closeMapModal() {
+  document.getElementById('modal-map').classList.remove('open');
+  editMapId = null;
+  loadMaps();
+}
+
+async function saveMap() {
+  const body = {
+    project_id: currentProjId,
+    loai_ban_do: document.getElementById('mf-loai-ban-do').value,
+    ten_ban_do: document.getElementById('mf-ten-ban-do').value,
+    ngay_lap: document.getElementById('mf-ngay-lap').value || null,
+    don_vi_lap: document.getElementById('mf-don-vi-lap').value,
+    ghi_chu: document.getElementById('mf-ghi-chu').value,
+  };
+  const url = editMapId ? `/api/bt/maps/${editMapId}` : '/api/bt/maps';
+  const method = editMapId ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) {
+    const data = await res.json();
+    if (!editMapId) {
+      editMapId = data.id;
+      document.getElementById('map-modal-title').textContent = 'Sửa bản đồ';
+      document.getElementById('map-sub-sections').style.display = 'block';
+      document.getElementById('map-sub-hint').style.display = 'none';
+    }
+    toast('Đã lưu bản đồ');
+    loadMaps();
+  } else { toast('Lỗi khi lưu bản đồ', true); }
+}
+
+function askDeleteMap(id) {
+  document.getElementById('confirm-msg').textContent = 'Xóa bản đồ này? Toàn bộ liên kết thửa đất và tệp đính kèm cũng sẽ bị xóa. Hành động này không thể hoàn tác.';
+  confirmCb = async () => {
+    const res = await fetch(`/api/bt/maps/${id}`, {method:'DELETE'});
+    if (res.ok) { await loadMaps(); toast('Đã xóa bản đồ'); }
+    else toast('Lỗi khi xóa', true);
+  };
+  document.getElementById('modal-confirm').classList.add('open');
+}
+
+function debouncedMapDupCheck() {
+  clearTimeout(mapDupCheckTimer);
+  mapDupCheckTimer = setTimeout(checkMapParcelDup, 400);
+}
+
+async function checkMapParcelDup() {
+  const soTo = document.getElementById('mpf-so-to').value.trim();
+  const soThua = document.getElementById('mpf-so-thua').value.trim();
+  const area = document.getElementById('map-parcel-dup-area');
+  if (!soTo && !soThua) { area.style.display = 'none'; selectedMapParcelMasterId = null; return; }
+  const q = soTo || soThua;
+  const res = await fetch(`/api/bt/parcel-master/search?q=${encodeURIComponent(q)}`);
+  if (!res.ok) return;
+  const results = await res.json();
+  if (!results.length) { area.style.display = 'none'; selectedMapParcelMasterId = null; return; }
+  area.style.display = 'block';
+  area.innerHTML = 'Liên kết với thửa gốc: ' + results.map(m =>
+    `<span class="chip chip-link" style="margin-right:6px" onclick="linkMapParcelMaster(${m.id},'${esc(m.so_to_hien_hanh)}','${esc(m.so_thua_hien_hanh)}')">Tờ ${esc(m.so_to_hien_hanh)} - Thửa ${esc(m.so_thua_hien_hanh)}</span>`
+  ).join('') + ' <span style="opacity:.7">(hoặc bỏ qua để chỉ ghi số tờ/thửa trên bản đồ)</span>';
+}
+
+function linkMapParcelMaster(id, soTo, soThua) {
+  selectedMapParcelMasterId = id;
+  document.getElementById('map-parcel-dup-area').innerHTML =
+    `<span class="chip">Đã liên kết: Tờ ${esc(soTo)} - Thửa ${esc(soThua)}</span> <button class="btn btn-ghost btn-sm" onclick="unlinkMapParcelMaster()">Bỏ liên kết</button>`;
+}
+
+function unlinkMapParcelMaster() {
+  selectedMapParcelMasterId = null;
+  document.getElementById('map-parcel-dup-area').style.display = 'none';
+}
+
+async function addMapParcelRow() {
+  if (!editMapId) { toast('Vui lòng lưu thông tin bản đồ trước', true); return; }
+  const soTo = document.getElementById('mpf-so-to').value.trim();
+  const soThua = document.getElementById('mpf-so-thua').value.trim();
+  const dienTich = parseFloat(document.getElementById('mpf-dien-tich').value) || 0;
+  if (!soTo && !soThua) { toast('Vui lòng nhập số tờ hoặc số thửa', true); return; }
+  const body = {
+    parcel_master_id: selectedMapParcelMasterId,
+    so_to_tren_ban_do: soTo, so_thua_tren_ban_do: soThua, dien_tich_tren_ban_do: dienTich
+  };
+  const res = await fetch(`/api/bt/maps/${editMapId}/parcels`, { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) {
+    document.getElementById('mpf-so-to').value = '';
+    document.getElementById('mpf-so-thua').value = '';
+    document.getElementById('mpf-dien-tich').value = '';
+    document.getElementById('map-parcel-dup-area').style.display = 'none';
+    selectedMapParcelMasterId = null;
+    await reloadMapDetail();
+    toast('Đã thêm thửa vào bản đồ');
+  } else { toast('Lỗi khi thêm thửa', true); }
+}
+
+async function removeMapParcelRow(linkId) {
+  const res = await fetch(`/api/bt/map-parcels/${linkId}`, {method:'DELETE'});
+  if (res.ok) { await reloadMapDetail(); toast('Đã gỡ thửa khỏi bản đồ'); }
+  else toast('Lỗi khi gỡ thửa', true);
+}
+
+function renderMapParcelsList() {
+  const box = document.getElementById('map-parcels-list');
+  if (!currentMapParcels.length) {
+    box.innerHTML = '<div style="color:var(--muted);font-size:12px">Chưa có thửa đất nào gắn với bản đồ này</div>';
+    return;
+  }
+  box.innerHTML = currentMapParcels.map(p => `
+    <div style="display:flex;align-items:center;gap:8px;background:var(--card);padding:6px 10px;border-radius:6px">
+      <span style="flex:1;font-size:13px">Tờ ${esc(p.so_to_tren_ban_do)} - Thửa ${esc(p.so_thua_tren_ban_do)}${p.dien_tich_tren_ban_do ? ' — ' + fmt1(p.dien_tich_tren_ban_do) + ' m²' : ''}${p.parcel_master_id ? ' <span class="chip" style="margin-left:4px">liên kết thửa gốc</span>' : ''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="removeMapParcelRow(${p.id})">✕</button>
+    </div>
+  `).join('');
+}
+
+async function uploadMapFile(file) {
+  if (!file || !editMapId) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await fetch(`/api/bt/maps/${editMapId}/files`, { method: 'POST', body: fd });
+  document.getElementById('map-file-input').value = '';
+  if (res.ok) { await reloadMapDetail(); toast('Đã tải tệp lên'); }
+  else { const data = await res.json().catch(()=>({})); toast(data.error || 'Lỗi khi tải tệp lên', true); }
+}
+
+function askDeleteMapFile(fileId) {
+  document.getElementById('confirm-msg').textContent = 'Xóa tệp đính kèm này? Hành động không thể hoàn tác.';
+  confirmCb = async () => {
+    const res = await fetch(`/api/bt/map-files/${fileId}`, {method:'DELETE'});
+    if (res.ok) { await reloadMapDetail(); toast('Đã xóa tệp'); }
+    else toast('Lỗi khi xóa tệp', true);
+  };
+  document.getElementById('modal-confirm').classList.add('open');
+}
+
+function renderMapFilesList() {
+  const box = document.getElementById('map-files-list');
+  if (!currentMapFiles.length) {
+    box.innerHTML = '<div style="color:var(--muted);font-size:12px">Chưa có tệp đính kèm nào</div>';
+    return;
+  }
+  box.innerHTML = currentMapFiles.map(f => `
+    <div style="display:flex;align-items:center;gap:8px;background:var(--card);padding:6px 10px;border-radius:6px">
+      <span style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📎 ${esc(f.file_name)}</span>
+      <button class="btn btn-ghost btn-sm" onclick="window.open('/api/bt/map-files/${f.id}/download','_blank')">⬇️</button>
+      <button class="btn btn-ghost btn-sm" onclick="askDeleteMapFile(${f.id})">✕</button>
+    </div>
+  `).join('');
+}
+
+async function reloadMapDetail() {
+  if (!editMapId) return;
+  const res = await fetch(`/api/bt/maps/${editMapId}`);
+  if (!res.ok) return;
+  const m = await res.json();
+  currentMapParcels = m.parcels || [];
+  currentMapFiles = m.files || [];
+  renderMapParcelsList();
+  renderMapFilesList();
+}
+
+// ══════════════════════════════════════════════════════════════
+// ASSETS (Tài sản trên đất — kiểm đếm khách quan, gắn nhiều thửa)
+// ══════════════════════════════════════════════════════════════
+let assetsList = [];
+let editAssetId = null;
+let assetSearchTimer = null;
+let assetPickerParcels = [];
+let currentAssetParcels = [];
+
+function debouncedLoadAssets() {
+  clearTimeout(assetSearchTimer);
+  assetSearchTimer = setTimeout(loadAssets, 300);
+}
+
+async function loadAssets() {
+  if (!currentProjId) return;
+  const q = document.getElementById('asset-search-inp').value.trim();
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  const res = await fetch(`/api/bt/projects/${currentProjId}/assets?${params}`);
+  if (!res.ok) return;
+  assetsList = await res.json();
+  renderAssetsTable();
+}
+
+function renderAssetsTable() {
+  const body = document.getElementById('asset-tbl-body');
+  const empty = document.getElementById('asset-tbl-empty');
+  if (!assetsList.length) { body.innerHTML = ''; empty.style.display = 'flex'; return; }
+  empty.style.display = 'none';
+  body.innerHTML = assetsList.map((a, i) => `
+    <tr>
+      <td>${i+1}</td>
+      <td>${esc(a.loai_tai_san_nhom)}</td>
+      <td>${esc(a.loai_tai_san_cu_the)}</td>
+      <td class="td-num">${fmt1(a.so_luong_khoi_luong)}</td>
+      <td>${esc(a.don_vi_tinh)}</td>
+      <td>${esc(a.chu_tai_san_ten || '')}</td>
+      <td>${esc(a.thua_dat || '')}</td>
+      <td>${esc(a.tinh_trang_phap_ly || '')}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="openAssetModal(${a.id})">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="askDeleteAsset(${a.id})">🗑️</button>
+      </td>
+    </tr>
+  `).join('');
+}
+
+async function openAssetModal(id) {
+  editAssetId = id || null;
+  currentAssetParcels = [];
+  document.getElementById('asset-modal-title').textContent = id ? 'Sửa tài sản' : 'Thêm tài sản';
+
+  const [ptRes, plRes] = await Promise.all([
+    fetch('/api/bt/parties'),
+    fetch(`/api/bt/projects/${currentProjId}/parcels`)
+  ]);
+  const parties = ptRes.ok ? await ptRes.json() : [];
+  assetPickerParcels = plRes.ok ? await plRes.json() : [];
+  document.getElementById('af-chu-tai-san').innerHTML =
+    '<option value="">-- chưa rõ / giống chủ đất --</option>' +
+    parties.map(p => `<option value="${p.id}">${esc(p.ho_ten)}</option>`).join('');
+  document.getElementById('af-parcel-select').innerHTML =
+    assetPickerParcels.map(p => `<option value="${p.id}">Tờ ${esc(p.so_to)} - Thửa ${esc(p.so_thua)}</option>`).join('');
+
+  const fields = ['loai-nhom','loai-cu-the','don-vi-tinh','so-luong','thoi-diem-hinh-thanh','ngay-kiem-dem','nguoi-kiem-dem','ghi-chu'];
+  fields.forEach(f => { const el = document.getElementById('af-'+f); if (el) el.value = ''; });
+  document.getElementById('af-chu-tai-san').value = '';
+  document.getElementById('af-tinh-trang-phap-ly').value = 'Đúng quy định';
+
+  if (id) {
+    const res = await fetch(`/api/bt/assets/${id}`);
+    if (res.ok) {
+      const a = await res.json();
+      document.getElementById('af-loai-nhom').value = a.loai_tai_san_nhom || '';
+      document.getElementById('af-loai-cu-the').value = a.loai_tai_san_cu_the || '';
+      document.getElementById('af-chu-tai-san').value = a.chu_tai_san_id || '';
+      document.getElementById('af-don-vi-tinh').value = a.don_vi_tinh || '';
+      document.getElementById('af-so-luong').value = a.so_luong_khoi_luong || '';
+      document.getElementById('af-thoi-diem-hinh-thanh').value = a.thoi_diem_hinh_thanh || '';
+      document.getElementById('af-tinh-trang-phap-ly').value = a.tinh_trang_phap_ly || 'Đúng quy định';
+      document.getElementById('af-ngay-kiem-dem').value = a.ngay_kiem_dem || '';
+      document.getElementById('af-nguoi-kiem-dem').value = a.nguoi_kiem_dem || '';
+      document.getElementById('af-ghi-chu').value = a.ghi_chu || '';
+      currentAssetParcels = (a.parcels || []).map(p => ({ parcel_id: p.parcel_id, so_to: p.so_to, so_thua: p.so_thua }));
+    }
+  }
+  renderAssetParcelsList();
+  document.getElementById('modal-asset').classList.add('open');
+}
+
+function closeAssetModal() { document.getElementById('modal-asset').classList.remove('open'); editAssetId = null; }
+
+function addAssetParcelRow() {
+  const sel = document.getElementById('af-parcel-select');
+  const parcelId = parseInt(sel.value);
+  if (!parcelId) { toast('Vui lòng chọn thửa đất', true); return; }
+  if (currentAssetParcels.some(p => p.parcel_id === parcelId)) { toast('Thửa đất này đã có trong danh sách', true); return; }
+  const parcel = assetPickerParcels.find(p => p.id === parcelId);
+  currentAssetParcels.push({ parcel_id: parcelId, so_to: parcel ? parcel.so_to : '', so_thua: parcel ? parcel.so_thua : '' });
+  renderAssetParcelsList();
+}
+
+function removeAssetParcelRow(parcelId) {
+  currentAssetParcels = currentAssetParcels.filter(p => p.parcel_id !== parcelId);
+  renderAssetParcelsList();
+}
+
+function renderAssetParcelsList() {
+  const box = document.getElementById('asset-parcels-list');
+  if (!currentAssetParcels.length) {
+    box.innerHTML = '<div style="color:var(--muted);font-size:12px">Chưa gắn thửa đất nào</div>';
+    return;
+  }
+  box.innerHTML = currentAssetParcels.map(p => `
+    <div style="display:flex;align-items:center;gap:8px;background:var(--card);padding:6px 10px;border-radius:6px">
+      <span style="flex:1;font-size:13px">Tờ ${esc(p.so_to)} - Thửa ${esc(p.so_thua)}</span>
+      <button class="btn btn-ghost btn-sm" onclick="removeAssetParcelRow(${p.parcel_id})">✕</button>
+    </div>
+  `).join('');
+}
+
+async function saveAsset() {
+  const body = {
+    loai_tai_san_nhom: document.getElementById('af-loai-nhom').value,
+    loai_tai_san_cu_the: document.getElementById('af-loai-cu-the').value,
+    chu_tai_san_id: document.getElementById('af-chu-tai-san').value || null,
+    don_vi_tinh: document.getElementById('af-don-vi-tinh').value,
+    so_luong_khoi_luong: parseFloat(document.getElementById('af-so-luong').value) || 0,
+    thoi_diem_hinh_thanh: document.getElementById('af-thoi-diem-hinh-thanh').value || null,
+    tinh_trang_phap_ly: document.getElementById('af-tinh-trang-phap-ly').value,
+    ngay_kiem_dem: document.getElementById('af-ngay-kiem-dem').value || null,
+    nguoi_kiem_dem: document.getElementById('af-nguoi-kiem-dem').value,
+    ghi_chu: document.getElementById('af-ghi-chu').value,
+    parcel_ids: currentAssetParcels.map(p => p.parcel_id),
+  };
+  const wasEditing = !!editAssetId;
+  const url = editAssetId ? `/api/bt/assets/${editAssetId}` : `/api/bt/projects/${currentProjId}/assets`;
+  const method = editAssetId ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) {
+    closeAssetModal();
+    await loadAssets();
+    toast(wasEditing ? 'Đã cập nhật tài sản' : 'Đã thêm tài sản mới');
+  } else { toast('Lỗi khi lưu tài sản', true); }
+  return body;
+}
+
+function askDeleteAsset(id) {
+  document.getElementById('confirm-msg').textContent = 'Xóa tài sản này? Hành động này không thể hoàn tác.';
+  confirmCb = async () => {
+    const res = await fetch(`/api/bt/assets/${id}`, {method:'DELETE'});
+    if (res.ok) { await loadAssets(); toast('Đã xóa tài sản'); }
+    else toast('Lỗi khi xóa', true);
+  };
+  document.getElementById('modal-confirm').classList.add('open');
+}
+
+// ══════════════════════════════════════════════════════════════
+// DOSSIERS (Hồ sơ Hộ + Quyết định theo Thửa)
+// ══════════════════════════════════════════════════════════════
+let dossiersList = [];
+let editDossierId = null;
+let dossierSearchTimer = null;
+let dossierPickerParties = [];
+let dossierPickerParcels = [];
+let currentDossierDecisions = [];
+let currentPersonsChecklist = [];
+let checkedSxnn = new Set();
+
+function debouncedLoadDossiers() {
+  clearTimeout(dossierSearchTimer);
+  dossierSearchTimer = setTimeout(loadDossiers, 300);
+}
+
+async function loadDossiers() {
+  if (!currentProjId) return;
+  const q = document.getElementById('dossier-search-inp').value.trim();
+  const params = new URLSearchParams();
+  if (q) params.set('q', q);
+  const res = await fetch(`/api/bt/projects/${currentProjId}/dossiers?${params}`);
+  if (!res.ok) return;
+  dossiersList = await res.json();
+  renderDossiersTable();
+}
+
+function renderDossiersTable() {
+  const body = document.getElementById('dossier-tbl-body');
+  const empty = document.getElementById('dossier-tbl-empty');
+  if (!dossiersList.length) { body.innerHTML = ''; empty.style.display = 'flex'; return; }
+  empty.style.display = 'none';
+  body.innerHTML = dossiersList.map((d, i) => {
+    const hoTro = (d.tien_thuong_tien_do||0) + (d.tien_ho_tro_on_dinh_doi_song||0) + (d.tien_ho_tro_dao_tao_chuyen_doi_nghe||0)
+                + (d.tien_ho_tro_tai_dinh_cu||0) + (d.tien_ho_tro_khac||0);
+    return `
+    <tr>
+      <td>${i+1}</td>
+      <td>${esc(d.chu_ho_ten || '')}</td>
+      <td class="td-ctr">${d.so_quyet_dinh || 0}</td>
+      <td class="td-num">${fmtVND(d.tong_tien_bt_dat)}</td>
+      <td class="td-num">${fmtVND(hoTro)}</td>
+      <td class="td-num">${fmtVND(d.so_tien_tam_ung)}</td>
+      <td class="td-num" style="color:#27ae60">${fmtVND(d.so_tien_da_chi_tra)}</td>
+      <td>
+        <button class="btn btn-ghost btn-sm" onclick="openDossierModal(${d.id})">✏️</button>
+        <button class="btn btn-danger btn-sm" onclick="askDeleteDossier(${d.id})">🗑️</button>
+      </td>
+    </tr>
+  `;
+  }).join('');
+}
+
+async function openDossierModal(id) {
+  editDossierId = id || null;
+  currentDossierDecisions = [];
+  currentPersonsChecklist = [];
+  checkedSxnn = new Set();
+  document.getElementById('dossier-modal-title').textContent = id ? 'Sửa hồ sơ hộ' : 'Thêm hồ sơ hộ';
+
+  const [ptRes, plRes] = await Promise.all([
+    fetch('/api/bt/parties'),
+    fetch(`/api/bt/projects/${currentProjId}/parcels`)
+  ]);
+  dossierPickerParties = ptRes.ok ? await ptRes.json() : [];
+  dossierPickerParcels = plRes.ok ? await plRes.json() : [];
+  document.getElementById('hf-chu-ho').innerHTML =
+    '<option value="">-- chọn chủ hộ --</option>' +
+    dossierPickerParties.map(p => `<option value="${p.id}">${esc(p.ho_ten)}</option>`).join('');
+  document.getElementById('hdf-parcel').innerHTML =
+    dossierPickerParcels.map(p => `<option value="${p.id}">Tờ ${esc(p.so_to)} - Thửa ${esc(p.so_thua)}</option>`).join('');
+  document.getElementById('hdf-trang-thai').innerHTML =
+    statusConfigs.map(s => `<option value="${esc(s.ten)}">${esc(s.ten)}</option>`).join('');
+
+  const fields = ['tien-thuong-tien-do','ho-tro-on-dinh','ho-tro-dao-tao','ho-tro-tdc','ho-tro-khac','tam-ung','da-chi-tra','ngay-chi-tra','y-kien','ghi-chu'];
+  fields.forEach(f => { const el = document.getElementById('hf-'+f); if (el) el.value = ''; });
+  document.getElementById('hf-chu-ho').value = '';
+  document.getElementById('hf-co-don').value = '0';
+  ['hdf-so-qd','hdf-ngay-qd','hdf-tien-dat','hdf-tien-tai-san'].forEach(f => { document.getElementById(f).value = ''; });
+
+  if (id) {
+    const res = await fetch(`/api/bt/dossiers/${id}`);
+    if (res.ok) {
+      const d = await res.json();
+      document.getElementById('hf-chu-ho').value = d.chu_the_id || '';
+      document.getElementById('hf-tien-thuong-tien-do').value = d.tien_thuong_tien_do || '';
+      document.getElementById('hf-ho-tro-on-dinh').value = d.tien_ho_tro_on_dinh_doi_song || '';
+      document.getElementById('hf-ho-tro-dao-tao').value = d.tien_ho_tro_dao_tao_chuyen_doi_nghe || '';
+      document.getElementById('hf-ho-tro-tdc').value = d.tien_ho_tro_tai_dinh_cu || '';
+      document.getElementById('hf-ho-tro-khac').value = d.tien_ho_tro_khac || '';
+      document.getElementById('hf-tam-ung').value = d.so_tien_tam_ung || '';
+      document.getElementById('hf-da-chi-tra').value = d.so_tien_da_chi_tra || '';
+      document.getElementById('hf-ngay-chi-tra').value = d.ngay_chi_tra || '';
+      document.getElementById('hf-co-don').value = d.co_don_y_kien ? '1' : '0';
+      document.getElementById('hf-y-kien').value = d.noi_dung_y_kien || '';
+      document.getElementById('hf-ghi-chu').value = d.ghi_chu || '';
+      currentDossierDecisions = (d.decisions || []).map(x => ({
+        parcel_id: x.parcel_id, so_to: x.so_to, so_thua: x.so_thua, so_quyet_dinh_pd: x.so_quyet_dinh_pd,
+        ngay_quyet_dinh_pd: x.ngay_quyet_dinh_pd, tien_bt_dat: x.tien_bt_dat, tien_bt_tai_san: x.tien_bt_tai_san,
+        trang_thai: x.trang_thai, ghi_chu: x.ghi_chu
+      }));
+      const presetChecked = new Set();
+      (d.persons || []).forEach(p => {
+        if (!p.la_doi_tuong_sxnn_truc_tiep) return;
+        if (p.chu_the_id) presetChecked.add(`chu_the:${p.chu_the_id}`);
+        if (p.nhan_khau_id) presetChecked.add(`nhan_khau:${p.nhan_khau_id}`);
+      });
+      checkedSxnn = presetChecked;
+      if (d.chu_the_id) await loadPersonsChecklist(d.chu_the_id);
+    }
+  }
+  renderDecisionsList();
+  document.getElementById('modal-dossier').classList.add('open');
+}
+
+function closeDossierModal() { document.getElementById('modal-dossier').classList.remove('open'); editDossierId = null; }
+
+async function onDossierChuHoChange() {
+  const chuTheId = parseInt(document.getElementById('hf-chu-ho').value);
+  checkedSxnn = new Set();
+  if (!chuTheId) { currentPersonsChecklist = []; renderPersonsChecklist(); return; }
+  await loadPersonsChecklist(chuTheId);
+}
+
+async function loadPersonsChecklist(chuTheId) {
+  const chuThe = dossierPickerParties.find(p => p.id === chuTheId);
+  const res = await fetch(`/api/bt/parties/${chuTheId}/members`);
+  const members = res.ok ? await res.json() : [];
+  currentPersonsChecklist = [
+    { type: 'chu_the', id: chuTheId, ho_ten: chuThe ? chuThe.ho_ten : '(chủ hộ)' },
+    ...members.map(m => ({ type: 'nhan_khau', id: m.id, ho_ten: m.ho_ten })),
+  ];
+  renderPersonsChecklist();
+}
+
+function toggleSxnnPerson(type, id) {
+  const key = `${type}:${id}`;
+  if (checkedSxnn.has(key)) checkedSxnn.delete(key); else checkedSxnn.add(key);
+  renderPersonsChecklist();
+}
+
+function renderPersonsChecklist() {
+  const box = document.getElementById('dossier-persons-list');
+  if (!currentPersonsChecklist.length) {
+    box.innerHTML = 'Vui lòng chọn chủ hộ trước để hiện danh sách nhân khẩu.';
+    return;
+  }
+  box.innerHTML = currentPersonsChecklist.map(p => {
+    const key = `${p.type}:${p.id}`;
+    const checked = checkedSxnn.has(key);
+    return `<label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+      <input type="checkbox" ${checked ? 'checked' : ''} onclick="toggleSxnnPerson('${p.type}',${p.id})">
+      <span>${esc(p.ho_ten)}${p.type==='chu_the' ? ' (chủ hộ)' : ''}</span>
+    </label>`;
+  }).join('');
+}
+
+function addDecisionRow() {
+  const sel = document.getElementById('hdf-parcel');
+  const parcelId = parseInt(sel.value);
+  if (!parcelId) { toast('Vui lòng chọn thửa đất', true); return; }
+  if (currentDossierDecisions.some(d => d.parcel_id === parcelId)) { toast('Thửa đất này đã có quyết định trong hồ sơ', true); return; }
+  const parcel = dossierPickerParcels.find(p => p.id === parcelId);
+  currentDossierDecisions.push({
+    parcel_id: parcelId,
+    so_to: parcel ? parcel.so_to : '', so_thua: parcel ? parcel.so_thua : '',
+    so_quyet_dinh_pd: document.getElementById('hdf-so-qd').value,
+    ngay_quyet_dinh_pd: document.getElementById('hdf-ngay-qd').value || null,
+    tien_bt_dat: parseFloat(document.getElementById('hdf-tien-dat').value) || 0,
+    tien_bt_tai_san: parseFloat(document.getElementById('hdf-tien-tai-san').value) || 0,
+    trang_thai: document.getElementById('hdf-trang-thai').value,
+    ghi_chu: '',
+  });
+  ['hdf-so-qd','hdf-ngay-qd','hdf-tien-dat','hdf-tien-tai-san'].forEach(f => { document.getElementById(f).value = ''; });
+  renderDecisionsList();
+}
+
+function removeDecisionRow(parcelId) {
+  currentDossierDecisions = currentDossierDecisions.filter(d => d.parcel_id !== parcelId);
+  renderDecisionsList();
+}
+
+function renderDecisionsList() {
+  const box = document.getElementById('dossier-decisions-list');
+  if (!currentDossierDecisions.length) {
+    box.innerHTML = '<div style="color:var(--muted);font-size:12px">Chưa có quyết định nào</div>';
+    return;
+  }
+  box.innerHTML = currentDossierDecisions.map(d => `
+    <div style="display:flex;align-items:center;gap:8px;background:var(--card);padding:6px 10px;border-radius:6px">
+      <span style="flex:1;font-size:13px">Tờ ${esc(d.so_to)} - Thửa ${esc(d.so_thua)}${d.so_quyet_dinh_pd ? ' — QĐ ' + esc(d.so_quyet_dinh_pd) : ''} — <span style="color:${statusColor(d.trang_thai)}">${esc(d.trang_thai||'')}</span> — ${fmtVND(d.tien_bt_dat)}</span>
+      <button class="btn btn-ghost btn-sm" onclick="removeDecisionRow(${d.parcel_id})">✕</button>
+    </div>
+  `).join('');
+}
+
+async function saveDossier() {
+  const chuTheId = parseInt(document.getElementById('hf-chu-ho').value);
+  if (!chuTheId) { toast('Vui lòng chọn chủ hộ', true); return; }
+  const persons = [];
+  checkedSxnn.forEach(key => {
+    const [type, idStr] = key.split(':');
+    const id = parseInt(idStr);
+    if (type === 'chu_the') persons.push({ chu_the_id: id, la_doi_tuong_sxnn_truc_tiep: true });
+    else persons.push({ nhan_khau_id: id, la_doi_tuong_sxnn_truc_tiep: true });
+  });
+  const body = {
+    chu_the_id: chuTheId,
+    tien_thuong_tien_do: parseFloat(document.getElementById('hf-tien-thuong-tien-do').value) || 0,
+    tien_ho_tro_on_dinh_doi_song: parseFloat(document.getElementById('hf-ho-tro-on-dinh').value) || 0,
+    tien_ho_tro_dao_tao_chuyen_doi_nghe: parseFloat(document.getElementById('hf-ho-tro-dao-tao').value) || 0,
+    tien_ho_tro_tai_dinh_cu: parseFloat(document.getElementById('hf-ho-tro-tdc').value) || 0,
+    tien_ho_tro_khac: parseFloat(document.getElementById('hf-ho-tro-khac').value) || 0,
+    so_tien_tam_ung: parseFloat(document.getElementById('hf-tam-ung').value) || 0,
+    so_tien_da_chi_tra: parseFloat(document.getElementById('hf-da-chi-tra').value) || 0,
+    ngay_chi_tra: document.getElementById('hf-ngay-chi-tra').value || null,
+    co_don_y_kien: document.getElementById('hf-co-don').value === '1',
+    noi_dung_y_kien: document.getElementById('hf-y-kien').value,
+    ghi_chu: document.getElementById('hf-ghi-chu').value,
+    decisions: currentDossierDecisions.map(d => ({
+      parcel_id: d.parcel_id, so_quyet_dinh_pd: d.so_quyet_dinh_pd, ngay_quyet_dinh_pd: d.ngay_quyet_dinh_pd,
+      tien_bt_dat: d.tien_bt_dat, tien_bt_tai_san: d.tien_bt_tai_san, trang_thai: d.trang_thai, ghi_chu: d.ghi_chu || '',
+    })),
+    persons,
+  };
+  const wasEditing = !!editDossierId;
+  const url = editDossierId ? `/api/bt/dossiers/${editDossierId}` : `/api/bt/projects/${currentProjId}/dossiers`;
+  const method = editDossierId ? 'PUT' : 'POST';
+  const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (res.ok) {
+    closeDossierModal();
+    await loadDossiers();
+    toast(wasEditing ? 'Đã cập nhật hồ sơ hộ' : 'Đã thêm hồ sơ hộ mới');
+  } else { toast('Lỗi khi lưu hồ sơ hộ', true); }
+  return body;
+}
+
+function askDeleteDossier(id) {
+  document.getElementById('confirm-msg').textContent = 'Xóa hồ sơ hộ này? Toàn bộ quyết định theo thửa bên trong cũng sẽ bị xóa. Hành động này không thể hoàn tác.';
+  confirmCb = async () => {
+    const res = await fetch(`/api/bt/dossiers/${id}`, {method:'DELETE'});
+    if (res.ok) { await loadDossiers(); toast('Đã xóa hồ sơ hộ'); }
+    else toast('Lỗi khi xóa', true);
+  };
+  document.getElementById('modal-confirm').classList.add('open');
+}
+
+// ══════════════════════════════════════════════════════════════
 // TABS
 // ══════════════════════════════════════════════════════════════
 function switchTab(tab) {
   currentTab = tab;
-  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', (i===0&&tab==='dashboard')||(i===1&&tab==='records')));
+  document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active',
+    (i===0&&tab==='dashboard')||(i===1&&tab==='parcels')||(i===2&&tab==='maps')||(i===3&&tab==='assets')||(i===4&&tab==='dossiers')||(i===5&&tab==='records')));
   document.getElementById('tab-dashboard').classList.toggle('show', tab==='dashboard');
+  document.getElementById('tab-parcels').style.display = (tab==='parcels') ? 'flex' : 'none';
+  document.getElementById('tab-maps').style.display = (tab==='maps') ? 'flex' : 'none';
+  document.getElementById('tab-assets').style.display = (tab==='assets') ? 'flex' : 'none';
+  document.getElementById('tab-dossiers').style.display = (tab==='dossiers') ? 'flex' : 'none';
   document.getElementById('tab-records').classList.toggle('show', tab==='records');
   if (tab==='dashboard') loadDashboard();
+  else if (tab==='parcels') loadParcels();
+  else if (tab==='maps') loadMaps();
+  else if (tab==='assets') loadAssets();
+  else if (tab==='dossiers') loadDossiers();
   else loadRecords();
 }
 
@@ -587,6 +2164,29 @@ async function loadDashboard() {
     <div class="fin-card"><div class="fc-label">Hỗ trợ khác</div><div class="fc-val">${fmtVND(f.tien_ho_tro)}</div></div>
     <div class="fin-card"><div class="fc-label">Tổng tiền BTHT</div><div class="fc-val">${fmtVND(f.tong_tien)}</div></div>
     <div class="fin-card"><div class="fc-label">Đã chi trả</div><div class="fc-val">${fmtVND(f.da_chi_tra)}</div></div>`;
+
+  loadProjectDocs();
+}
+
+async function loadProjectDocs() {
+  const box = document.getElementById('proj-docs-list');
+  if (!currentProjName) { box.innerHTML = ''; return; }
+  const res = await fetch(`/api/docs?tag=${encodeURIComponent(currentProjName)}`);
+  if (!res.ok) {
+    box.innerHTML = '<div style="color:var(--muted);font-size:12px">Không thể tải danh sách tài liệu (có thể bạn chưa có quyền xem Tài liệu).</div>';
+    return;
+  }
+  const docs = await res.json();
+  if (!docs.length) {
+    box.innerHTML = `<div style="color:var(--muted);font-size:12px">Chưa có tài liệu nào gắn thẻ "${esc(currentProjName)}". Vào mục Tài liệu để tải lên và gắn thẻ đúng tên dự án.</div>`;
+    return;
+  }
+  box.innerHTML = docs.map(d => `
+    <div style="display:flex;align-items:center;gap:8px;background:var(--card);padding:6px 10px;border-radius:6px">
+      <span style="flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">📄 ${esc(d.title)}${d.doc_number ? ' — ' + esc(d.doc_number) : ''}</span>
+      <button class="btn btn-ghost btn-sm" onclick="window.open('/api/docs/download/${d.id}','_blank')">⬇️</button>
+    </div>
+  `).join('');
 }
 
 // ══════════════════════════════════════════════════════════════

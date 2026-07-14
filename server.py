@@ -333,6 +333,167 @@ def init_db():
             mau     TEXT DEFAULT '#95a5a6',
             thu_tu  INTEGER DEFAULT 0
         );
+
+        -- ── BỒI THƯỜNG v2: Chủ thể & Nhân khẩu ──────────────────────────
+        CREATE TABLE IF NOT EXISTS bt_parties (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            loai_chu_the        TEXT DEFAULT 'Cá nhân',
+            ho_ten              TEXT NOT NULL,
+            gioi_tinh           TEXT DEFAULT '',
+            ngay_sinh           TEXT DEFAULT NULL,
+            so_cccd             TEXT DEFAULT '',
+            ngay_cap_cccd       TEXT DEFAULT NULL,
+            noi_cap_cccd        TEXT DEFAULT '',
+            dia_chi_thuong_tru  TEXT DEFAULT '',
+            so_dien_thoai       TEXT DEFAULT '',
+            ghi_chu             TEXT DEFAULT '',
+            custom_fields       TEXT DEFAULT '{}',
+            created_at          TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS bt_household_members (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            chu_the_id          INTEGER NOT NULL,
+            ho_ten              TEXT NOT NULL,
+            quan_he_voi_chu_ho  TEXT DEFAULT '',
+            ngay_sinh           TEXT DEFAULT NULL,
+            so_cccd             TEXT DEFAULT '',
+            ghi_chu             TEXT DEFAULT '',
+            custom_fields       TEXT DEFAULT '{}',
+            created_at          TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY(chu_the_id) REFERENCES bt_parties(id) ON DELETE CASCADE
+        );
+
+        -- ── BỒI THƯỜNG v2: Thửa đất gốc & Bản đồ ────────────────────────
+        CREATE TABLE IF NOT EXISTS bt_parcel_master (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            so_to_hien_hanh     TEXT DEFAULT '',
+            so_thua_hien_hanh   TEXT DEFAULT '',
+            dia_chi_vi_tri      TEXT DEFAULT '',
+            toa_do_ranh_gioi    TEXT DEFAULT NULL,
+            ghi_chu             TEXT DEFAULT '',
+            custom_fields       TEXT DEFAULT '{}',
+            created_at          TEXT DEFAULT (datetime('now','localtime'))
+        );
+
+        CREATE TABLE IF NOT EXISTS bt_parcel_owners (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            parcel_id       INTEGER NOT NULL,
+            chu_the_id      INTEGER NOT NULL,
+            vai_tro         TEXT DEFAULT 'Đại diện đứng tên',
+            ty_le_so_huu    REAL DEFAULT NULL,
+            FOREIGN KEY(parcel_id)  REFERENCES bt_parcels(id) ON DELETE CASCADE,
+            FOREIGN KEY(chu_the_id) REFERENCES bt_parties(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS bt_maps (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id      INTEGER DEFAULT NULL,
+            loai_ban_do     TEXT DEFAULT '',
+            ten_ban_do      TEXT DEFAULT '',
+            ngay_lap        TEXT DEFAULT NULL,
+            don_vi_lap      TEXT DEFAULT '',
+            ghi_chu         TEXT DEFAULT '',
+            custom_fields   TEXT DEFAULT '{}',
+            created_at      TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY(project_id) REFERENCES bt_projects(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS bt_map_parcels (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            map_id                  INTEGER NOT NULL,
+            parcel_master_id        INTEGER DEFAULT NULL,
+            so_to_tren_ban_do       TEXT DEFAULT '',
+            so_thua_tren_ban_do     TEXT DEFAULT '',
+            dien_tich_tren_ban_do   REAL DEFAULT 0,
+            FOREIGN KEY(map_id) REFERENCES bt_maps(id) ON DELETE CASCADE,
+            FOREIGN KEY(parcel_master_id) REFERENCES bt_parcel_master(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS bt_map_files (
+            id              INTEGER PRIMARY KEY AUTOINCREMENT,
+            map_id          INTEGER NOT NULL,
+            file_path       TEXT NOT NULL,
+            file_name       TEXT DEFAULT '',
+            uploaded_at     TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY(map_id) REFERENCES bt_maps(id) ON DELETE CASCADE
+        );
+
+        -- ── BỒI THƯỜNG v2: Tài sản trên đất ──────────────────────────────
+        CREATE TABLE IF NOT EXISTS bt_assets (
+            id                      INTEGER PRIMARY KEY AUTOINCREMENT,
+            loai_tai_san_nhom       TEXT DEFAULT '',
+            loai_tai_san_cu_the     TEXT DEFAULT '',
+            chu_tai_san_id          INTEGER DEFAULT NULL,
+            don_vi_tinh             TEXT DEFAULT '',
+            so_luong_khoi_luong     REAL DEFAULT 0,
+            thoi_diem_hinh_thanh    TEXT DEFAULT NULL,
+            tinh_trang_phap_ly      TEXT DEFAULT 'Đúng quy định',
+            ngay_kiem_dem           TEXT DEFAULT NULL,
+            nguoi_kiem_dem          TEXT DEFAULT '',
+            ghi_chu                 TEXT DEFAULT '',
+            custom_fields           TEXT DEFAULT '{}',
+            created_at              TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY(chu_tai_san_id) REFERENCES bt_parties(id) ON DELETE SET NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS bt_asset_parcels (
+            id          INTEGER PRIMARY KEY AUTOINCREMENT,
+            asset_id    INTEGER NOT NULL,
+            parcel_id   INTEGER NOT NULL,
+            FOREIGN KEY(asset_id)  REFERENCES bt_assets(id) ON DELETE CASCADE,
+            FOREIGN KEY(parcel_id) REFERENCES bt_parcels(id) ON DELETE CASCADE
+        );
+
+        -- ── BỒI THƯỜNG v2: Hồ sơ Hộ & Quyết định theo Thửa ──────────────
+        CREATE TABLE IF NOT EXISTS bt_dossiers (
+            id                                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id                          INTEGER NOT NULL,
+            chu_the_id                          INTEGER NOT NULL,
+            tien_thuong_tien_do                 REAL DEFAULT 0,
+            tien_ho_tro_on_dinh_doi_song         REAL DEFAULT 0,
+            tien_ho_tro_dao_tao_chuyen_doi_nghe  REAL DEFAULT 0,
+            tien_ho_tro_tai_dinh_cu              REAL DEFAULT 0,
+            tien_ho_tro_khac                     REAL DEFAULT 0,
+            so_tien_tam_ung                      REAL DEFAULT 0,
+            so_tien_da_chi_tra                   REAL DEFAULT 0,
+            ngay_chi_tra                         TEXT DEFAULT NULL,
+            co_don_y_kien                        INTEGER DEFAULT 0,
+            noi_dung_y_kien                      TEXT DEFAULT '',
+            ghi_chu                              TEXT DEFAULT '',
+            custom_fields                        TEXT DEFAULT '{}',
+            created_at                           TEXT DEFAULT (datetime('now','localtime')),
+            updated_at                           TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY(project_id) REFERENCES bt_projects(id) ON DELETE CASCADE,
+            FOREIGN KEY(chu_the_id) REFERENCES bt_parties(id)
+        );
+
+        CREATE TABLE IF NOT EXISTS bt_parcel_decisions (
+            id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+            ho_so_ho_id         INTEGER NOT NULL,
+            parcel_id           INTEGER NOT NULL,
+            so_quyet_dinh_pd    TEXT DEFAULT '',
+            ngay_quyet_dinh_pd  TEXT DEFAULT NULL,
+            tien_bt_dat         REAL DEFAULT 0,
+            tien_bt_tai_san     REAL DEFAULT 0,
+            trang_thai          TEXT DEFAULT 'Chưa thực hiện',
+            ghi_chu             TEXT DEFAULT '',
+            created_at          TEXT DEFAULT (datetime('now','localtime')),
+            FOREIGN KEY(ho_so_ho_id) REFERENCES bt_dossiers(id) ON DELETE CASCADE,
+            FOREIGN KEY(parcel_id)   REFERENCES bt_parcels(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS bt_dossier_persons (
+            id                            INTEGER PRIMARY KEY AUTOINCREMENT,
+            ho_so_ho_id                   INTEGER NOT NULL,
+            chu_the_id                    INTEGER DEFAULT NULL,
+            nhan_khau_id                  INTEGER DEFAULT NULL,
+            la_doi_tuong_sxnn_truc_tiep   INTEGER DEFAULT 0,
+            ghi_chu                       TEXT DEFAULT '',
+            FOREIGN KEY(ho_so_ho_id)  REFERENCES bt_dossiers(id) ON DELETE CASCADE,
+            FOREIGN KEY(chu_the_id)   REFERENCES bt_parties(id) ON DELETE CASCADE,
+            FOREIGN KEY(nhan_khau_id) REFERENCES bt_household_members(id) ON DELETE CASCADE
+        );
         """)
         # Migrations
         cols = [r[1] for r in db.execute("PRAGMA table_info(users)").fetchall()]
@@ -360,6 +521,33 @@ def init_db():
         cat_cols = [r[1] for r in db.execute("PRAGMA table_info(doc_categories)").fetchall()]
         if 'parent_id' not in cat_cols:
             db.execute("ALTER TABLE doc_categories ADD COLUMN parent_id INTEGER DEFAULT NULL")
+
+        # Bồi thường v2: mở rộng bt_projects (Dự án có ranh giới không gian)
+        proj_cols = [r[1] for r in db.execute("PRAGMA table_info(bt_projects)").fetchall()]
+        if 'chu_dau_tu' not in proj_cols:
+            db.execute("ALTER TABLE bt_projects ADD COLUMN chu_dau_tu TEXT DEFAULT ''")
+        if 'dien_tich_du_an' not in proj_cols:
+            db.execute("ALTER TABLE bt_projects ADD COLUMN dien_tich_du_an REAL DEFAULT 0")
+        if 'ranh_gioi_du_an' not in proj_cols:
+            db.execute("ALTER TABLE bt_projects ADD COLUMN ranh_gioi_du_an TEXT DEFAULT NULL")
+        if 'ngay_thong_bao_thu_hoi' not in proj_cols:
+            db.execute("ALTER TABLE bt_projects ADD COLUMN ngay_thong_bao_thu_hoi TEXT DEFAULT NULL")
+        if 'ngay_bat_dau' not in proj_cols:
+            db.execute("ALTER TABLE bt_projects ADD COLUMN ngay_bat_dau TEXT DEFAULT NULL")
+        if 'ngay_ket_thuc_du_kien' not in proj_cols:
+            db.execute("ALTER TABLE bt_projects ADD COLUMN ngay_ket_thuc_du_kien TEXT DEFAULT NULL")
+        if 'custom_fields' not in proj_cols:
+            db.execute("ALTER TABLE bt_projects ADD COLUMN custom_fields TEXT DEFAULT '{}'")
+
+        # Bồi thường v2: mở rộng bt_parcels (Thửa đất theo dự án -> tham chiếu thửa gốc)
+        parcel_cols = [r[1] for r in db.execute("PRAGMA table_info(bt_parcels)").fetchall()]
+        if 'parcel_master_id' not in parcel_cols:
+            db.execute("ALTER TABLE bt_parcels ADD COLUMN parcel_master_id INTEGER DEFAULT NULL")
+        if 'nguon_goc_su_dung' not in parcel_cols:
+            db.execute("ALTER TABLE bt_parcels ADD COLUMN nguon_goc_su_dung TEXT DEFAULT ''")
+        if 'custom_fields' not in parcel_cols:
+            db.execute("ALTER TABLE bt_parcels ADD COLUMN custom_fields TEXT DEFAULT '{}'")
+
         row = db.execute("SELECT id FROM users WHERE username='admin'").fetchone()
         if not row:
             pwd = hash_password('admin123')
@@ -811,6 +999,39 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/projects/(\d+)/export$', path)
         if m:
             self.api_bt_export(int(m.group(1))); return
+        if path == '/api/bt/parties':
+            self.api_bt_parties_list(qs); return
+        m = re.match(r'^/api/bt/parties/(\d+)/members$', path)
+        if m:
+            self.api_bt_members_list(int(m.group(1))); return
+        if path == '/api/bt/parcel-master/search':
+            self.api_bt_parcel_master_search(qs); return
+        m = re.match(r'^/api/bt/projects/(\d+)/parcels$', path)
+        if m:
+            self.api_bt_parcels_list(int(m.group(1)), qs); return
+        m = re.match(r'^/api/bt/parcels/(\d+)$', path)
+        if m:
+            self.api_bt_parcel_detail(int(m.group(1))); return
+        if path == '/api/bt/maps':
+            self.api_bt_maps_list(qs); return
+        m = re.match(r'^/api/bt/maps/(\d+)$', path)
+        if m:
+            self.api_bt_map_detail(int(m.group(1))); return
+        m = re.match(r'^/api/bt/map-files/(\d+)/download$', path)
+        if m:
+            self.api_bt_map_files_download(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/assets$', path)
+        if m:
+            self.api_bt_assets_list(int(m.group(1)), qs); return
+        m = re.match(r'^/api/bt/assets/(\d+)$', path)
+        if m:
+            self.api_bt_asset_detail(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/dossiers$', path)
+        if m:
+            self.api_bt_dossiers_list(int(m.group(1)), qs); return
+        m = re.match(r'^/api/bt/dossiers/(\d+)$', path)
+        if m:
+            self.api_bt_dossier_detail(int(m.group(1))); return
 
         self.send_file(os.path.join(PUBLIC_DIR, 'index.html'))
 
@@ -829,6 +1050,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             '/api/docs/types':               self.api_doc_types_create,
             '/api/bt/projects':              self.api_bt_projects_create,
             '/api/bt/status-config':         self.api_bt_status_config_create,
+            '/api/bt/parties':               self.api_bt_parties_create,
+            '/api/bt/maps':                   self.api_bt_maps_create,
             '/api/manager/backups/run':      self.api_manager_backup_run,
         }
         if path in routes:
@@ -840,6 +1063,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/projects/(\d+)/import$', path)
         if m:
             self.api_bt_import_excel(int(m.group(1))); return
+        m = re.match(r'^/api/bt/parties/(\d+)/members$', path)
+        if m:
+            self.api_bt_members_create(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/parcels$', path)
+        if m:
+            self.api_bt_parcels_create(int(m.group(1))); return
+        m = re.match(r'^/api/bt/maps/(\d+)/parcels$', path)
+        if m:
+            self.api_bt_map_parcels_add(int(m.group(1))); return
+        m = re.match(r'^/api/bt/maps/(\d+)/files$', path)
+        if m:
+            self.api_bt_map_files_upload(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/assets$', path)
+        if m:
+            self.api_bt_assets_create(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/dossiers$', path)
+        if m:
+            self.api_bt_dossiers_create(int(m.group(1))); return
         self.send_json({'error': 'Not found'}, 404)
 
     def do_PUT(self):
@@ -883,6 +1124,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/status-config/(\d+)$', path)
         if m:
             self.api_bt_status_config_update(int(m.group(1))); return
+        m = re.match(r'^/api/bt/parties/(\d+)$', path)
+        if m:
+            self.api_bt_parties_update(int(m.group(1))); return
+        m = re.match(r'^/api/bt/members/(\d+)$', path)
+        if m:
+            self.api_bt_members_update(int(m.group(1))); return
+        m = re.match(r'^/api/bt/parcels/(\d+)$', path)
+        if m:
+            self.api_bt_parcels_update(int(m.group(1))); return
+        m = re.match(r'^/api/bt/maps/(\d+)$', path)
+        if m:
+            self.api_bt_maps_update(int(m.group(1))); return
+        m = re.match(r'^/api/bt/assets/(\d+)$', path)
+        if m:
+            self.api_bt_assets_update(int(m.group(1))); return
+        m = re.match(r'^/api/bt/dossiers/(\d+)$', path)
+        if m:
+            self.api_bt_dossiers_update(int(m.group(1))); return
         self.send_json({'error': 'Not found'}, 404)
 
     def do_DELETE(self):
@@ -915,6 +1174,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/status-config/(\d+)$', path)
         if m:
             self.api_bt_status_config_delete(int(m.group(1))); return
+        m = re.match(r'^/api/bt/parties/(\d+)$', path)
+        if m:
+            self.api_bt_parties_delete(int(m.group(1))); return
+        m = re.match(r'^/api/bt/members/(\d+)$', path)
+        if m:
+            self.api_bt_members_delete(int(m.group(1))); return
+        m = re.match(r'^/api/bt/parcels/(\d+)$', path)
+        if m:
+            self.api_bt_parcels_delete(int(m.group(1))); return
+        m = re.match(r'^/api/bt/maps/(\d+)$', path)
+        if m:
+            self.api_bt_maps_delete(int(m.group(1))); return
+        m = re.match(r'^/api/bt/map-parcels/(\d+)$', path)
+        if m:
+            self.api_bt_map_parcels_delete(int(m.group(1))); return
+        m = re.match(r'^/api/bt/map-files/(\d+)$', path)
+        if m:
+            self.api_bt_map_files_delete(int(m.group(1))); return
+        m = re.match(r'^/api/bt/assets/(\d+)$', path)
+        if m:
+            self.api_bt_assets_delete(int(m.group(1))); return
+        m = re.match(r'^/api/bt/dossiers/(\d+)$', path)
+        if m:
+            self.api_bt_dossiers_delete(int(m.group(1))); return
         self.send_json({'error': 'Not found'}, 404)
 
     def do_PATCH(self):
@@ -2292,6 +2575,702 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # BỒI THƯỜNG, HỖ TRỢ — API
     # ══════════════════════════════════════════════════════════════════
 
+    # ── BT v2: CHỦ THỂ & NHÂN KHẨU ──────────────────────────────────
+    def api_bt_parties_list(self, qs):
+        sess = self.require_auth()
+        if not sess: return
+        q = qs.get('q', [''])[0].strip()
+        sql = (
+            'SELECT p.*, COUNT(DISTINCT m.id) as so_nhan_khau '
+            'FROM bt_parties p LEFT JOIN bt_household_members m ON m.chu_the_id=p.id '
+        )
+        params = []
+        if q:
+            like = f'%{q}%'
+            sql += 'WHERE p.ho_ten LIKE ? OR p.so_cccd LIKE ? OR p.so_dien_thoai LIKE ? '
+            params += [like, like, like]
+        sql += 'GROUP BY p.id ORDER BY p.id DESC'
+        with get_db() as db:
+            rows = db.execute(sql, params).fetchall()
+        self.send_json([dict(r) for r in rows])
+
+    def api_bt_parties_create(self):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        ho_ten = body.get('ho_ten', '').strip()
+        if not ho_ten:
+            self.send_json({'error': 'Họ tên không được để trống'}, 400); return
+        with get_db() as db:
+            cur = db.execute(
+                'INSERT INTO bt_parties (loai_chu_the, ho_ten, gioi_tinh, ngay_sinh, so_cccd, '
+                'ngay_cap_cccd, noi_cap_cccd, dia_chi_thuong_tru, so_dien_thoai, ghi_chu, custom_fields) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                (body.get('loai_chu_the', 'Cá nhân'), ho_ten, body.get('gioi_tinh', ''),
+                 body.get('ngay_sinh') or None, body.get('so_cccd', ''), body.get('ngay_cap_cccd') or None,
+                 body.get('noi_cap_cccd', ''), body.get('dia_chi_thuong_tru', ''), body.get('so_dien_thoai', ''),
+                 body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False))
+            )
+            db.commit()
+        self.send_json({'ok': True, 'id': cur.lastrowid})
+
+    def api_bt_parties_update(self, pid):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        ho_ten = body.get('ho_ten', '').strip()
+        if not ho_ten:
+            self.send_json({'error': 'Họ tên không được để trống'}, 400); return
+        with get_db() as db:
+            db.execute(
+                'UPDATE bt_parties SET loai_chu_the=?, ho_ten=?, gioi_tinh=?, ngay_sinh=?, so_cccd=?, '
+                'ngay_cap_cccd=?, noi_cap_cccd=?, dia_chi_thuong_tru=?, so_dien_thoai=?, ghi_chu=?, custom_fields=? '
+                'WHERE id=?',
+                (body.get('loai_chu_the', 'Cá nhân'), ho_ten, body.get('gioi_tinh', ''),
+                 body.get('ngay_sinh') or None, body.get('so_cccd', ''), body.get('ngay_cap_cccd') or None,
+                 body.get('noi_cap_cccd', ''), body.get('dia_chi_thuong_tru', ''), body.get('so_dien_thoai', ''),
+                 body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False), pid)
+            )
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_bt_parties_delete(self, pid):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            # SQLite không tự cascade (foreign_keys pragma tắt mặc định trong get_db()),
+            # nên xoá thủ công các bảng con tham chiếu tới chủ thể này.
+            db.execute('DELETE FROM bt_household_members WHERE chu_the_id=?', (pid,))
+            db.execute('DELETE FROM bt_parcel_owners WHERE chu_the_id=?', (pid,))
+            db.execute('DELETE FROM bt_parties WHERE id=?', (pid,))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_bt_members_list(self, party_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            rows = db.execute(
+                'SELECT * FROM bt_household_members WHERE chu_the_id=? ORDER BY id', (party_id,)
+            ).fetchall()
+        self.send_json([dict(r) for r in rows])
+
+    def api_bt_members_create(self, party_id):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        ho_ten = body.get('ho_ten', '').strip()
+        if not ho_ten:
+            self.send_json({'error': 'Họ tên không được để trống'}, 400); return
+        with get_db() as db:
+            cur = db.execute(
+                'INSERT INTO bt_household_members (chu_the_id, ho_ten, quan_he_voi_chu_ho, ngay_sinh, so_cccd, ghi_chu, custom_fields) '
+                'VALUES (?,?,?,?,?,?,?)',
+                (party_id, ho_ten, body.get('quan_he_voi_chu_ho', ''), body.get('ngay_sinh') or None,
+                 body.get('so_cccd', ''), body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False))
+            )
+            db.commit()
+        self.send_json({'ok': True, 'id': cur.lastrowid})
+
+    def api_bt_members_update(self, mid):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        ho_ten = body.get('ho_ten', '').strip()
+        if not ho_ten:
+            self.send_json({'error': 'Họ tên không được để trống'}, 400); return
+        with get_db() as db:
+            db.execute(
+                'UPDATE bt_household_members SET ho_ten=?, quan_he_voi_chu_ho=?, ngay_sinh=?, so_cccd=?, ghi_chu=?, custom_fields=? '
+                'WHERE id=?',
+                (ho_ten, body.get('quan_he_voi_chu_ho', ''), body.get('ngay_sinh') or None,
+                 body.get('so_cccd', ''), body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False), mid)
+            )
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_bt_members_delete(self, mid):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            db.execute('DELETE FROM bt_household_members WHERE id=?', (mid,))
+            db.commit()
+        self.send_json({'ok': True})
+
+    # ── BT v2: THỬA ĐẤT (gốc + theo dự án + đồng sở hữu) ────────────
+    def api_bt_parcel_master_search(self, qs):
+        sess = self.require_auth()
+        if not sess: return
+        q = qs.get('q', [''])[0].strip()
+        sql = 'SELECT * FROM bt_parcel_master WHERE 1=1 '
+        params = []
+        if q:
+            like = f'%{q}%'
+            sql += 'AND (so_to_hien_hanh LIKE ? OR so_thua_hien_hanh LIKE ? OR dia_chi_vi_tri LIKE ?) '
+            params += [like, like, like]
+        sql += 'ORDER BY id DESC LIMIT 20'
+        with get_db() as db:
+            rows = db.execute(sql, params).fetchall()
+        self.send_json([dict(r) for r in rows])
+
+    def api_bt_parcels_list(self, pid, qs):
+        sess = self.require_auth()
+        if not sess: return
+        q = qs.get('q', [''])[0].strip()
+        sql = (
+            'SELECT pl.*, pm.so_to_hien_hanh, pm.so_thua_hien_hanh, '
+            "(SELECT GROUP_CONCAT(pt.ho_ten, ', ') FROM bt_parcel_owners po "
+            ' JOIN bt_parties pt ON pt.id=po.chu_the_id WHERE po.parcel_id=pl.id) as chu_so_huu '
+            'FROM bt_parcels pl LEFT JOIN bt_parcel_master pm ON pm.id=pl.parcel_master_id '
+            'WHERE pl.project_id=? '
+        )
+        params = [pid]
+        if q:
+            sql += 'AND (pl.so_to LIKE ? OR pl.so_thua LIKE ?) '
+            like = f'%{q}%'
+            params += [like, like]
+        sql += 'ORDER BY pl.id DESC'
+        with get_db() as db:
+            rows = db.execute(sql, params).fetchall()
+        self.send_json([dict(r) for r in rows])
+
+    def api_bt_parcel_detail(self, parcel_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            row = db.execute('SELECT * FROM bt_parcels WHERE id=?', (parcel_id,)).fetchone()
+            if not row:
+                self.send_json({'error': 'Không tìm thấy'}, 404); return
+            owners = db.execute(
+                'SELECT po.id as link_id, po.chu_the_id, po.vai_tro, po.ty_le_so_huu, pt.ho_ten '
+                'FROM bt_parcel_owners po JOIN bt_parties pt ON pt.id=po.chu_the_id WHERE po.parcel_id=?',
+                (parcel_id,)
+            ).fetchall()
+        d = dict(row)
+        d['owners'] = [dict(o) for o in owners]
+        self.send_json(d)
+
+    def _save_parcel_owners(self, db, parcel_id, owners):
+        db.execute('DELETE FROM bt_parcel_owners WHERE parcel_id=?', (parcel_id,))
+        for o in (owners or []):
+            chu_the_id = o.get('chu_the_id')
+            if not chu_the_id:
+                continue
+            db.execute(
+                'INSERT INTO bt_parcel_owners (parcel_id, chu_the_id, vai_tro, ty_le_so_huu) VALUES (?,?,?,?)',
+                (parcel_id, chu_the_id, o.get('vai_tro', 'Đại diện đứng tên'), o.get('ty_le_so_huu'))
+            )
+
+    def api_bt_parcels_create(self, pid):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        with get_db() as db:
+            master_id = body.get('parcel_master_id')
+            if not master_id:
+                cur = db.execute(
+                    'INSERT INTO bt_parcel_master (so_to_hien_hanh, so_thua_hien_hanh, dia_chi_vi_tri) VALUES (?,?,?)',
+                    (body.get('so_to', ''), body.get('so_thua', ''), body.get('dia_chi_vi_tri', ''))
+                )
+                master_id = cur.lastrowid
+            cur = db.execute(
+                'INSERT INTO bt_parcels (project_id, parcel_master_id, so_to, so_thua, loai_dat, '
+                'tong_dien_tich, dien_tich_thu_hoi, dien_tich_con_lai, nguon_goc_su_dung, so_gcn, ngay_cap_gcn, '
+                'ghi_chu, custom_fields) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                (pid, master_id, body.get('so_to', ''), body.get('so_thua', ''), body.get('loai_dat', ''),
+                 body.get('tong_dien_tich', 0), body.get('dien_tich_thu_hoi', 0), body.get('dien_tich_con_lai', 0),
+                 body.get('nguon_goc_su_dung', ''), body.get('so_gcn', ''), body.get('ngay_cap_gcn') or None,
+                 body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False))
+            )
+            parcel_id = cur.lastrowid
+            self._save_parcel_owners(db, parcel_id, body.get('owners'))
+            db.commit()
+        self.send_json({'ok': True, 'id': parcel_id, 'parcel_master_id': master_id})
+
+    def api_bt_parcels_update(self, parcel_id):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        with get_db() as db:
+            db.execute(
+                'UPDATE bt_parcels SET so_to=?, so_thua=?, loai_dat=?, tong_dien_tich=?, dien_tich_thu_hoi=?, '
+                'dien_tich_con_lai=?, nguon_goc_su_dung=?, so_gcn=?, ngay_cap_gcn=?, ghi_chu=?, custom_fields=? '
+                'WHERE id=?',
+                (body.get('so_to', ''), body.get('so_thua', ''), body.get('loai_dat', ''),
+                 body.get('tong_dien_tich', 0), body.get('dien_tich_thu_hoi', 0), body.get('dien_tich_con_lai', 0),
+                 body.get('nguon_goc_su_dung', ''), body.get('so_gcn', ''), body.get('ngay_cap_gcn') or None,
+                 body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False), parcel_id)
+            )
+            self._save_parcel_owners(db, parcel_id, body.get('owners'))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_bt_parcels_delete(self, parcel_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            # Xoá thủ công bảng con vì foreign_keys pragma đang tắt (xem ghi chú get_db()).
+            db.execute('DELETE FROM bt_parcel_owners WHERE parcel_id=?', (parcel_id,))
+            db.execute('DELETE FROM bt_asset_parcels WHERE parcel_id=?', (parcel_id,))
+            db.execute('DELETE FROM bt_parcel_decisions WHERE parcel_id=?', (parcel_id,))
+            db.execute('DELETE FROM bt_parcels WHERE id=?', (parcel_id,))
+            db.commit()
+        self.send_json({'ok': True})
+
+    # ── BT v2: BẢN ĐỒ (theo dự án hoặc độc lập, đính kèm nhiều thửa gốc + nhiều file) ──
+
+    def api_bt_maps_list(self, qs):
+        sess = self.require_auth()
+        if not sess: return
+        project_id = qs.get('project_id', [''])[0].strip()
+        q = qs.get('q', [''])[0].strip()
+        sql = ('SELECT m.*, COUNT(DISTINCT mp.id) as so_thua, COUNT(DISTINCT mf.id) as so_file '
+               'FROM bt_maps m '
+               'LEFT JOIN bt_map_parcels mp ON mp.map_id=m.id '
+               'LEFT JOIN bt_map_files mf ON mf.map_id=m.id '
+               'WHERE 1=1 ')
+        params = []
+        if project_id:
+            sql += 'AND m.project_id=? '
+            params.append(project_id)
+        if q:
+            like = f'%{q}%'
+            sql += 'AND (m.ten_ban_do LIKE ? OR m.loai_ban_do LIKE ? OR m.don_vi_lap LIKE ?) '
+            params += [like, like, like]
+        sql += 'GROUP BY m.id ORDER BY m.id DESC'
+        with get_db() as db:
+            rows = db.execute(sql, params).fetchall()
+        self.send_json([dict(r) for r in rows])
+
+    def api_bt_map_detail(self, map_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            row = db.execute('SELECT * FROM bt_maps WHERE id=?', (map_id,)).fetchone()
+            if not row:
+                self.send_json({'error': 'Không tìm thấy'}, 404); return
+            parcels = db.execute(
+                'SELECT mp.*, pm.so_to_hien_hanh, pm.so_thua_hien_hanh '
+                'FROM bt_map_parcels mp LEFT JOIN bt_parcel_master pm ON pm.id=mp.parcel_master_id '
+                'WHERE mp.map_id=? ORDER BY mp.id', (map_id,)
+            ).fetchall()
+            files = db.execute('SELECT * FROM bt_map_files WHERE map_id=? ORDER BY id', (map_id,)).fetchall()
+        d = dict(row)
+        d['parcels'] = [dict(p) for p in parcels]
+        d['files'] = [dict(f) for f in files]
+        self.send_json(d)
+
+    def api_bt_maps_create(self):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        with get_db() as db:
+            cur = db.execute(
+                'INSERT INTO bt_maps (project_id, loai_ban_do, ten_ban_do, ngay_lap, don_vi_lap, ghi_chu, custom_fields) '
+                'VALUES (?,?,?,?,?,?,?)',
+                (body.get('project_id') or None, body.get('loai_ban_do', ''), body.get('ten_ban_do', ''),
+                 body.get('ngay_lap') or None, body.get('don_vi_lap', ''), body.get('ghi_chu', ''),
+                 json.dumps(body.get('custom_fields', {}), ensure_ascii=False))
+            )
+            db.commit()
+            new_id = cur.lastrowid
+        self.send_json({'ok': True, 'id': new_id})
+
+    def api_bt_maps_update(self, map_id):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        with get_db() as db:
+            db.execute(
+                'UPDATE bt_maps SET project_id=?, loai_ban_do=?, ten_ban_do=?, ngay_lap=?, don_vi_lap=?, ghi_chu=?, custom_fields=? '
+                'WHERE id=?',
+                (body.get('project_id') or None, body.get('loai_ban_do', ''), body.get('ten_ban_do', ''),
+                 body.get('ngay_lap') or None, body.get('don_vi_lap', ''), body.get('ghi_chu', ''),
+                 json.dumps(body.get('custom_fields', {}), ensure_ascii=False), map_id)
+            )
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_bt_maps_delete(self, map_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            # Xoá thủ công bảng con + file vật lý vì foreign_keys pragma đang tắt (xem ghi chú get_db()).
+            frows = db.execute('SELECT file_path FROM bt_map_files WHERE map_id=?', (map_id,)).fetchall()
+            for f in frows:
+                try:
+                    fp = f['file_path']
+                    if fp.startswith('r2:'):
+                        r2_delete(fp[3:])
+                    else:
+                        fpath = os.path.join(DATA_DIR, fp.lstrip('/'))
+                        if os.path.exists(fpath):
+                            os.remove(fpath)
+                except Exception:
+                    pass
+            db.execute('DELETE FROM bt_map_files WHERE map_id=?', (map_id,))
+            db.execute('DELETE FROM bt_map_parcels WHERE map_id=?', (map_id,))
+            db.execute('DELETE FROM bt_maps WHERE id=?', (map_id,))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_bt_map_parcels_add(self, map_id):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        with get_db() as db:
+            cur = db.execute(
+                'INSERT INTO bt_map_parcels (map_id, parcel_master_id, so_to_tren_ban_do, so_thua_tren_ban_do, dien_tich_tren_ban_do) '
+                'VALUES (?,?,?,?,?)',
+                (map_id, body.get('parcel_master_id') or None, body.get('so_to_tren_ban_do', ''),
+                 body.get('so_thua_tren_ban_do', ''), body.get('dien_tich_tren_ban_do') or 0)
+            )
+            db.commit()
+            new_id = cur.lastrowid
+        self.send_json({'ok': True, 'id': new_id})
+
+    def api_bt_map_parcels_delete(self, link_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            db.execute('DELETE FROM bt_map_parcels WHERE id=?', (link_id,))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_bt_map_files_upload(self, map_id):
+        sess = self.require_auth()
+        if not sess: return
+        ct = self.headers.get('Content-Type', '')
+        if 'multipart/form-data' not in ct:
+            self.send_json({'error': 'multipart required'}, 400); return
+        fields, files = self.read_multipart()
+        if 'file' not in files:
+            self.send_json({'error': 'Chưa chọn file'}, 400); return
+        fitem = files['file']
+        orig_name = fitem.filename
+        ext = os.path.splitext(orig_name)[1].lower()
+        allowed = {'.pdf': 'application/pdf',
+                   '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                   '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                   '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
+                   '.dwg': 'application/acad', '.dxf': 'application/dxf'}
+        if ext not in allowed:
+            self.send_json({'error': 'Định dạng không hỗ trợ (.pdf .docx .xlsx .jpg .png .dwg .dxf)'}, 400); return
+        file_bytes = fitem.file.read()
+        ts = int(datetime.now(VN_TZ).timestamp() * 1000)
+        safe_name = f'map_{ts}_{sess["userId"]}{ext}'
+        content_type = allowed[ext]
+        if R2_ENABLED:
+            ok = r2_upload(file_bytes, safe_name, content_type)
+            if not ok:
+                self.send_json({'error': 'Lỗi upload lên cloud storage'}, 500); return
+            file_path = f'r2:{safe_name}'
+        else:
+            fpath = os.path.join(UPLOADS_DIR, safe_name)
+            with open(fpath, 'wb') as f:
+                f.write(file_bytes)
+            file_path = f'/uploads/{safe_name}'
+        with get_db() as db:
+            cur = db.execute(
+                'INSERT INTO bt_map_files (map_id, file_path, file_name) VALUES (?,?,?)',
+                (map_id, file_path, orig_name)
+            )
+            db.commit()
+            new_id = cur.lastrowid
+        self.send_json({'ok': True, 'id': new_id})
+
+    def api_bt_map_files_delete(self, file_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            row = db.execute('SELECT file_path FROM bt_map_files WHERE id=?', (file_id,)).fetchone()
+            if row:
+                try:
+                    fp = row['file_path']
+                    if fp.startswith('r2:'):
+                        r2_delete(fp[3:])
+                    else:
+                        fpath = os.path.join(DATA_DIR, fp.lstrip('/'))
+                        if os.path.exists(fpath):
+                            os.remove(fpath)
+                except Exception:
+                    pass
+            db.execute('DELETE FROM bt_map_files WHERE id=?', (file_id,))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_bt_map_files_download(self, file_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            row = db.execute('SELECT file_path, file_name FROM bt_map_files WHERE id=?', (file_id,)).fetchone()
+        if not row:
+            self.send_json({'error': 'Không tìm thấy'}, 404); return
+        fp = row['file_path']
+        file_name = row['file_name'] or f'map_file_{file_id}'
+        ext = os.path.splitext(file_name)[1].lower()
+        ct_map = {'.pdf':'application/pdf',
+                  '.docx':'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                  '.xlsx':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                  '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png',
+                  '.dwg':'application/acad', '.dxf':'application/dxf'}
+        content_type = ct_map.get(ext, 'application/octet-stream')
+        try:
+            if fp.startswith('r2:'):
+                client = get_r2_client()
+                obj = client.get_object(Bucket=R2_BUCKET, Key=fp[3:])
+                data = obj['Body'].read()
+            else:
+                fpath = os.path.join(DATA_DIR, fp.lstrip('/'))
+                with open(fpath, 'rb') as f:
+                    data = f.read()
+        except Exception as e:
+            self.send_json({'error': f'Không thể đọc file: {e}'}, 500); return
+        self.send_response(200)
+        self.send_header('Content-Type', content_type)
+        self.send_header('Content-Length', str(len(data)))
+        self.send_header('Content-Disposition', f"attachment; filename*=UTF-8''{urllib.parse.quote(file_name)}")
+        self.send_header('Cache-Control', 'no-cache')
+        self.end_headers()
+        self.wfile.write(data)
+
+    # ── BT v2: TÀI SẢN TRÊN ĐẤT (kiểm đếm khách quan, gắn nhiều thửa) ──
+
+    def api_bt_assets_list(self, project_id, qs):
+        sess = self.require_auth()
+        if not sess: return
+        q = qs.get('q', [''])[0].strip()
+        sql = (
+            'SELECT a.*, pt.ho_ten as chu_tai_san_ten, '
+            "(SELECT GROUP_CONCAT(pl.so_to || '.' || pl.so_thua, ', ') "
+            ' FROM bt_asset_parcels ap2 JOIN bt_parcels pl ON pl.id=ap2.parcel_id '
+            ' WHERE ap2.asset_id=a.id) as thua_dat '
+            'FROM bt_assets a '
+            'JOIN bt_asset_parcels ap ON ap.asset_id=a.id '
+            'JOIN bt_parcels p ON p.id=ap.parcel_id '
+            'LEFT JOIN bt_parties pt ON pt.id=a.chu_tai_san_id '
+            'WHERE p.project_id=? '
+        )
+        params = [project_id]
+        if q:
+            like = f'%{q}%'
+            sql += 'AND (a.loai_tai_san_cu_the LIKE ? OR a.loai_tai_san_nhom LIKE ?) '
+            params += [like, like]
+        sql += 'GROUP BY a.id ORDER BY a.id DESC'
+        with get_db() as db:
+            rows = db.execute(sql, params).fetchall()
+        self.send_json([dict(r) for r in rows])
+
+    def api_bt_asset_detail(self, asset_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            row = db.execute('SELECT * FROM bt_assets WHERE id=?', (asset_id,)).fetchone()
+            if not row:
+                self.send_json({'error': 'Không tìm thấy'}, 404); return
+            parcels = db.execute(
+                'SELECT ap.id as link_id, pl.id as parcel_id, pl.so_to, pl.so_thua '
+                'FROM bt_asset_parcels ap JOIN bt_parcels pl ON pl.id=ap.parcel_id '
+                'WHERE ap.asset_id=? ORDER BY ap.id', (asset_id,)
+            ).fetchall()
+        d = dict(row)
+        d['parcels'] = [dict(p) for p in parcels]
+        self.send_json(d)
+
+    def _save_asset_parcels(self, db, asset_id, parcel_ids):
+        db.execute('DELETE FROM bt_asset_parcels WHERE asset_id=?', (asset_id,))
+        for pid in (parcel_ids or []):
+            if not pid:
+                continue
+            db.execute('INSERT INTO bt_asset_parcels (asset_id, parcel_id) VALUES (?,?)', (asset_id, pid))
+
+    def api_bt_assets_create(self, project_id):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        with get_db() as db:
+            cur = db.execute(
+                'INSERT INTO bt_assets (loai_tai_san_nhom, loai_tai_san_cu_the, chu_tai_san_id, don_vi_tinh, '
+                'so_luong_khoi_luong, thoi_diem_hinh_thanh, tinh_trang_phap_ly, ngay_kiem_dem, nguoi_kiem_dem, '
+                'ghi_chu, custom_fields) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                (body.get('loai_tai_san_nhom', ''), body.get('loai_tai_san_cu_the', ''),
+                 body.get('chu_tai_san_id') or None, body.get('don_vi_tinh', ''),
+                 body.get('so_luong_khoi_luong') or 0, body.get('thoi_diem_hinh_thanh') or None,
+                 body.get('tinh_trang_phap_ly', 'Đúng quy định'), body.get('ngay_kiem_dem') or None,
+                 body.get('nguoi_kiem_dem', ''), body.get('ghi_chu', ''),
+                 json.dumps(body.get('custom_fields', {}), ensure_ascii=False))
+            )
+            asset_id = cur.lastrowid
+            self._save_asset_parcels(db, asset_id, body.get('parcel_ids'))
+            db.commit()
+        self.send_json({'ok': True, 'id': asset_id})
+
+    def api_bt_assets_update(self, asset_id):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        with get_db() as db:
+            db.execute(
+                'UPDATE bt_assets SET loai_tai_san_nhom=?, loai_tai_san_cu_the=?, chu_tai_san_id=?, don_vi_tinh=?, '
+                'so_luong_khoi_luong=?, thoi_diem_hinh_thanh=?, tinh_trang_phap_ly=?, ngay_kiem_dem=?, '
+                'nguoi_kiem_dem=?, ghi_chu=?, custom_fields=? WHERE id=?',
+                (body.get('loai_tai_san_nhom', ''), body.get('loai_tai_san_cu_the', ''),
+                 body.get('chu_tai_san_id') or None, body.get('don_vi_tinh', ''),
+                 body.get('so_luong_khoi_luong') or 0, body.get('thoi_diem_hinh_thanh') or None,
+                 body.get('tinh_trang_phap_ly', 'Đúng quy định'), body.get('ngay_kiem_dem') or None,
+                 body.get('nguoi_kiem_dem', ''), body.get('ghi_chu', ''),
+                 json.dumps(body.get('custom_fields', {}), ensure_ascii=False), asset_id)
+            )
+            self._save_asset_parcels(db, asset_id, body.get('parcel_ids'))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_bt_assets_delete(self, asset_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            # Xoá thủ công bảng con vì foreign_keys pragma đang tắt (xem ghi chú get_db()).
+            db.execute('DELETE FROM bt_asset_parcels WHERE asset_id=?', (asset_id,))
+            db.execute('DELETE FROM bt_assets WHERE id=?', (asset_id,))
+            db.commit()
+        self.send_json({'ok': True})
+
+    # ── BT v2: HỒ SƠ HỘ + QUYẾT ĐỊNH THEO THỬA ──────────────────────
+
+    def api_bt_dossiers_list(self, project_id, qs):
+        sess = self.require_auth()
+        if not sess: return
+        q = qs.get('q', [''])[0].strip()
+        sql = (
+            'SELECT d.*, pt.ho_ten as chu_ho_ten, '
+            'COUNT(DISTINCT pd.id) as so_quyet_dinh, '
+            'COALESCE(SUM(pd.tien_bt_dat),0) as tong_tien_bt_dat, '
+            'COALESCE(SUM(pd.tien_bt_tai_san),0) as tong_tien_bt_tai_san '
+            'FROM bt_dossiers d '
+            'LEFT JOIN bt_parties pt ON pt.id=d.chu_the_id '
+            'LEFT JOIN bt_parcel_decisions pd ON pd.ho_so_ho_id=d.id '
+            'WHERE d.project_id=? '
+        )
+        params = [project_id]
+        if q:
+            sql += 'AND pt.ho_ten LIKE ? '
+            params.append(f'%{q}%')
+        sql += 'GROUP BY d.id ORDER BY d.id DESC'
+        with get_db() as db:
+            rows = db.execute(sql, params).fetchall()
+        self.send_json([dict(r) for r in rows])
+
+    def api_bt_dossier_detail(self, dossier_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            row = db.execute('SELECT * FROM bt_dossiers WHERE id=?', (dossier_id,)).fetchone()
+            if not row:
+                self.send_json({'error': 'Không tìm thấy'}, 404); return
+            decisions = db.execute(
+                'SELECT pd.*, pl.so_to, pl.so_thua '
+                'FROM bt_parcel_decisions pd JOIN bt_parcels pl ON pl.id=pd.parcel_id '
+                'WHERE pd.ho_so_ho_id=? ORDER BY pd.id', (dossier_id,)
+            ).fetchall()
+            persons = db.execute(
+                'SELECT dp.*, COALESCE(pt.ho_ten, hm.ho_ten) as ho_ten '
+                'FROM bt_dossier_persons dp '
+                'LEFT JOIN bt_parties pt ON pt.id=dp.chu_the_id '
+                'LEFT JOIN bt_household_members hm ON hm.id=dp.nhan_khau_id '
+                'WHERE dp.ho_so_ho_id=? ORDER BY dp.id', (dossier_id,)
+            ).fetchall()
+        d = dict(row)
+        d['decisions'] = [dict(x) for x in decisions]
+        d['persons'] = [dict(x) for x in persons]
+        self.send_json(d)
+
+    def _save_dossier_decisions(self, db, dossier_id, decisions):
+        db.execute('DELETE FROM bt_parcel_decisions WHERE ho_so_ho_id=?', (dossier_id,))
+        for dec in (decisions or []):
+            parcel_id = dec.get('parcel_id')
+            if not parcel_id:
+                continue
+            db.execute(
+                'INSERT INTO bt_parcel_decisions (ho_so_ho_id, parcel_id, so_quyet_dinh_pd, ngay_quyet_dinh_pd, '
+                'tien_bt_dat, tien_bt_tai_san, trang_thai, ghi_chu) VALUES (?,?,?,?,?,?,?,?)',
+                (dossier_id, parcel_id, dec.get('so_quyet_dinh_pd', ''), dec.get('ngay_quyet_dinh_pd') or None,
+                 dec.get('tien_bt_dat') or 0, dec.get('tien_bt_tai_san') or 0,
+                 dec.get('trang_thai', 'Chưa thực hiện'), dec.get('ghi_chu', ''))
+            )
+
+    def _save_dossier_persons(self, db, dossier_id, persons):
+        db.execute('DELETE FROM bt_dossier_persons WHERE ho_so_ho_id=?', (dossier_id,))
+        for p in (persons or []):
+            chu_the_id = p.get('chu_the_id') or None
+            nhan_khau_id = p.get('nhan_khau_id') or None
+            if not chu_the_id and not nhan_khau_id:
+                continue
+            db.execute(
+                'INSERT INTO bt_dossier_persons (ho_so_ho_id, chu_the_id, nhan_khau_id, la_doi_tuong_sxnn_truc_tiep, ghi_chu) '
+                'VALUES (?,?,?,?,?)',
+                (dossier_id, chu_the_id, nhan_khau_id, 1 if p.get('la_doi_tuong_sxnn_truc_tiep') else 0, p.get('ghi_chu', ''))
+            )
+
+    def api_bt_dossiers_create(self, project_id):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        chu_the_id = body.get('chu_the_id')
+        if not chu_the_id:
+            self.send_json({'error': 'Vui lòng chọn chủ hộ'}, 400); return
+        with get_db() as db:
+            cur = db.execute(
+                'INSERT INTO bt_dossiers (project_id, chu_the_id, tien_thuong_tien_do, tien_ho_tro_on_dinh_doi_song, '
+                'tien_ho_tro_dao_tao_chuyen_doi_nghe, tien_ho_tro_tai_dinh_cu, tien_ho_tro_khac, so_tien_tam_ung, '
+                'so_tien_da_chi_tra, ngay_chi_tra, co_don_y_kien, noi_dung_y_kien, ghi_chu, custom_fields) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                (project_id, chu_the_id, body.get('tien_thuong_tien_do') or 0, body.get('tien_ho_tro_on_dinh_doi_song') or 0,
+                 body.get('tien_ho_tro_dao_tao_chuyen_doi_nghe') or 0, body.get('tien_ho_tro_tai_dinh_cu') or 0,
+                 body.get('tien_ho_tro_khac') or 0, body.get('so_tien_tam_ung') or 0, body.get('so_tien_da_chi_tra') or 0,
+                 body.get('ngay_chi_tra') or None, 1 if body.get('co_don_y_kien') else 0, body.get('noi_dung_y_kien', ''),
+                 body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False))
+            )
+            dossier_id = cur.lastrowid
+            self._save_dossier_decisions(db, dossier_id, body.get('decisions'))
+            self._save_dossier_persons(db, dossier_id, body.get('persons'))
+            db.commit()
+        self.send_json({'ok': True, 'id': dossier_id})
+
+    def api_bt_dossiers_update(self, dossier_id):
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        chu_the_id = body.get('chu_the_id')
+        if not chu_the_id:
+            self.send_json({'error': 'Vui lòng chọn chủ hộ'}, 400); return
+        with get_db() as db:
+            db.execute(
+                'UPDATE bt_dossiers SET chu_the_id=?, tien_thuong_tien_do=?, tien_ho_tro_on_dinh_doi_song=?, '
+                'tien_ho_tro_dao_tao_chuyen_doi_nghe=?, tien_ho_tro_tai_dinh_cu=?, tien_ho_tro_khac=?, '
+                'so_tien_tam_ung=?, so_tien_da_chi_tra=?, ngay_chi_tra=?, co_don_y_kien=?, noi_dung_y_kien=?, '
+                'ghi_chu=?, custom_fields=?, updated_at=datetime(\'now\',\'localtime\') WHERE id=?',
+                (chu_the_id, body.get('tien_thuong_tien_do') or 0, body.get('tien_ho_tro_on_dinh_doi_song') or 0,
+                 body.get('tien_ho_tro_dao_tao_chuyen_doi_nghe') or 0, body.get('tien_ho_tro_tai_dinh_cu') or 0,
+                 body.get('tien_ho_tro_khac') or 0, body.get('so_tien_tam_ung') or 0, body.get('so_tien_da_chi_tra') or 0,
+                 body.get('ngay_chi_tra') or None, 1 if body.get('co_don_y_kien') else 0, body.get('noi_dung_y_kien', ''),
+                 body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False), dossier_id)
+            )
+            self._save_dossier_decisions(db, dossier_id, body.get('decisions'))
+            self._save_dossier_persons(db, dossier_id, body.get('persons'))
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_bt_dossiers_delete(self, dossier_id):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            # Xoá thủ công bảng con vì foreign_keys pragma đang tắt (xem ghi chú get_db()).
+            db.execute('DELETE FROM bt_parcel_decisions WHERE ho_so_ho_id=?', (dossier_id,))
+            db.execute('DELETE FROM bt_dossier_persons WHERE ho_so_ho_id=?', (dossier_id,))
+            db.execute('DELETE FROM bt_dossiers WHERE id=?', (dossier_id,))
+            db.commit()
+        self.send_json({'ok': True})
+
     def api_bt_projects_list(self):
         sess = self.require_auth()
         if not sess: return
@@ -2313,8 +3292,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json({'error': 'Tên dự án không được để trống'}, 400); return
         with get_db() as db:
             cur = db.execute(
-                'INSERT INTO bt_projects (name, mo_ta, dia_diem) VALUES (?,?,?)',
-                (name, body.get('mo_ta',''), body.get('dia_diem',''))
+                'INSERT INTO bt_projects (name, mo_ta, dia_diem, chu_dau_tu, dien_tich_du_an, ranh_gioi_du_an, '
+                'ngay_thong_bao_thu_hoi, ngay_bat_dau, ngay_ket_thuc_du_kien, custom_fields) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?)',
+                (name, body.get('mo_ta',''), body.get('dia_diem',''), body.get('chu_dau_tu',''),
+                 body.get('dien_tich_du_an') or 0, body.get('ranh_gioi_du_an') or None,
+                 body.get('ngay_thong_bao_thu_hoi') or None, body.get('ngay_bat_dau') or None,
+                 body.get('ngay_ket_thuc_du_kien') or None,
+                 json.dumps(body.get('custom_fields', {}), ensure_ascii=False))
             )
             db.commit()
         self.send_json({'ok': True, 'id': cur.lastrowid})
@@ -2325,8 +3310,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self.read_json()
         with get_db() as db:
             db.execute(
-                'UPDATE bt_projects SET name=?, mo_ta=?, dia_diem=? WHERE id=?',
-                (body.get('name',''), body.get('mo_ta',''), body.get('dia_diem',''), pid)
+                'UPDATE bt_projects SET name=?, mo_ta=?, dia_diem=?, chu_dau_tu=?, dien_tich_du_an=?, '
+                'ranh_gioi_du_an=?, ngay_thong_bao_thu_hoi=?, ngay_bat_dau=?, ngay_ket_thuc_du_kien=?, '
+                'custom_fields=? WHERE id=?',
+                (body.get('name',''), body.get('mo_ta',''), body.get('dia_diem',''), body.get('chu_dau_tu',''),
+                 body.get('dien_tich_du_an') or 0, body.get('ranh_gioi_du_an') or None,
+                 body.get('ngay_thong_bao_thu_hoi') or None, body.get('ngay_bat_dau') or None,
+                 body.get('ngay_ket_thuc_du_kien') or None,
+                 json.dumps(body.get('custom_fields', {}), ensure_ascii=False), pid)
             )
             db.commit()
         self.send_json({'ok': True})
@@ -2335,6 +3326,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sess = self.require_manager()
         if not sess: return
         with get_db() as db:
+            # Xoá thủ công toàn bộ dữ liệu con vì foreign_keys pragma đang tắt (xem ghi chú get_db()).
+            parcel_ids = [r[0] for r in db.execute('SELECT id FROM bt_parcels WHERE project_id=?', (pid,)).fetchall()]
+            if parcel_ids:
+                qmarks = ','.join('?' * len(parcel_ids))
+                db.execute(f'DELETE FROM bt_asset_parcels WHERE parcel_id IN ({qmarks})', parcel_ids)
+                db.execute(f'DELETE FROM bt_parcel_owners WHERE parcel_id IN ({qmarks})', parcel_ids)
+                db.execute(f'DELETE FROM bt_records WHERE parcel_id IN ({qmarks})', parcel_ids)
+                db.execute(f'DELETE FROM bt_parcel_decisions WHERE parcel_id IN ({qmarks})', parcel_ids)
+            db.execute('DELETE FROM bt_parcels WHERE project_id=?', (pid,))
+
+            map_ids = [r[0] for r in db.execute('SELECT id FROM bt_maps WHERE project_id=?', (pid,)).fetchall()]
+            if map_ids:
+                qmarks = ','.join('?' * len(map_ids))
+                frows = db.execute(f'SELECT file_path FROM bt_map_files WHERE map_id IN ({qmarks})', map_ids).fetchall()
+                for f in frows:
+                    try:
+                        fp = f['file_path']
+                        if fp.startswith('r2:'):
+                            r2_delete(fp[3:])
+                        else:
+                            fpath = os.path.join(DATA_DIR, fp.lstrip('/'))
+                            if os.path.exists(fpath):
+                                os.remove(fpath)
+                    except Exception:
+                        pass
+                db.execute(f'DELETE FROM bt_map_files WHERE map_id IN ({qmarks})', map_ids)
+                db.execute(f'DELETE FROM bt_map_parcels WHERE map_id IN ({qmarks})', map_ids)
+            db.execute('DELETE FROM bt_maps WHERE project_id=?', (pid,))
+
+            dossier_ids = [r[0] for r in db.execute('SELECT id FROM bt_dossiers WHERE project_id=?', (pid,)).fetchall()]
+            if dossier_ids:
+                qmarks = ','.join('?' * len(dossier_ids))
+                db.execute(f'DELETE FROM bt_parcel_decisions WHERE ho_so_ho_id IN ({qmarks})', dossier_ids)
+                db.execute(f'DELETE FROM bt_dossier_persons WHERE ho_so_ho_id IN ({qmarks})', dossier_ids)
+            db.execute('DELETE FROM bt_dossiers WHERE project_id=?', (pid,))
+
             db.execute('DELETE FROM bt_projects WHERE id=?', (pid,))
             db.commit()
         self.send_json({'ok': True})
