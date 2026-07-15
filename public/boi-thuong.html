@@ -160,6 +160,7 @@ td.td-ctr{text-align:center}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:3px}
 </style>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
 </head>
 <body>
 
@@ -218,7 +219,7 @@ td.td-ctr{text-align:center}
       <button class="btn btn-primary" onclick="openGpmbModal()">＋ Thêm mảnh trích đo Bản đồ GPMB</button>
     </div>
     <div class="form-group form-full" style="font-size:12px;color:var(--muted);padding:0 16px 10px">
-      Bản đồ GPMB là bước đầu tiên của quy trình GPMB. Một dự án thường trải nhiều xã — mỗi xã lập 1 <strong>mảnh trích đo</strong> riêng; mỗi mảnh có nhiều tờ, mỗi tờ có nhiều thửa. Số tờ, số thửa, diện tích khai báo tại đây sẽ tự động sinh/cập nhật bản ghi Thửa đất tương ứng; thửa đất được gộp từ tất cả các mảnh. Bấm vào 1 dòng bên trái để xem bản đồ của mảnh đó bên phải.
+      Bản đồ GPMB là bước đầu tiên của quy trình GPMB. Một dự án thường trải nhiều xã — mỗi xã lập 1 <strong>mảnh trích đo</strong> riêng; mỗi mảnh có nhiều tờ, mỗi tờ có nhiều thửa. Số tờ, số thửa, diện tích khai báo tại đây sẽ tự động sinh/cập nhật bản ghi Thửa đất tương ứng; thửa đất được gộp từ tất cả các mảnh. Bấm vào 1 dòng bên trái để xem bản đồ của mảnh đó bên phải. Nếu dự án đã khai <strong>Kinh tuyến trục</strong> (Sửa dự án), tọa độ nhập theo thứ tự X (Bắc), Y (Đông) — bản đồ bên phải sẽ là bản đồ thực (OpenStreetMap); nếu chưa, chỉ hiện sơ đồ minh họa.
     </div>
     <div class="gpmb-split" id="gpmb-split">
       <div class="gpmb-split-left" id="gpmb-split-left" style="width:40%">
@@ -247,9 +248,10 @@ td.td-ctr{text-align:center}
       <div class="gpmb-split-resizer" id="gpmb-split-resizer" title="Kéo để thay đổi kích thước"></div>
       <div class="gpmb-split-right" id="gpmb-split-right">
         <div id="gpmb-map-title" style="font-size:13px;font-weight:600;color:var(--muted);margin-bottom:8px"></div>
-        <div id="gpmb-map-canvas-wrap" style="flex:1;display:flex;align-items:center;justify-content:center;min-height:0;background:var(--card);border-radius:8px">
+        <div id="gpmb-map-canvas-wrap" style="flex:1;display:flex;align-items:center;justify-content:center;min-height:0;background:var(--card);border-radius:8px;position:relative;overflow:hidden">
           <div id="gpmb-map-empty" style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Chọn 1 mảnh trích đo bên trái để xem bản đồ</div>
           <svg id="gpmb-map-svg" style="display:none;width:100%;height:100%" preserveAspectRatio="xMidYMid meet"></svg>
+          <div id="gpmb-map-leaflet" style="display:none;width:100%;height:100%;border-radius:8px"></div>
         </div>
       </div>
     </div>
@@ -503,6 +505,13 @@ td.td-ctr{text-align:center}
         <div class="form-group form-full">
           <label>Ranh giới (GeoJSON) — có thể để trống, sẽ bổ sung khi có công cụ vẽ bản đồ</label>
           <textarea id="pf-ranh-gioi" placeholder='VD: {"type":"Polygon","coordinates":[...]}' style="font-family:monospace;font-size:12px"></textarea>
+        </div>
+        <div class="form-group">
+          <label>Kinh tuyến trục VN-2000 (độ, theo tỉnh dự án)</label>
+          <input id="pf-kinh-tuyen-truc" type="number" step="0.01" placeholder="VD: 105.75">
+        </div>
+        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">
+          Cần điền đúng số này để tọa độ VN-2000 nhập ở tab Bản đồ GPMB hiển thị đúng vị trí trên bản đồ thực (OpenStreetMap). Tra theo tỉnh nơi dự án tọa lạc tại Phụ lục 2, Thông tư 25/2014/TT-BTNMT (hoặc hỏi đơn vị đo đạc đã lập hồ sơ). Để trống nếu chưa có — hệ thống sẽ chỉ hiện sơ đồ minh họa thay vì bản đồ thực.
         </div>
 
         <div class="form-section">📄 Tài liệu pháp lý dự án</div>
@@ -995,6 +1004,8 @@ td.td-ctr{text-align:center}
 
 <div id="toast"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/proj4js/2.9.2/proj4.js"></script>
 <script>
 // ══════════════════════════════════════════════════════════════
 // STATE
@@ -1118,6 +1129,7 @@ function openProjModal(id) {
   document.getElementById('pf-ngay-bat-dau').value = p ? (p.ngay_bat_dau || '') : '';
   document.getElementById('pf-ngay-ket-thuc').value = p ? (p.ngay_ket_thuc_du_kien || '') : '';
   document.getElementById('pf-ranh-gioi').value = p ? (p.ranh_gioi_du_an || '') : '';
+  document.getElementById('pf-kinh-tuyen-truc').value = p && p.kinh_tuyen_truc != null ? p.kinh_tuyen_truc : '';
   document.getElementById('modal-proj').classList.add('open');
   setTimeout(() => document.getElementById('pf-name').focus(), 50);
 }
@@ -1140,6 +1152,7 @@ async function saveProject() {
     ngay_bat_dau: document.getElementById('pf-ngay-bat-dau').value || null,
     ngay_ket_thuc_du_kien: document.getElementById('pf-ngay-ket-thuc').value || null,
     ranh_gioi_du_an: ranhGioi || null,
+    kinh_tuyen_truc: document.getElementById('pf-kinh-tuyen-truc').value !== '' ? parseFloat(document.getElementById('pf-kinh-tuyen-truc').value) : null,
   };
   const wasEditing = !!editProjId;
   const url  = editProjId ? `/api/bt/projects/${editProjId}` : '/api/bt/projects';
@@ -1871,21 +1884,59 @@ async function selectGpmbMap(id) {
   renderGpmbMapCanvas(m.parcels || []);
 }
 
+let gpmbLeafletMap = null;
+let gpmbLeafletLayer = null;
+
+function vn2000Proj4Def(kinhTuyenTruc) {
+  // Xấp xỉ mức mét (vài mét), đủ dùng để xem trên bản đồ nền — KHÔNG dùng để chứng thực ranh giới pháp lý.
+  return `+proj=tmerc +lat_0=0 +lon_0=${kinhTuyenTruc} +k=0.9999 +x_0=500000 +y_0=0 +ellps=WGS84 ` +
+    `+towgs84=-191.90441429,-39.30318279,-111.45032835,-0.00928836,0.01975479,-0.00427372,0.252906278 +units=m +no_defs`;
+}
+
+function vn2000ToLonLat(xBac, yDong, kinhTuyenTruc) {
+  try {
+    const def = vn2000Proj4Def(kinhTuyenTruc);
+    const out = proj4(def, 'WGS84', [yDong, xBac]); // proj4 nhận [Đông(easting), Bắc(northing)]
+    if (!out || Number.isNaN(out[0]) || Number.isNaN(out[1])) return null;
+    return out; // [lon, lat]
+  } catch (e) { return null; }
+}
+
 function renderGpmbMapCanvas(parcels) {
   const emptyEl = document.getElementById('gpmb-map-empty');
   const svg = document.getElementById('gpmb-map-svg');
+  const leafletEl = document.getElementById('gpmb-map-leaflet');
+  const proj = projectsList.find(pr => pr.id === currentProjId);
+  const ktt = proj && proj.kinh_tuyen_truc != null && proj.kinh_tuyen_truc !== '' ? parseFloat(proj.kinh_tuyen_truc) : null;
+
   const withGeo = (parcels || [])
     .map(p => ({ p, rings: parseToaDoToRings(p.toa_do) }))
     .filter(x => x.rings && x.rings.flat().some(pt => Array.isArray(pt) && pt.length >= 2));
+
   if (!withGeo.length) {
     emptyEl.textContent = 'Mảnh này chưa có thửa nào có tọa độ để hiển thị bản đồ — bấm ✏️ để thêm tọa độ cho từng thửa, hoặc import Excel.';
     emptyEl.style.display = 'block';
     svg.style.display = 'none';
+    leafletEl.style.display = 'none';
     svg.innerHTML = '';
     return;
   }
-  emptyEl.style.display = 'none';
-  svg.style.display = 'block';
+
+  if (ktt !== null && !Number.isNaN(ktt) && typeof proj4 === 'function' && typeof L === 'object') {
+    emptyEl.style.display = 'none';
+    svg.style.display = 'none';
+    leafletEl.style.display = 'block';
+    renderGpmbLeafletMap(withGeo, ktt);
+  } else {
+    leafletEl.style.display = 'none';
+    emptyEl.style.display = 'none';
+    svg.style.display = 'block';
+    renderGpmbSvgCanvas(withGeo);
+  }
+}
+
+function renderGpmbSvgCanvas(withGeo) {
+  const svg = document.getElementById('gpmb-map-svg');
   const allPts = withGeo.flatMap(x => x.rings.flat().filter(pt => Array.isArray(pt) && pt.length >= 2));
   const xs = allPts.map(p => p[0]), ys = allPts.map(p => p[1]);
   const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
@@ -1908,6 +1959,43 @@ function renderGpmbMapCanvas(parcels) {
   });
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
   svg.innerHTML = parts;
+}
+
+function renderGpmbLeafletMap(withGeo, ktt) {
+  const container = document.getElementById('gpmb-map-leaflet');
+  if (!gpmbLeafletMap) {
+    gpmbLeafletMap = L.map(container, { zoomControl: true });
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 20,
+      attribution: '&copy; OpenStreetMap'
+    }).addTo(gpmbLeafletMap);
+  }
+  if (gpmbLeafletLayer) { gpmbLeafletMap.removeLayer(gpmbLeafletLayer); gpmbLeafletLayer = null; }
+  const layers = [];
+  withGeo.forEach(({ p, rings }) => {
+    rings.forEach(ring => {
+      const latlngs = ring
+        .filter(pt => Array.isArray(pt) && pt.length >= 2)
+        .map(pt => vn2000ToLonLat(pt[0], pt[1], ktt))
+        .filter(ll => ll)
+        .map(([lon, lat]) => [lat, lon]);
+      if (latlngs.length < 3) return;
+      const poly = L.polygon(latlngs, { color: '#5dade2', weight: 2, fill: false });
+      poly.bindTooltip(`Tờ ${esc(p.so_to_tren_ban_do)} - Thửa ${esc(p.so_thua_tren_ban_do)}`);
+      layers.push(poly);
+    });
+  });
+  if (!layers.length) {
+    document.getElementById('gpmb-map-empty').textContent =
+      'Không quy đổi được tọa độ sang bản đồ thực — kiểm tra lại Kinh tuyến trục hoặc định dạng tọa độ (X-Bắc, Y-Đông).';
+    document.getElementById('gpmb-map-empty').style.display = 'block';
+    document.getElementById('gpmb-map-leaflet').style.display = 'none';
+    return;
+  }
+  gpmbLeafletLayer = L.layerGroup(layers).addTo(gpmbLeafletMap);
+  const group = L.featureGroup(layers);
+  gpmbLeafletMap.fitBounds(group.getBounds(), { padding: [20, 20] });
+  setTimeout(() => gpmbLeafletMap && gpmbLeafletMap.invalidateSize(), 50);
 }
 
 (function initGpmbSplitResizer() {
@@ -1934,6 +2022,7 @@ function renderGpmbMapCanvas(parcels) {
     dragging = false;
     resizer.classList.remove('dragging');
     document.body.style.userSelect = '';
+    if (gpmbLeafletMap) setTimeout(() => gpmbLeafletMap.invalidateSize(), 0);
   });
 })();
 
@@ -2773,7 +2862,7 @@ function switchTab(tab) {
   document.getElementById('tab-locked').style.display = isLocked ? 'flex' : 'none';
   if (isLocked) return;
   if (tab==='dashboard') loadDashboard();
-  else if (tab==='gpmb') loadGpmbMaps();
+  else if (tab==='gpmb') { loadGpmbMaps(); if (gpmbLeafletMap) setTimeout(() => gpmbLeafletMap.invalidateSize(), 50); }
   else if (tab==='parcels') loadParcels();
   else if (tab==='maps') loadMaps();
   else if (tab==='assets') loadAssets();

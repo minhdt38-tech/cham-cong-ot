@@ -538,6 +538,10 @@ def init_db():
             db.execute("ALTER TABLE bt_projects ADD COLUMN ngay_ket_thuc_du_kien TEXT DEFAULT NULL")
         if 'custom_fields' not in proj_cols:
             db.execute("ALTER TABLE bt_projects ADD COLUMN custom_fields TEXT DEFAULT '{}'")
+        if 'kinh_tuyen_truc' not in proj_cols:
+            # Kinh tuyến trục VN-2000 (độ) của tỉnh nơi dự án tọa lạc — dùng để quy đổi tọa độ VN-2000
+            # (X-Bắc, Y-Đông) sang kinh độ/vĩ độ WGS84 khi hiển thị trên bản đồ nền thực (OpenStreetMap).
+            db.execute("ALTER TABLE bt_projects ADD COLUMN kinh_tuyen_truc REAL DEFAULT NULL")
 
         # Bồi thường v2: mở rộng bt_parcels (Thửa đất theo dự án -> tham chiếu thửa gốc)
         parcel_cols = [r[1] for r in db.execute("PRAGMA table_info(bt_parcels)").fetchall()]
@@ -3637,13 +3641,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
         with get_db() as db:
             cur = db.execute(
                 'INSERT INTO bt_projects (name, mo_ta, dia_diem, chu_dau_tu, dien_tich_du_an, ranh_gioi_du_an, '
-                'ngay_thong_bao_thu_hoi, ngay_bat_dau, ngay_ket_thuc_du_kien, custom_fields) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?)',
+                'ngay_thong_bao_thu_hoi, ngay_bat_dau, ngay_ket_thuc_du_kien, custom_fields, kinh_tuyen_truc) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                 (name, body.get('mo_ta',''), body.get('dia_diem',''), body.get('chu_dau_tu',''),
                  body.get('dien_tich_du_an') or 0, body.get('ranh_gioi_du_an') or None,
                  body.get('ngay_thong_bao_thu_hoi') or None, body.get('ngay_bat_dau') or None,
                  body.get('ngay_ket_thuc_du_kien') or None,
-                 json.dumps(body.get('custom_fields', {}), ensure_ascii=False))
+                 json.dumps(body.get('custom_fields', {}), ensure_ascii=False),
+                 body.get('kinh_tuyen_truc') if body.get('kinh_tuyen_truc') not in ('', None) else None)
             )
             db.commit()
         self.send_json({'ok': True, 'id': cur.lastrowid})
@@ -3656,12 +3661,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.execute(
                 'UPDATE bt_projects SET name=?, mo_ta=?, dia_diem=?, chu_dau_tu=?, dien_tich_du_an=?, '
                 'ranh_gioi_du_an=?, ngay_thong_bao_thu_hoi=?, ngay_bat_dau=?, ngay_ket_thuc_du_kien=?, '
-                'custom_fields=? WHERE id=?',
+                'custom_fields=?, kinh_tuyen_truc=? WHERE id=?',
                 (body.get('name',''), body.get('mo_ta',''), body.get('dia_diem',''), body.get('chu_dau_tu',''),
                  body.get('dien_tich_du_an') or 0, body.get('ranh_gioi_du_an') or None,
                  body.get('ngay_thong_bao_thu_hoi') or None, body.get('ngay_bat_dau') or None,
                  body.get('ngay_ket_thuc_du_kien') or None,
-                 json.dumps(body.get('custom_fields', {}), ensure_ascii=False), pid)
+                 json.dumps(body.get('custom_fields', {}), ensure_ascii=False),
+                 body.get('kinh_tuyen_truc') if body.get('kinh_tuyen_truc') not in ('', None) else None, pid)
             )
             db.commit()
         self.send_json({'ok': True})
