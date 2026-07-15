@@ -69,6 +69,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .gpmb-eye-btn.partial{opacity:.75}
 .gpmb-parcel-label{background:rgba(20,28,48,.82);color:#fff;font-size:11px;font-weight:600;padding:1px 5px;
   border-radius:4px;white-space:nowrap;transform:translate(-50%,-50%);pointer-events:none;border:1px solid rgba(93,173,226,.6)}
+#gpmb-map-leaflet.hide-parcel-labels .gpmb-parcel-label{display:none}
 .gpmb-info-btn{padding:6px 10px;font-weight:700;color:#f1c40f}
 .leaflet-control-layers{background:#162d45!important;color:#dfe6f0;border:1px solid var(--border)!important;
   box-shadow:0 2px 8px rgba(0,0,0,.4)!important}
@@ -2214,11 +2215,18 @@ const GpmbZoomPercentControl = L.Control.extend({
   }
 });
 
+// Thu phóng ≤178% thì ẩn hết nhãn thửa để nhìn rõ bản đồ (theo yêu cầu của Minh) — chỉ ẩn nhãn,
+// không đụng tới đường viền/polygon thửa. Dùng 1 class CSS trên khung bản đồ thay vì gỡ từng marker
+// khỏi layer, vì cả layer polygon lẫn nhãn đang gộp chung 1 mảng `layers`/`gpmbLeafletLayer`.
+const GPMB_LABEL_MIN_PCT = 178;
+
 function updateGpmbZoomPercentDisplay() {
   if (!gpmbLeafletMap || !gpmbLeafletMap._gpmbZoomNumInput) return;
   const pct = Math.max(0, Math.min(GPMB_PCT_MAX, gpmbZoomToPercent(gpmbLeafletMap.getZoom())));
   gpmbLeafletMap._gpmbZoomNumInput.value = pct;
   gpmbLeafletMap._gpmbZoomSlider.value = pct;
+  const container = document.getElementById('gpmb-map-leaflet');
+  if (container) container.classList.toggle('hide-parcel-labels', pct <= GPMB_LABEL_MIN_PCT);
 }
 
 function renderGpmbLeafletMap(withGeo, ktt) {
@@ -2277,6 +2285,9 @@ function renderGpmbLeafletMap(withGeo, ktt) {
   gpmbLeafletLayer = L.layerGroup(layers).addTo(gpmbLeafletMap);
   const group = L.featureGroup(layers);
   gpmbLeafletMap.fitBounds(group.getBounds(), { padding: [20, 20] });
+  // fitBounds không phải lúc nào cũng bắn 'zoomend' (VD khi mức zoom mới trùng mức hiện tại) —
+  // gọi trực tiếp để đảm bảo trạng thái ẩn/hiện nhãn thửa luôn đúng ngay sau khi vẽ lại lớp dữ liệu.
+  updateGpmbZoomPercentDisplay();
   setTimeout(() => gpmbLeafletMap && gpmbLeafletMap.invalidateSize(), 50);
 }
 
@@ -2454,12 +2465,18 @@ function askDeleteGpmbMap(id) {
   confirmCb = async () => {
     const res = await fetch(`/api/bt/maps/${id}`, {method:'DELETE'});
     if (res.ok) {
+      const data = await res.json().catch(()=>({}));
       delete mapDetailCache[id];
       visibleMapIds.delete(id);
       await loadGpmbMaps();
       await refreshGpmbStatus();
       updateTabLockUI();
       toast('Đã xóa bản đồ');
+      // Xóa xong 1 Bản đồ mốc giới GPMB — nếu server phát hiện có thửa bị ảnh hưởng cần tính lại
+      // diện tích thu hồi (theo yêu cầu của Minh), hiện ngay popup rà soát để xác nhận.
+      if (data.mocgioi_diffs && data.mocgioi_diffs.length) {
+        showMocgioiDiffsAfterDelete(data.mocgioi_diffs, data.mocgioi_manh_ids);
+      }
     } else toast('Lỗi khi xóa', true);
   };
   document.getElementById('modal-confirm').classList.add('open');
@@ -2711,21 +2728,14 @@ async function reloadGpmbDetail() {
   if (m.loai_ban_do === 'Bản đồ mốc giới GPMB') checkMocgioiRecompute(editGpmbMapId);
 }
 
+// pendingMocgioiMode: 'map' (đang sửa 1 Bản đồ mốc giới GPMB còn tồn tại, rà soát theo map_id)
+// hoặc 'delete' (bản đồ mốc giới GPMB VỪA bị xóa — không còn map_id để tra cứu, rà soát theo
+// danh sách mảnh đã ghi lại từ trước lúc xóa). 2 endpoint áp dụng khác nhau tùy theo mode.
+let pendingMocgioiMode = null;
 let pendingMocgioiMapId = null;
-let pendingMocgioiDiffs = [];
+let pendingMocgioiManhIds = [];
 
-async function checkMocgioiRecompute(mapId) {
-  if (!mapId) return;
-  let res;
-  try {
-    res = await fetch(`/api/bt/maps/${mapId}/mocgioi/recompute-check`);
-  } catch (e) { return; }
-  if (!res.ok) return; // âm thầm bỏ qua (VD chưa khai đủ liên kết/hướng tính, hoặc lỗi tạm) — không làm phiền
-  const data = await res.json();
-  const diffs = data.diffs || [];
-  if (!diffs.length) return;
-  pendingMocgioiMapId = mapId;
-  pendingMocgioiDiffs = diffs;
+function renderMocgioiDiffTable(diffs) {
   const box = document.getElementById('mocgioi-diff-list');
   box.innerHTML = `
     <table style="width:100%;border-collapse:collapse;font-size:13px">
@@ -2748,16 +2758,51 @@ async function checkMocgioiRecompute(mapId) {
   document.getElementById('modal-mocgioi-confirm').classList.add('open');
 }
 
+async function checkMocgioiRecompute(mapId) {
+  if (!mapId) return;
+  let res;
+  try {
+    res = await fetch(`/api/bt/maps/${mapId}/mocgioi/recompute-check`);
+  } catch (e) { return; }
+  if (!res.ok) return; // âm thầm bỏ qua (VD chưa khai đủ liên kết/hướng tính, hoặc lỗi tạm) — không làm phiền
+  const data = await res.json();
+  const diffs = data.diffs || [];
+  if (!diffs.length) return;
+  pendingMocgioiMode = 'map';
+  pendingMocgioiMapId = mapId;
+  renderMocgioiDiffTable(diffs);
+}
+
+// Gọi ngay sau khi xóa thành công 1 Bản đồ mốc giới GPMB (xem askDeleteGpmbMap) — server đã tự tính
+// sẵn danh sách chênh lệch (dựa trên các mảnh từng bị bản đồ vừa xóa ảnh hưởng) và trả về kèm response
+// xóa, không cần gọi thêm request nào khác ở bước này.
+function showMocgioiDiffsAfterDelete(diffs, manhIds) {
+  if (!diffs || !diffs.length) return;
+  pendingMocgioiMode = 'delete';
+  pendingMocgioiManhIds = manhIds || [];
+  renderMocgioiDiffTable(diffs);
+}
+
 function closeMocgioiConfirm() {
   document.getElementById('modal-mocgioi-confirm').classList.remove('open');
+  pendingMocgioiMode = null;
   pendingMocgioiMapId = null;
-  pendingMocgioiDiffs = [];
+  pendingMocgioiManhIds = [];
 }
 
 async function applyMocgioiRecompute() {
-  if (!pendingMocgioiMapId) { closeMocgioiConfirm(); return; }
+  const mode = pendingMocgioiMode;
   const mapId = pendingMocgioiMapId;
-  const res = await fetch(`/api/bt/maps/${mapId}/mocgioi/apply-recompute`, { method: 'POST' });
+  const manhIds = pendingMocgioiManhIds;
+  if (!mode) { closeMocgioiConfirm(); return; }
+  let res;
+  if (mode === 'map') {
+    res = await fetch(`/api/bt/maps/${mapId}/mocgioi/apply-recompute`, { method: 'POST' });
+  } else {
+    res = await fetch('/api/bt/mocgioi/apply-recompute-for-manh', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ manh_ids: manhIds })
+    });
+  }
   closeMocgioiConfirm();
   if (res.ok) {
     const data = await res.json();

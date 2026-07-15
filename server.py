@@ -1116,6 +1116,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/maps/(\d+)/mocgioi/apply-recompute$', path)
         if m:
             self.api_bt_mocgioi_apply_recompute(int(m.group(1))); return
+        if path == '/api/bt/mocgioi/apply-recompute-for-manh':
+            self.api_bt_mocgioi_apply_recompute_for_manh(); return
         m = re.match(r'^/api/bt/maps/(\d+)/files$', path)
         if m:
             self.api_bt_map_files_upload(int(m.group(1))); return
@@ -2975,6 +2977,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sess = self.require_auth()
         if not sess: return
         with get_db() as db:
+            row = db.execute('SELECT loai_ban_do, mocgioi_manh_ids FROM bt_maps WHERE id=?', (map_id,)).fetchone()
+            affected_manh_ids = []
+            if row and row['loai_ban_do'] == 'Bản đồ mốc giới GPMB':
+                # Bản đồ sắp xóa là Mốc giới GPMB — ghi lại các Mảnh trích đo GPMB nó từng liên kết
+                # TRƯỚC KHI xóa, để sau khi xóa xong có thể rà soát lại diện tích thu hồi của các
+                # thửa từng bị nó ảnh hưởng (theo yêu cầu của Minh: xóa Mốc giới GPMB phải tính lại).
+                try:
+                    affected_manh_ids = json.loads(row['mocgioi_manh_ids'] or '[]')
+                except Exception:
+                    affected_manh_ids = []
+
             # Xoá thủ công bảng con + file vật lý vì foreign_keys pragma đang tắt (xem ghi chú get_db()).
             frows = db.execute('SELECT file_path FROM bt_map_files WHERE map_id=?', (map_id,)).fetchall()
             for f in frows:
@@ -2992,7 +3005,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.execute('DELETE FROM bt_map_parcels WHERE map_id=?', (map_id,))
             db.execute('DELETE FROM bt_maps WHERE id=?', (map_id,))
             db.commit()
-        self.send_json({'ok': True})
+
+            mocgioi_diffs = []
+            if affected_manh_ids:
+                try:
+                    mocgioi_diffs = self._compute_mocgioi_recompute_for_manh_ids(db, affected_manh_ids)
+                except RuntimeError:
+                    # Thiếu shapely — việc xóa vẫn đã thành công, chỉ là không rà soát tự động được.
+                    # Không chặn/lỗi hóa toàn bộ thao tác xóa chỉ vì bước rà soát phụ này thất bại.
+                    mocgioi_diffs = []
+        self.send_json({'ok': True, 'mocgioi_diffs': mocgioi_diffs, 'mocgioi_manh_ids': affected_manh_ids})
 
     def _create_parcel_from_map_entry(self, db, project_id, parcel_master_id, so_to, so_thua, tong_dt, thu_hoi_dt):
         """Bản đồ GPMB là nguồn gốc của Thửa đất: mỗi thửa thêm trên Bản đồ GPMB tự sinh 1 bản ghi bt_parcels."""
@@ -3095,6 +3117,84 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         'tong_dien_tich': tong_dt,
                     })
         return diffs
+
+    def _compute_mocgioi_recompute_for_manh_ids(self, db, manh_ids):
+        """Dùng khi 1 Bản đồ mốc giới GPMB VỪA BỊ XÓA — tính lại diện tích thu hồi cho các thửa trên
+        những Mảnh trích đo GPMB từng bị nó ảnh hưởng. Không nhận map_id (bản đồ đã không còn tồn tại
+        để tra cứu), mà nhận thẳng danh sách manh_ids đã ghi lại từ trước lúc xóa.
+        Với mỗi mảnh: nếu còn Bản đồ mốc giới GPMB KHÁC vẫn liên kết tới nó, tính lại theo (các) bản đồ
+        còn lại đó (tái sử dụng _compute_mocgioi_overlap, không viết lại công thức). Nếu KHÔNG còn bản
+        đồ mốc giới nào bao phủ mảnh đó nữa, đề xuất đưa diện tích thu hồi (vốn được tính từ bản đồ vừa
+        xóa) về 0 — vì không còn căn cứ hình học nào để giữ số cũ. Luôn trả về danh sách để người dùng
+        xác nhận qua popup rà soát, không tự ghi CSDL (giống _compute_mocgioi_overlap)."""
+        manh_ids = list(dict.fromkeys(manh_ids or []))  # loại trùng, giữ thứ tự
+        if not manh_ids:
+            return []
+
+        all_diffs = []
+        covered_manh = set()
+        remaining_mocgioi = db.execute(
+            "SELECT id, mocgioi_manh_ids FROM bt_maps WHERE loai_ban_do='Bản đồ mốc giới GPMB'"
+        ).fetchall()
+        for mg in remaining_mocgioi:
+            try:
+                ids = json.loads(mg['mocgioi_manh_ids'] or '[]')
+            except Exception:
+                ids = []
+            relevant = [i for i in ids if i in manh_ids]
+            if not relevant:
+                continue
+            covered_manh.update(relevant)
+            diffs = self._compute_mocgioi_overlap(db, mg['id'])  # có thể ném RuntimeError nếu thiếu shapely
+            all_diffs.extend([d for d in diffs if d['manh_id'] in manh_ids])
+
+        # Mảnh không còn Bản đồ mốc giới GPMB nào bao phủ nữa — đề xuất về 0 nếu đang lưu > 0.
+        uncovered = [m for m in manh_ids if m not in covered_manh]
+        for manh_id in uncovered:
+            manh = db.execute('SELECT id, ten_ban_do FROM bt_maps WHERE id=?', (manh_id,)).fetchone()
+            manh_ten = manh['ten_ban_do'] if manh else f'#{manh_id}'
+            rows = db.execute(
+                'SELECT id, parcel_id, parcel_master_id, so_to_tren_ban_do, so_thua_tren_ban_do, '
+                'dien_tich_tren_ban_do, dien_tich_thu_hoi_tren_ban_do FROM bt_map_parcels WHERE map_id=?',
+                (manh_id,)
+            ).fetchall()
+            for r in rows:
+                cur_thu_hoi = round(r['dien_tich_thu_hoi_tren_ban_do'] or 0, 2)
+                if cur_thu_hoi > 1.0:
+                    all_diffs.append({
+                        'link_id': r['id'], 'manh_id': manh_id, 'manh_ten': manh_ten,
+                        'so_to': r['so_to_tren_ban_do'], 'so_thua': r['so_thua_tren_ban_do'],
+                        'dien_tich_thu_hoi_cu': cur_thu_hoi, 'dien_tich_thu_hoi_moi': 0.0,
+                        'parcel_id': r['parcel_id'], 'parcel_master_id': r['parcel_master_id'],
+                        'tong_dien_tich': r['dien_tich_tren_ban_do'] or 0,
+                    })
+        return all_diffs
+
+    def api_bt_mocgioi_apply_recompute_for_manh(self):
+        """Áp dụng rà soát diện tích thu hồi sau khi 1 Bản đồ mốc giới GPMB đã bị xóa — nhận
+        {manh_ids: [...]} (client gửi lại đúng danh sách mảnh server đã trả về lúc xóa), TỰ TÍNH LẠI
+        từ đầu (không tin số cũ) rồi áp dụng, cùng nguyên tắc an toàn như apply-recompute theo map_id."""
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        manh_ids = body.get('manh_ids') or []
+        with get_db() as db:
+            try:
+                diffs = self._compute_mocgioi_recompute_for_manh_ids(db, manh_ids)
+            except RuntimeError as e:
+                self.send_json({'error': str(e)}, 500); return
+            for d in diffs:
+                db.execute(
+                    'UPDATE bt_map_parcels SET dien_tich_thu_hoi_tren_ban_do=? WHERE id=?',
+                    (d['dien_tich_thu_hoi_moi'], d['link_id'])
+                )
+                if d['parcel_id']:
+                    self._sync_parcel_from_map_entry(
+                        db, d['parcel_id'], d['parcel_master_id'], d['so_to'], d['so_thua'],
+                        d['tong_dien_tich'], d['dien_tich_thu_hoi_moi']
+                    )
+            db.commit()
+        self.send_json({'ok': True, 'updated': len(diffs)})
 
     def api_bt_mocgioi_recompute_check(self, map_id):
         """Tính thử (không ghi CSDL) chênh lệch diện tích thu hồi cho các thửa bị ảnh hưởng bởi 1
