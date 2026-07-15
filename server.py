@@ -3605,6 +3605,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if len(rings) > 1:
                     so_thua = f"{so_thua}_{ring_i + 1}"
                 groups.append({'so_to': so_to, 'so_thua': so_thua, 'pts_wgs84': pts})
+
+        # Nhiều Placemark có thể trùng tên hệt nhau (VD phần mềm vẽ bản đồ đặt tên mặc định
+        # giống nhau "Polygon_001" cho nhiều hình khác nhau — gặp thực tế với file mốc giới GPMB
+        # của Minh) — nếu không xử lý, các nhóm này sẽ trùng key (so_to, so_thua) và bị ghi đè lẫn
+        # nhau khi import lần 2 trở đi (chỉ 1 trong số các hình cùng tên còn tồn tại). Đánh số lại
+        # hậu tố cho các nhóm bị trùng khoá để đảm bảo mỗi hình có 1 khoá riêng biệt.
+        seen_keys = {}
+        for g in groups:
+            key = (g['so_to'].lower(), g['so_thua'].lower())
+            seen_keys[key] = seen_keys.get(key, 0) + 1
+            if seen_keys[key] > 1:
+                g['so_thua'] = f"{g['so_thua']}-{seen_keys[key]}"
         return groups
 
     def _normalize_toa_do(self, raw):

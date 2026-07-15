@@ -582,6 +582,23 @@ bt_parties (Chủ thể) ──▶ bt_household_members (Nhân khẩu)
 
 ---
 
+## Cập nhật 2026-07-15 (kết luận điều tra): lệch 37m² Thửa 6 — app tính đúng, chênh là do nguồn ranh giới khác nhau
+
+Minh gửi trực tiếp file `21_05 RGQH New.kmz` (ranh giới mốc giới GPMB anh dùng để đối chiếu bằng phần mềm khác) và file Excel tọa độ thật của Thửa 6/Tờ 1 (39 đỉnh, VN-2000). Vì không cài được shapely trong sandbox này (không có mạng), đã tự viết một phép kiểm chứng **hoàn toàn độc lập, không dùng shapely**: quét lưới điểm mịn (point-in-polygon bằng ray-casting tự viết bằng numpy) trên toàn bộ Thửa 6, tính diện tích phần nằm trong ranh giới mốc giới lấy thẳng từ file KMZ gốc của Minh.
+
+Các bước đã làm:
+1. Giải nén KMZ, phát hiện ranh giới lưu dưới dạng `<LineString>` (không phải `<Polygon>`) — vòng khép kín 3933 đỉnh, tọa độ WGS84.
+2. Quy đổi WGS84 → VN-2000 dùng đúng công thức đang chạy trong `server.py`. Kinh tuyến trục 105.75° (giả định trước đó cho khu vực Hà Nội) cho ra tọa độ lệch tới ~79km so với Thửa 6 — sai. Dò lại bằng cách so khớp không gian với tọa độ Excel thật thì **kinh tuyến trục đúng phải là 105.0°** (khớp chính xác vị trí, có thể do khu vực này thuộc địa giới Hà Tây cũ, dùng kinh tuyến trục 105° thay vì 105°45' của Hà Nội gốc).
+3. Với ranh giới quy đổi đúng, quét lưới điểm ở nhiều độ phân giải khác nhau (0.033m đến 0.2m) để kiểm tra kết quả có ổn định không — đều cho ra **~29.766,6 m²**, khớp gần như tuyệt đối với số app tính ra ban đầu (29.766,67 m²), **không khớp với số 29.729,56 m² Minh đối chiếu từ phần mềm khác**.
+
+**Kết luận:** với đúng ranh giới trong file KMZ Minh gửi, app tính đúng. Số liệu app ra khớp cả 2 cách tính độc lập (shapely trong app + lưới điểm tự viết ở đây). Fix `buffer(0)` sửa hình không hợp lệ thêm tuần trước không phải nguyên nhân thật (hình vốn đã hợp lệ, không có gì để sửa) — không gây hại nhưng không phải fix đúng chỗ.
+
+Chênh lệch 37m² nhiều khả năng đến từ **phần mềm khác dùng một phiên bản ranh giới khác** với file KMZ này (số hóa lại, làm mượt đường biên, hoặc file cập nhật sau) — không phải lỗi tính toán trong app.
+
+**Cần Minh xác nhận 2 việc:**
+- Ranh giới anh dùng để đối chiếu trong phần mềm khác có đúng là file `21_05 RGQH New.kmz` này, cùng ngày/phiên bản không? Nếu khác file, đó là nguồn gây lệch.
+- Kinh tuyến trục đang cấu hình cho dự án trong app hiện là bao nhiêu? Nếu đang để 105.75° thay vì 105.0°, cần sửa lại field dự án — dù bản đồ mốc giới đã import trước đó vẫn hiển thị đúng vị trí trên nền OSM (do lúc import dùng giá trị nào đó cho ra đúng), nhưng nếu field dự án đang lưu sai giá trị thì các lần import KML/KMZ sau này có nguy cơ bị lệch ~79km.
+
 ## Việc chưa nằm trong phạm vi thiết kế này (backlog)
 
 - Tính năng tính đơn giá/thành tiền cho Tài sản (theo bảng giá tỉnh, hệ số bồi thường/hỗ trợ) → ghi vào `bt_parcel_decisions.tien_bt_tai_san`.
