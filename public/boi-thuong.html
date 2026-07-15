@@ -76,11 +76,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .leaflet-control-layers-expanded{padding:8px 10px!important}
 .leaflet-control-layers label{font-size:12px!important;margin-bottom:4px!important}
 .leaflet-control-layers-separator{border-top:1px solid var(--border)!important}
-.gpmb-zoom-pct{background:#162d45;border:1px solid var(--border);border-radius:4px;padding:3px 6px;
-  display:flex;align-items:center;gap:3px;box-shadow:0 1px 4px rgba(0,0,0,.4);margin-top:6px}
-.gpmb-zoom-pct input{width:40px;background:transparent;border:none;color:#dfe6f0;font-size:12px;text-align:right;outline:none}
+.gpmb-zoom-pct{background:#162d45;border:1px solid var(--border);border-radius:4px;padding:6px 8px;
+  display:flex;flex-direction:column;align-items:stretch;gap:4px;box-shadow:0 1px 4px rgba(0,0,0,.4);margin-top:6px}
+.gpmb-zoom-pct .gpmb-zoom-slider{width:120px;accent-color:#5dade2;cursor:pointer}
+.gpmb-zoom-pct .gpmb-zoom-num-row{display:flex;align-items:center;justify-content:center;gap:3px}
+.gpmb-zoom-num{width:44px;background:transparent;border:none;color:#dfe6f0;font-size:12px;text-align:right;outline:none}
 .gpmb-zoom-pct span{font-size:12px;color:var(--muted)}
-.gpmb-zoom-pct input::-webkit-inner-spin-button,.gpmb-zoom-pct input::-webkit-outer-spin-button{opacity:.6}
+.gpmb-zoom-num::-webkit-inner-spin-button,.gpmb-zoom-num::-webkit-outer-spin-button{opacity:.6}
 
 /* ── DASHBOARD ─────────────────────────────────────────────── */
 #tab-dashboard{flex:1;overflow-y:auto;padding:20px;display:none}
@@ -2118,56 +2120,69 @@ function renderGpmbSvgCanvas(withGeo) {
 
 function buildGpmbBasemaps() {
   // Các nguồn bản đồ nền miễn phí, không cần API key — chỉ đổi hình nền, không ảnh hưởng dữ liệu đã lưu.
+  // maxNativeZoom = mức zoom thật có ảnh nét của từng nguồn; maxZoom = trần zoom cho phép của bản đồ
+  // (GPMB_ZOOM_MAX, ứng với 200%) — vượt quá maxNativeZoom, Leaflet tự phóng to ảnh mức sâu nhất thay vì bỏ trống.
+  const common = { maxZoom: GPMB_ZOOM_MAX };
   return {
     'OpenStreetMap (mặc định)': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 20, attribution: '&copy; OpenStreetMap'
+      ...common, maxNativeZoom: 19, attribution: '&copy; OpenStreetMap'
     }),
     'Vệ tinh (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
-      maxZoom: 19, attribution: 'Tiles &copy; Esri'
+      ...common, maxNativeZoom: 19, attribution: 'Tiles &copy; Esri'
     }),
     'Địa hình (OpenTopoMap)': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-      maxZoom: 17, attribution: 'Map data: &copy; OpenStreetMap, SRTM | Style: &copy; OpenTopoMap (CC-BY-SA)'
+      ...common, maxNativeZoom: 17, attribution: 'Map data: &copy; OpenStreetMap, SRTM | Style: &copy; OpenTopoMap (CC-BY-SA)'
     }),
     'Nền tối (CartoDB)': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-      maxZoom: 20, attribution: '&copy; OpenStreetMap, &copy; CARTO'
+      ...common, maxNativeZoom: 20, attribution: '&copy; OpenStreetMap, &copy; CARTO'
     }),
   };
 }
 
 // Quy đổi zoom Leaflet (số nguyên/thập phân, mỗi mức tăng = nhân đôi độ phân giải) sang % thu phóng
-// dễ hiểu hơn với người dùng không rành kỹ thuật — 0% = thu nhỏ hết cỡ, 100% = phóng to hết cỡ.
+// dễ hiểu hơn với người dùng không rành kỹ thuật — 0% = thu nhỏ hết cỡ, 200% = phóng to hết cỡ (tối đa).
 const GPMB_ZOOM_MIN = 3;
-const GPMB_ZOOM_MAX = 19;
+const GPMB_ZOOM_MAX = 21;
+const GPMB_PCT_MAX = 200;
 function gpmbZoomToPercent(z) {
-  return Math.round(((z - GPMB_ZOOM_MIN) / (GPMB_ZOOM_MAX - GPMB_ZOOM_MIN)) * 100);
+  return Math.round(((z - GPMB_ZOOM_MIN) / (GPMB_ZOOM_MAX - GPMB_ZOOM_MIN)) * GPMB_PCT_MAX);
 }
 function gpmbPercentToZoom(p) {
-  return GPMB_ZOOM_MIN + (p / 100) * (GPMB_ZOOM_MAX - GPMB_ZOOM_MIN);
+  return GPMB_ZOOM_MIN + (p / GPMB_PCT_MAX) * (GPMB_ZOOM_MAX - GPMB_ZOOM_MIN);
 }
 
 const GpmbZoomPercentControl = L.Control.extend({
   options: { position: 'topleft' },
   onAdd: function(map) {
     const div = L.DomUtil.create('div', 'leaflet-control gpmb-zoom-pct');
-    div.innerHTML = '<input type="number" min="0" max="100" step="1" title="% thu phóng — nhập số rồi Enter để nhảy tới"><span>%</span>';
+    div.innerHTML =
+      `<input type="range" class="gpmb-zoom-slider" min="0" max="${GPMB_PCT_MAX}" step="1" title="Kéo để thu phóng">` +
+      `<div class="gpmb-zoom-num-row">` +
+      `<input type="number" class="gpmb-zoom-num" min="0" max="${GPMB_PCT_MAX}" step="1" title="% thu phóng — nhập số rồi Enter để nhảy tới">` +
+      `<span>%</span></div>`;
     L.DomEvent.disableClickPropagation(div);
     L.DomEvent.disableScrollPropagation(div);
-    const input = div.querySelector('input');
-    input.addEventListener('change', () => {
-      let p = parseFloat(input.value);
+    const slider = div.querySelector('.gpmb-zoom-slider');
+    const numInput = div.querySelector('.gpmb-zoom-num');
+    const applyPercent = (raw) => {
+      let p = parseFloat(raw);
       if (Number.isNaN(p)) { updateGpmbZoomPercentDisplay(); return; }
-      p = Math.max(0, Math.min(100, p));
+      p = Math.max(0, Math.min(GPMB_PCT_MAX, p));
       map.setZoom(gpmbPercentToZoom(p));
-    });
-    map._gpmbZoomPctInput = input;
+    };
+    slider.addEventListener('input', () => applyPercent(slider.value)); // kéo tới đâu, zoom cập nhật ngay tới đó
+    numInput.addEventListener('change', () => applyPercent(numInput.value));
+    map._gpmbZoomSlider = slider;
+    map._gpmbZoomNumInput = numInput;
     return div;
   }
 });
 
 function updateGpmbZoomPercentDisplay() {
-  if (!gpmbLeafletMap || !gpmbLeafletMap._gpmbZoomPctInput) return;
-  const pct = Math.max(0, Math.min(100, gpmbZoomToPercent(gpmbLeafletMap.getZoom())));
-  gpmbLeafletMap._gpmbZoomPctInput.value = pct;
+  if (!gpmbLeafletMap || !gpmbLeafletMap._gpmbZoomNumInput) return;
+  const pct = Math.max(0, Math.min(GPMB_PCT_MAX, gpmbZoomToPercent(gpmbLeafletMap.getZoom())));
+  gpmbLeafletMap._gpmbZoomNumInput.value = pct;
+  gpmbLeafletMap._gpmbZoomSlider.value = pct;
 }
 
 function renderGpmbLeafletMap(withGeo, ktt) {

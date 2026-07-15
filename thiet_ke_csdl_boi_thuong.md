@@ -201,6 +201,18 @@ Minh muốn thấy % thu phóng hiện tại của bản đồ Leaflet, nhập t
 
 ---
 
+## Cập nhật 2026-07-15 (follow-up ngay sau): nâng trần zoom lên 200% + thêm thanh trượt
+
+Minh muốn tăng khả năng zoom tối đa lên 200% (từ 100% cũ) và có thêm thanh kéo (slider) để thu phóng, không chỉ ô nhập số.
+
+**Nâng trần %:** đổi `GPMB_ZOOM_MAX` từ 19 lên 21 (thêm dư một chút so với mức zoom gốc cao nhất mà các nguồn nền hỗ trợ, để có chỗ "phóng sâu hơn"), thêm hằng `GPMB_PCT_MAX=200`, công thức quy đổi zoom↔% đổi từ nhân 100 sang nhân `GPMB_PCT_MAX`. Vẫn giữ 0% = zoom 3 (thu nhỏ nhất) làm mốc gốc, chỉ nới trần %.
+
+**Vấn đề kỹ thuật phát sinh khi nâng trần:** các nguồn bản đồ nền khác nhau có mức zoom "nét" (native) khác nhau — Esri World Imagery/OSM tối đa ảnh nét ở zoom 19, OpenTopoMap ở 17, CartoDB ở 20 — thấp hơn `GPMB_ZOOM_MAX=21` mới. Nếu chỉ set `maxZoom` trên tile layer bằng mức native, Leaflet sẽ để trống (không hiện gì) khi zoom vượt quá mức đó thay vì phóng to ảnh có sẵn. Đã sửa: mỗi tile layer trong `buildGpmbBasemaps()` giờ có `maxNativeZoom` (mức ảnh nét thật của từng nguồn) tách riêng khỏi `maxZoom` (luôn bằng `GPMB_ZOOM_MAX` chung cho mọi nguồn) — nhờ vậy vượt quá mức nét, Leaflet tự phóng to (upscale, có thể hơi mờ) ảnh sâu nhất đã tải thay vì bỏ trống, đảm bảo zoom tới 200% luôn nhìn thấy gì đó bất kể đang chọn nền nào.
+
+**Thanh trượt:** thêm `<input type="range">` trong cùng control với ô nhập số, kéo tới đâu gọi `map.setZoom()` ngay tới đó (sự kiện `input`, phản hồi tức thời khi đang kéo, không cần thả chuột mới cập nhật). Cả thanh trượt và ô số dùng chung hàm `updateGpmbZoomPercentDisplay()` để đồng bộ 2 chiều — kéo thanh trượt thì ô số cập nhật theo và ngược lại, cùng nghe theo sự kiện `zoomend` như cũ.
+
+---
+
 ## Cập nhật 2026-07-15 (follow-up nhỏ): tỉ lệ mặc định cột trái/bản đồ
 
 Minh muốn tỉ lệ mặc định khi tải trang giống lúc đã kéo thanh chia sang trái (ưu tiên khung bản đồ lớn hơn), thay vì mặc định 40% cho cột danh sách mảnh. Đổi width mặc định của `#gpmb-split-left` từ 40% xuống 18%, hạ luôn giới hạn kéo tối thiểu của thanh resizer từ 20% xuống 12% (và `min-width` CSS từ 220px xuống 160px) để Minh có thể kéo hẹp hơn nữa nếu muốn, đúng ý "có thể co nhỏ hơn nữa".
