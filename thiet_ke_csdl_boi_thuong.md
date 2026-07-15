@@ -201,6 +201,12 @@ Minh muốn thấy % thu phóng hiện tại của bản đồ Leaflet, nhập t
 
 ---
 
+## Cập nhật 2026-07-15 (follow-up nhỏ): tỉ lệ mặc định cột trái/bản đồ
+
+Minh muốn tỉ lệ mặc định khi tải trang giống lúc đã kéo thanh chia sang trái (ưu tiên khung bản đồ lớn hơn), thay vì mặc định 40% cho cột danh sách mảnh. Đổi width mặc định của `#gpmb-split-left` từ 40% xuống 18%, hạ luôn giới hạn kéo tối thiểu của thanh resizer từ 20% xuống 12% (và `min-width` CSS từ 220px xuống 160px) để Minh có thể kéo hẹp hơn nữa nếu muốn, đúng ý "có thể co nhỏ hơn nữa".
+
+---
+
 ## Nguyên tắc thiết kế chung
 
 1. **Mở rộng linh hoạt:** mọi bảng nghiệp vụ đều có cột `custom_fields` (JSON) để thêm thuộc tính phát sinh mà không cần sửa code ngay; trường dùng thường xuyên sẽ được nâng thành cột chính thức sau.

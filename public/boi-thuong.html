@@ -50,7 +50,7 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .tab-btn.tab-locked{opacity:.5}
 .tab-btn.tab-locked::after{content:" 🔒";font-size:11px}
 .gpmb-split{flex:1;display:flex;overflow:hidden;min-height:0}
-.gpmb-split-left{display:flex;flex-direction:column;overflow:auto;min-width:220px;max-width:80%}
+.gpmb-split-left{display:flex;flex-direction:column;overflow:auto;min-width:160px;max-width:80%}
 .gpmb-split-resizer{width:6px;flex-shrink:0;cursor:col-resize;background:rgba(255,255,255,.06)}
 .gpmb-split-resizer:hover,.gpmb-split-resizer.dragging{background:rgba(255,255,255,.18)}
 .gpmb-split-right{flex:1;overflow:auto;display:flex;flex-direction:column;padding:14px;min-width:200px}
@@ -244,7 +244,7 @@ td.td-ctr{text-align:center}
       <button class="btn btn-ghost gpmb-info-btn" onclick="openGpmbInfoModal()" title="Hướng dẫn">❗</button>
     </div>
     <div class="gpmb-split" id="gpmb-split">
-      <div class="gpmb-split-left" id="gpmb-split-left" style="width:40%">
+      <div class="gpmb-split-left" id="gpmb-split-left" style="width:18%">
         <div class="tbl-wrap">
           <div id="gpmb-tbl-body"></div>
           <div id="gpmb-tbl-empty" class="empty-state" style="display:none">
@@ -2245,7 +2245,7 @@ function renderGpmbLeafletMap(withGeo, ktt) {
     if (!dragging) return;
     const rect = split.getBoundingClientRect();
     let pct = ((e.clientX - rect.left) / rect.width) * 100;
-    pct = Math.max(20, Math.min(75, pct));
+    pct = Math.max(12, Math.min(75, pct));
     left.style.width = pct + '%';
   });
   document.addEventListener('mouseup', () => {
