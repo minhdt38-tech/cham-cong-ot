@@ -848,6 +848,16 @@ td.td-ctr{text-align:center}
         <div class="form-group"><label>Đơn vị lập</label><input id="gf-don-vi-lap" type="text"></div>
         <div class="form-group form-full"><label>Ghi chú</label><textarea id="gf-ghi-chu"></textarea></div>
         <div class="form-group form-full" id="gf-loai-hint" style="font-size:12px;color:var(--muted)"></div>
+        <div class="form-group form-full" id="gf-mocgioi-section" style="display:none">
+          <label>Mảnh trích đo GPMB liên quan (chọn 1 hoặc nhiều)</label>
+          <div id="gf-mocgioi-manh-list" style="display:flex;flex-direction:column;gap:4px;max-height:150px;overflow:auto;background:var(--card);padding:8px;border-radius:6px;margin-bottom:10px"></div>
+          <label>Phần nằm bên trong ranh giới (polygon) của bản đồ này là</label>
+          <select id="gf-mocgioi-trong-la">
+            <option value="thu_hoi">Diện tích thu hồi (nằm trong dự án)</option>
+            <option value="con_lai">Diện tích còn lại (nằm ngoài dự án)</option>
+          </select>
+          <div style="font-size:12px;color:var(--muted);margin-top:6px">Sau khi lưu và có đủ dữ liệu (đã liên kết mảnh + đã có polygon ranh giới), hệ thống sẽ tự rà soát và hỏi trước khi cập nhật diện tích thu hồi của các thửa bị ảnh hưởng — không tự động ghi đè âm thầm.</div>
+        </div>
       </div>
 
       <div id="gpmb-sub-sections" style="display:none;margin-top:18px">
@@ -937,6 +947,24 @@ td.td-ctr{text-align:center}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeImportConfirm()">Hủy</button>
       <button class="btn btn-primary" onclick="confirmImportOverwrite()">Ghi đè và tiếp tục</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ MỐC GIỚI GPMB — RÀ SOÁT DIỆN TÍCH THU HỒI (không phải hành động xóa — không yêu cầu mật khẩu) ══ -->
+<div class="modal-overlay" id="modal-mocgioi-confirm">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Rà soát diện tích thu hồi</h3>
+      <button class="modal-close" onclick="closeMocgioiConfirm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:14px;line-height:1.6">Hệ thống phát hiện diện tích thu hồi tính từ ranh giới Mốc giới GPMB (chồng lên Mảnh trích đo GPMB đã liên kết) khác với số đang lưu ở các thửa sau. Xác nhận cập nhật, hoặc bỏ qua để giữ nguyên số hiện tại (có thể rà soát lại sau).</p>
+      <div id="mocgioi-diff-list" style="max-height:320px;overflow:auto;margin-top:10px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeMocgioiConfirm()">Bỏ qua</button>
+      <button class="btn btn-primary" onclick="applyMocgioiRecompute()">Cập nhật diện tích thu hồi</button>
     </div>
   </div>
 </div>
@@ -2287,6 +2315,8 @@ const GPMB_LOAI_HINTS = {
   'Bản đồ khác': 'Bản đồ tham khảo/đối chiếu khác. Dữ liệu độc lập, KHÔNG ảnh hưởng các CSDL khác.',
 };
 
+let gpmbMocgioiCheckedIds = [];
+
 function onGpmbLoaiChange() {
   const loai = document.getElementById('gf-loai-ban-do').value;
   document.getElementById('gf-loai-hint').textContent = GPMB_LOAI_HINTS[loai] || '';
@@ -2294,6 +2324,25 @@ function onGpmbLoaiChange() {
   document.getElementById('gpmb-sub-section-title').textContent = isGpmb
     ? '🗺️ Thửa đất trên bản đồ (tự động sinh Thửa đất)'
     : '🗺️ Các đối tượng (điểm/thửa) trên bản đồ này';
+  const isMocgioi = loai === 'Bản đồ mốc giới GPMB';
+  document.getElementById('gf-mocgioi-section').style.display = isMocgioi ? 'block' : 'none';
+  if (isMocgioi) renderMocgioiManhChecklist(gpmbMocgioiCheckedIds);
+}
+
+function renderMocgioiManhChecklist(checkedIds) {
+  const box = document.getElementById('gf-mocgioi-manh-list');
+  const options = (gpmbMapsList || []).filter(m => m.loai_ban_do === 'Bản đồ GPMB');
+  if (!options.length) {
+    box.innerHTML = '<div style="font-size:12px;color:var(--muted)">Chưa có Mảnh trích đo GPMB nào trong dự án để chọn</div>';
+    return;
+  }
+  const checked = new Set((checkedIds || []).map(Number));
+  box.innerHTML = options.map(m => `
+    <label style="display:flex;align-items:center;gap:6px;font-size:13px;cursor:pointer">
+      <input type="checkbox" class="gf-mocgioi-manh-cb" value="${m.id}" ${checked.has(m.id) ? 'checked' : ''}>
+      ${esc(m.ten_ban_do || '(chưa đặt tên)')}
+    </label>
+  `).join('');
 }
 
 function populateGpmbNhomOptions() {
@@ -2314,6 +2363,8 @@ async function openGpmbModal(id) {
     if (el) el.value = '';
   });
   document.getElementById('gf-loai-ban-do').value = 'Bản đồ GPMB';
+  gpmbMocgioiCheckedIds = [];
+  document.getElementById('gf-mocgioi-trong-la').value = 'thu_hoi';
   populateGpmbNhomOptions();
   resetGpmbParcelForm();
 
@@ -2327,6 +2378,8 @@ async function openGpmbModal(id) {
       document.getElementById('gf-ngay-lap').value = m.ngay_lap || '';
       document.getElementById('gf-don-vi-lap').value = m.don_vi_lap || '';
       document.getElementById('gf-ghi-chu').value = m.ghi_chu || '';
+      document.getElementById('gf-mocgioi-trong-la').value = m.mocgioi_trong_la || 'thu_hoi';
+      try { gpmbMocgioiCheckedIds = JSON.parse(m.mocgioi_manh_ids || '[]'); } catch(e) { gpmbMocgioiCheckedIds = []; }
       currentGpmbParcels = m.parcels || [];
       currentGpmbFiles = m.files || [];
     }
@@ -2367,7 +2420,10 @@ async function saveGpmbMap() {
     ngay_lap: document.getElementById('gf-ngay-lap').value || null,
     don_vi_lap: document.getElementById('gf-don-vi-lap').value,
     ghi_chu: document.getElementById('gf-ghi-chu').value,
+    mocgioi_manh_ids: [...document.querySelectorAll('.gf-mocgioi-manh-cb:checked')].map(cb => parseInt(cb.value)),
+    mocgioi_trong_la: document.getElementById('gf-mocgioi-trong-la').value,
   };
+  const wasEditingMocgioi = !!editGpmbMapId && body.loai_ban_do === 'Bản đồ mốc giới GPMB';
   const url = editGpmbMapId ? `/api/bt/maps/${editGpmbMapId}` : '/api/bt/maps';
   const method = editGpmbMapId ? 'PUT' : 'POST';
   const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
@@ -2382,6 +2438,10 @@ async function saveGpmbMap() {
     delete mapDetailCache[editGpmbMapId];
     toast('Đã lưu bản đồ');
     loadGpmbMaps();
+    // Vừa đổi liên kết/hướng tính trên 1 bản đồ Mốc giới GPMB đã có sẵn thửa — rà soát ngay
+    // xem diện tích thu hồi có cần cập nhật không (không hỏi khi mới TẠO, vì lúc đó chưa có
+    // polygon nào để tính — sẽ tự rà soát khi thêm/sửa/import thửa sau đó, xem reloadGpmbDetail).
+    if (wasEditingMocgioi) checkMocgioiRecompute(editGpmbMapId);
   } else { toast('Lỗi khi lưu bản đồ', true); }
 }
 
@@ -2645,6 +2705,71 @@ async function reloadGpmbDetail() {
   currentGpmbFiles = m.files || [];
   renderGpmbParcelsList();
   renderGpmbFilesList();
+  // Vừa thêm/sửa/xóa/import 1 hình trên bản đồ này — nếu đây là Bản đồ mốc giới GPMB đã khai đủ
+  // liên kết + hướng tính, tự rà soát xem diện tích thu hồi của các thửa liên quan có cần cập nhật
+  // không (đúng yêu cầu "mỗi khi đẩy xong bản đồ Mốc giới GPMB thì hỏi rà soát").
+  if (m.loai_ban_do === 'Bản đồ mốc giới GPMB') checkMocgioiRecompute(editGpmbMapId);
+}
+
+let pendingMocgioiMapId = null;
+let pendingMocgioiDiffs = [];
+
+async function checkMocgioiRecompute(mapId) {
+  if (!mapId) return;
+  let res;
+  try {
+    res = await fetch(`/api/bt/maps/${mapId}/mocgioi/recompute-check`);
+  } catch (e) { return; }
+  if (!res.ok) return; // âm thầm bỏ qua (VD chưa khai đủ liên kết/hướng tính, hoặc lỗi tạm) — không làm phiền
+  const data = await res.json();
+  const diffs = data.diffs || [];
+  if (!diffs.length) return;
+  pendingMocgioiMapId = mapId;
+  pendingMocgioiDiffs = diffs;
+  const box = document.getElementById('mocgioi-diff-list');
+  box.innerHTML = `
+    <table style="width:100%;border-collapse:collapse;font-size:13px">
+      <thead><tr style="text-align:left;color:var(--muted)">
+        <th style="padding:6px 8px">Mảnh</th><th style="padding:6px 8px">Tờ - Thửa</th>
+        <th style="padding:6px 8px;text-align:right">DT thu hồi cũ (m²)</th>
+        <th style="padding:6px 8px;text-align:right">DT thu hồi mới (m²)</th>
+      </tr></thead>
+      <tbody>
+        ${diffs.map(d => `
+          <tr style="border-top:1px solid var(--border)">
+            <td style="padding:6px 8px">${esc(d.manh_ten || '')}</td>
+            <td style="padding:6px 8px">${esc(d.so_to || '')} - ${esc(d.so_thua || '')}</td>
+            <td style="padding:6px 8px;text-align:right">${d.dien_tich_thu_hoi_cu.toLocaleString('vi-VN')}</td>
+            <td style="padding:6px 8px;text-align:right;color:#f39c12;font-weight:600">${d.dien_tich_thu_hoi_moi.toLocaleString('vi-VN')}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>`;
+  document.getElementById('modal-mocgioi-confirm').classList.add('open');
+}
+
+function closeMocgioiConfirm() {
+  document.getElementById('modal-mocgioi-confirm').classList.remove('open');
+  pendingMocgioiMapId = null;
+  pendingMocgioiDiffs = [];
+}
+
+async function applyMocgioiRecompute() {
+  if (!pendingMocgioiMapId) { closeMocgioiConfirm(); return; }
+  const mapId = pendingMocgioiMapId;
+  const res = await fetch(`/api/bt/maps/${mapId}/mocgioi/apply-recompute`, { method: 'POST' });
+  closeMocgioiConfirm();
+  if (res.ok) {
+    const data = await res.json();
+    // Số thửa vừa cập nhật có thể thuộc các Mảnh trích đo GPMB khác (không phải mảnh đang mở) —
+    // xóa cache toàn bộ để lần xem tiếp theo tải lại đúng số mới, không chỉ mảnh đang sửa.
+    mapDetailCache = {};
+    toast(`Đã cập nhật diện tích thu hồi cho ${data.updated} thửa`);
+    await loadGpmbMaps();
+  } else {
+    const data = await res.json().catch(()=>({}));
+    toast(data.error || 'Lỗi khi cập nhật', true);
+  }
 }
 
 function debouncedGpmbPreview() {

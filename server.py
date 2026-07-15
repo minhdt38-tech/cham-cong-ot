@@ -569,6 +569,14 @@ def init_db():
         if 'nhom_ban_do' not in map_cols:
             db.execute("ALTER TABLE bt_maps ADD COLUMN nhom_ban_do TEXT DEFAULT ''")
 
+        # Bồi thường v2.3: Bản đồ mốc giới GPMB — khai báo mảnh trích đo GPMB liên quan (JSON mảng id)
+        # và hướng tính diện tích thu hồi (phần nằm TRONG polygon là 'thu_hoi' hay 'con_lai') để tự
+        # tính giao hình học (shapely) giữa mốc giới và từng thửa trên các mảnh GPMB đã liên kết.
+        if 'mocgioi_manh_ids' not in map_cols:
+            db.execute("ALTER TABLE bt_maps ADD COLUMN mocgioi_manh_ids TEXT DEFAULT ''")
+        if 'mocgioi_trong_la' not in map_cols:
+            db.execute("ALTER TABLE bt_maps ADD COLUMN mocgioi_trong_la TEXT DEFAULT ''")
+
         row = db.execute("SELECT id FROM users WHERE username='admin'").fetchone()
         if not row:
             pwd = hash_password('admin123')
@@ -1017,6 +1025,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/projects/(\d+)/gpmb-status$', path)
         if m:
             self.api_bt_project_gpmb_status(int(m.group(1))); return
+        m = re.match(r'^/api/bt/maps/(\d+)/mocgioi/recompute-check$', path)
+        if m:
+            self.api_bt_mocgioi_recompute_check(int(m.group(1))); return
         m = re.match(r'^/api/bt/projects/(\d+)/records$', path)
         if m:
             self.api_bt_records_list(int(m.group(1)), qs); return
@@ -1102,6 +1113,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/maps/(\d+)/parcels/import$', path)
         if m:
             self.api_bt_map_parcels_import(int(m.group(1))); return
+        m = re.match(r'^/api/bt/maps/(\d+)/mocgioi/apply-recompute$', path)
+        if m:
+            self.api_bt_mocgioi_apply_recompute(int(m.group(1))); return
         m = re.match(r'^/api/bt/maps/(\d+)/files$', path)
         if m:
             self.api_bt_map_files_upload(int(m.group(1))); return
@@ -2926,13 +2940,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sess = self.require_auth()
         if not sess: return
         body = self.read_json()
+        mocgioi_manh_ids = json.dumps(body.get('mocgioi_manh_ids') or [], ensure_ascii=False)
         with get_db() as db:
             cur = db.execute(
-                'INSERT INTO bt_maps (project_id, loai_ban_do, ten_ban_do, nhom_ban_do, ngay_lap, don_vi_lap, ghi_chu, custom_fields) '
-                'VALUES (?,?,?,?,?,?,?,?)',
+                'INSERT INTO bt_maps (project_id, loai_ban_do, ten_ban_do, nhom_ban_do, ngay_lap, don_vi_lap, ghi_chu, '
+                'custom_fields, mocgioi_manh_ids, mocgioi_trong_la) VALUES (?,?,?,?,?,?,?,?,?,?)',
                 (body.get('project_id') or None, body.get('loai_ban_do', ''), body.get('ten_ban_do', ''),
                  body.get('nhom_ban_do', ''), body.get('ngay_lap') or None, body.get('don_vi_lap', ''),
-                 body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False))
+                 body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False),
+                 mocgioi_manh_ids, body.get('mocgioi_trong_la', ''))
             )
             db.commit()
             new_id = cur.lastrowid
@@ -2942,13 +2958,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sess = self.require_auth()
         if not sess: return
         body = self.read_json()
+        mocgioi_manh_ids = json.dumps(body.get('mocgioi_manh_ids') or [], ensure_ascii=False)
         with get_db() as db:
             db.execute(
-                'UPDATE bt_maps SET project_id=?, loai_ban_do=?, ten_ban_do=?, nhom_ban_do=?, ngay_lap=?, don_vi_lap=?, ghi_chu=?, custom_fields=? '
-                'WHERE id=?',
+                'UPDATE bt_maps SET project_id=?, loai_ban_do=?, ten_ban_do=?, nhom_ban_do=?, ngay_lap=?, don_vi_lap=?, ghi_chu=?, '
+                'custom_fields=?, mocgioi_manh_ids=?, mocgioi_trong_la=? WHERE id=?',
                 (body.get('project_id') or None, body.get('loai_ban_do', ''), body.get('ten_ban_do', ''),
                  body.get('nhom_ban_do', ''), body.get('ngay_lap') or None, body.get('don_vi_lap', ''),
-                 body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False), map_id)
+                 body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False),
+                 mocgioi_manh_ids, body.get('mocgioi_trong_la', ''), map_id)
             )
             db.commit()
         self.send_json({'ok': True})
@@ -2996,6 +3014,127 @@ class Handler(http.server.BaseHTTPRequestHandler):
             'dien_tich_thu_hoi=?, dien_tich_con_lai=? WHERE id=?',
             (parcel_master_id, so_to, so_thua, tong_dt or 0, thu_hoi_dt or 0, con_lai, parcel_id)
         )
+
+    def _compute_mocgioi_overlap(self, db, mocgioi_map_id):
+        """Tính giao hình học giữa polygon(s) của 1 Bản đồ mốc giới GPMB và từng thửa trên các Mảnh
+        trích đo GPMB đã khai liên kết (mocgioi_manh_ids), trả về danh sách thửa có diện tích thu hồi
+        TÍNH MỚI khác với giá trị đang lưu (chênh > 1m² — bỏ qua sai số làm tròn vặt), kèm số cũ/mới.
+        KHÔNG tự ghi đè — chỉ trả về để phía gọi (recompute-check) hiển thị cho người dùng xác nhận,
+        hoặc (apply-recompute) áp dụng sau khi đã xác nhận. Dùng shapely — ném RuntimeError rõ ràng
+        nếu thư viện chưa cài được trên môi trường đang chạy (không có sẵn trong dev sandbox lúc viết
+        code này, chỉ cài qua requirements.txt lúc Railway build — xem ghi chú trong tài liệu thiết kế)."""
+        try:
+            from shapely.geometry import Polygon
+            from shapely.ops import unary_union
+        except ImportError:
+            raise RuntimeError('Thiếu thư viện shapely trên server — không tính được diện tích giao. Liên hệ quản trị để cài đặt (requirements.txt đã khai, có thể cần deploy lại).')
+
+        mgm = db.execute(
+            'SELECT project_id, mocgioi_manh_ids, mocgioi_trong_la FROM bt_maps WHERE id=?',
+            (mocgioi_map_id,)
+        ).fetchone()
+        if not mgm:
+            raise ValueError('Không tìm thấy Bản đồ mốc giới GPMB')
+        try:
+            manh_ids = json.loads(mgm['mocgioi_manh_ids'] or '[]')
+        except Exception:
+            manh_ids = []
+        trong_la = mgm['mocgioi_trong_la'] or ''
+        if not manh_ids or trong_la not in ('thu_hoi', 'con_lai'):
+            return []  # chưa khai đủ liên kết + hướng tính — chưa có gì để tính
+
+        # Gom toàn bộ polygon của Bản đồ mốc giới GPMB thành 1 hình (có thể nhiều đoạn/nhiều xã)
+        mg_rows = db.execute('SELECT toa_do FROM bt_map_parcels WHERE map_id=?', (mocgioi_map_id,)).fetchall()
+        mg_polys = []
+        for r in mg_rows:
+            ring = self._ring_from_toa_do(r['toa_do'])
+            if not ring:
+                continue
+            try:
+                p = Polygon(ring)
+                if p.is_valid and p.area > 0:
+                    mg_polys.append(p)
+            except Exception:
+                continue
+        if not mg_polys:
+            return []
+        mg_union = unary_union(mg_polys)
+
+        diffs = []
+        for manh_id in manh_ids:
+            manh = db.execute('SELECT id, ten_ban_do FROM bt_maps WHERE id=?', (manh_id,)).fetchone()
+            manh_ten = manh['ten_ban_do'] if manh else f'#{manh_id}'
+            thua_rows = db.execute(
+                'SELECT id, parcel_id, parcel_master_id, so_to_tren_ban_do, so_thua_tren_ban_do, '
+                'dien_tich_tren_ban_do, dien_tich_thu_hoi_tren_ban_do, toa_do FROM bt_map_parcels WHERE map_id=?',
+                (manh_id,)
+            ).fetchall()
+            for tr in thua_rows:
+                ring = self._ring_from_toa_do(tr['toa_do'])
+                if not ring:
+                    continue
+                try:
+                    thua_poly = Polygon(ring)
+                    if not thua_poly.is_valid or thua_poly.area <= 0:
+                        continue
+                    inter_area = thua_poly.intersection(mg_union).area
+                except Exception:
+                    continue
+                tong_dt = tr['dien_tich_tren_ban_do'] or thua_poly.area
+                if trong_la == 'thu_hoi':
+                    new_thu_hoi = round(inter_area, 2)
+                else:
+                    new_thu_hoi = round(max(tong_dt - inter_area, 0), 2)
+                cur_thu_hoi = round(tr['dien_tich_thu_hoi_tren_ban_do'] or 0, 2)
+                if abs(new_thu_hoi - cur_thu_hoi) > 1.0:
+                    diffs.append({
+                        'link_id': tr['id'], 'manh_id': manh_id, 'manh_ten': manh_ten,
+                        'so_to': tr['so_to_tren_ban_do'], 'so_thua': tr['so_thua_tren_ban_do'],
+                        'dien_tich_thu_hoi_cu': cur_thu_hoi, 'dien_tich_thu_hoi_moi': new_thu_hoi,
+                        'parcel_id': tr['parcel_id'], 'parcel_master_id': tr['parcel_master_id'],
+                        'tong_dien_tich': tong_dt,
+                    })
+        return diffs
+
+    def api_bt_mocgioi_recompute_check(self, map_id):
+        """Tính thử (không ghi CSDL) chênh lệch diện tích thu hồi cho các thửa bị ảnh hưởng bởi 1
+        Bản đồ mốc giới GPMB — dùng để hỏi xác nhận trước khi thực sự cập nhật (apply-recompute)."""
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            try:
+                diffs = self._compute_mocgioi_overlap(db, map_id)
+            except ValueError as e:
+                self.send_json({'error': str(e)}, 404); return
+            except RuntimeError as e:
+                self.send_json({'error': str(e)}, 500); return
+        self.send_json({'diffs': diffs})
+
+    def api_bt_mocgioi_apply_recompute(self, map_id):
+        """Áp dụng cập nhật diện tích thu hồi đã được người dùng xác nhận sau recompute-check.
+        Tự tính lại từ đầu (không tin số phía client gửi lên) để tránh dữ liệu cũ/đua lệnh —
+        diện tích thu hồi là số liệu ảnh hưởng tiền bồi thường nên ưu tiên an toàn hơn tiện lợi."""
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            try:
+                diffs = self._compute_mocgioi_overlap(db, map_id)
+            except ValueError as e:
+                self.send_json({'error': str(e)}, 404); return
+            except RuntimeError as e:
+                self.send_json({'error': str(e)}, 500); return
+            for d in diffs:
+                db.execute(
+                    'UPDATE bt_map_parcels SET dien_tich_thu_hoi_tren_ban_do=? WHERE id=?',
+                    (d['dien_tich_thu_hoi_moi'], d['link_id'])
+                )
+                if d['parcel_id']:
+                    self._sync_parcel_from_map_entry(
+                        db, d['parcel_id'], d['parcel_master_id'], d['so_to'], d['so_thua'],
+                        d['tong_dien_tich'], d['dien_tich_thu_hoi_moi']
+                    )
+            db.commit()
+        self.send_json({'ok': True, 'updated': len(diffs)})
 
     def api_bt_map_parcels_add(self, map_id):
         sess = self.require_auth()
