@@ -1043,6 +1043,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_bt_parcel_master_search(qs); return
         if path == '/api/bt/gpmb-template':
             self.api_bt_gpmb_template(); return
+        if path == '/api/bt/gpmb-geojson-template':
+            self.api_bt_gpmb_geojson_template(); return
         m = re.match(r'^/api/bt/projects/(\d+)/parcels$', path)
         if m:
             self.api_bt_parcels_list(int(m.group(1)), qs); return
@@ -3639,6 +3641,90 @@ class Handler(http.server.BaseHTTPRequestHandler):
             s2 = s.replace('.', '').replace(',', '.')
             return float(s2)
 
+    # Tập tên thuộc tính (đã chuẩn hóa: bỏ dấu, chữ thường, bỏ ký tự không phải chữ/số) được chấp
+    # nhận cho Tờ/Thửa khi đọc file GeoJSON — CHỦ ĐÍCH dùng khớp CHÍNH XÁC (không phải "chứa chuỗi
+    # con" như cột Excel) để tránh khớp nhầm 1 thuộc tính không liên quan chỉ vì tên có chứa "to"
+    # (VD "toa_do", "tong_dt"...). Khi hướng dẫn Minh khai báo thuộc tính trong phần mềm CAD/đo đạc,
+    # ưu tiên dùng đúng "so_to"/"so_thua" — các tên khác chỉ là phòng hờ tương thích thêm.
+    _GEOJSON_SO_TO_KEYS = {'to', 'soto', 'sohieuto', 'tobando', 'sheet', 'sheetno', 'sheetnumber', 'sheetnum'}
+    _GEOJSON_SO_THUA_KEYS = {'thua', 'sothua', 'sohieuthua', 'parcel', 'parcelno', 'parcelnumber', 'landparcel'}
+
+    def _geojson_norm_key(self, k):
+        norm = self._kml_strip_diacritics(str(k)).lower()
+        return re.sub(r'[^a-z0-9]', '', norm)
+
+    def _geojson_find_prop(self, props, key_set):
+        if not isinstance(props, dict):
+            return None
+        for k, v in props.items():
+            if self._geojson_norm_key(k) in key_set:
+                return v
+        return None
+
+    def _extract_geojson_groups(self, file_bytes):
+        """Đọc file .geojson/.json (chuẩn GeoJSON FeatureCollection) — mỗi Feature có sẵn geometry
+        (Polygon/MultiPolygon) VÀ properties (thuộc tính thật do phần mềm CAD/đo đạc gán, KHÔNG cần
+        đoán từ tên như KML) — trả về list các nhóm {'so_to','so_thua','pts','is_wgs84'}. Tự nhận
+        diện tọa độ đang ở hệ WGS84 (kinh độ/vĩ độ, trị tuyệt đối ≤180/≤90 — quy ước chuẩn GeoJSON
+        RFC 7946) hay đã là VN-2000 (trị lớn, hàng trăm nghìn/triệu — nhiều phần mềm CAD Việt Nam
+        xuất GeoJSON kèm tọa độ chiếu thẳng thay vì kinh vĩ độ) để quyết định có cần quy đổi hay
+        dùng thẳng, giống cách Excel luôn là VN-2000 còn KML luôn là WGS84."""
+        try:
+            data = json.loads(file_bytes.decode('utf-8-sig'))
+        except Exception as e:
+            raise ValueError(f'File không phải JSON hợp lệ: {e}')
+
+        if isinstance(data, dict) and data.get('type') == 'FeatureCollection':
+            features = data.get('features') or []
+        elif isinstance(data, dict) and data.get('type') == 'Feature':
+            features = [data]
+        else:
+            raise ValueError('File cần đúng chuẩn GeoJSON (FeatureCollection hoặc Feature)')
+        if not features:
+            raise ValueError('Không có Feature (thửa) nào trong file')
+
+        groups = []
+        for fi, feat in enumerate(features):
+            geom = (feat or {}).get('geometry') or {}
+            gtype = geom.get('type')
+            coords = geom.get('coordinates')
+            rings = []
+            if gtype == 'Polygon' and coords:
+                if coords and len(coords[0]) >= 3:
+                    rings = [coords[0]]
+            elif gtype == 'MultiPolygon' and coords:
+                rings = [poly[0] for poly in coords if poly and len(poly[0]) >= 3]
+            if not rings:
+                continue
+            props = (feat or {}).get('properties') or {}
+            so_to_raw = self._geojson_find_prop(props, self._GEOJSON_SO_TO_KEYS)
+            so_thua_raw = self._geojson_find_prop(props, self._GEOJSON_SO_THUA_KEYS)
+            so_to = str(so_to_raw).strip() if so_to_raw is not None else ''
+            so_thua = str(so_thua_raw).strip() if so_thua_raw is not None else ''
+            for ri, ring in enumerate(rings):
+                pts = []
+                for p in ring:
+                    if isinstance(p, (list, tuple)) and len(p) >= 2:
+                        pts.append([float(p[0]), float(p[1])])
+                if len(pts) < 3:
+                    continue
+                is_wgs84 = all(abs(p[0]) <= 180 and abs(p[1]) <= 90 for p in pts)
+                label = so_thua if so_thua else f'GEO-{fi + 1}'
+                if len(rings) > 1:
+                    label = f'{label}_{ri + 1}'
+                groups.append({'so_to': so_to, 'so_thua': label, 'pts': pts, 'is_wgs84': is_wgs84})
+
+        # Đánh số hậu tố cho các nhóm bị trùng khoá (so_to, so_thua) trong cùng file — an toàn ngay cả
+        # khi thuộc tính đến từ Feature có sẵn (đề phòng file khai trùng số hiệu do lỗi thao tác), theo
+        # đúng nguyên tắc đã áp dụng cho _extract_kml_groups.
+        seen_keys = {}
+        for g in groups:
+            key = (g['so_to'].lower(), g['so_thua'].lower())
+            seen_keys[key] = seen_keys.get(key, 0) + 1
+            if seen_keys[key] > 1:
+                g['so_thua'] = f"{g['so_thua']}-{seen_keys[key]}"
+        return groups
+
     def _normalize_toa_do(self, raw):
         """Chuẩn hóa ô nhập tọa độ thửa về GeoJSON, chấp nhận 2 kiểu nhập — dùng chung cho thêm/sửa 1 thửa
         (form tay) và import Excel hàng loạt, để không ai phải tự tay viết đúng cú pháp GeoJSON:
@@ -3670,7 +3756,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return None
 
     def api_bt_map_parcels_import(self, map_id):
-        """Import hàng loạt thửa đất vào 1 mảnh trích đo Bản đồ, nhận 1 trong 3 định dạng file:
+        """Import hàng loạt thửa đất vào 1 mảnh trích đo Bản đồ, nhận 1 trong 4 định dạng file:
         - .xlsx: MỖI DÒNG LÀ 1 ĐỈNH THỬA (cột STT, Tờ, Thửa, X, Y — tọa độ VN-2000, X=Đông/Y=Bắc).
           Các dòng liên tiếp có cùng Tờ+Thửa là các đỉnh của cùng 1 thửa, nối theo thứ tự trong file.
           Field tùy chọn auto_reorder=1: sắp xếp lại thứ tự đỉnh trong mỗi nhóm theo láng giềng gần
@@ -3682,7 +3768,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
           (VD "Tờ 3 Thửa 45"); nếu không đoán được, mỗi Placemark thành 1 nhóm riêng dùng chính tên đó
           làm "số thửa" tạm (không sinh Thửa đất tự động trong trường hợp này nếu là Bản đồ GPMB, vì
           không có số tờ/số thửa thật — vẫn lưu được hình để xem, chỉ không đồng bộ sang bt_parcels).
-        Ở cả 3 định dạng: đối chiếu trùng theo Tờ+Thửa trên cùng mảnh, yêu cầu xác nhận ghi đè
+        - .geojson / .json: đọc mỗi Feature thành 1 nhóm đỉnh — LẤY TỜ/THỬA TRỰC TIẾP TỪ properties
+          (thuộc tính thật do phần mềm CAD/đo đạc gán khi xuất file — khuyến nghị đặt tên thuộc tính
+          "so_to"/"so_thua", vài tên tương đương khác cũng được chấp nhận), KHÔNG đoán từ tên như KML
+          — đây là cách chính xác 100% cho cả hình lẫn Tờ/Thửa trong 1 lần import, dùng khi phần mềm
+          CAD/đo đạc xuất được đa giác khép kín kèm thuộc tính riêng cho từng thửa. Tự nhận diện tọa
+          độ trong file đang ở hệ WGS84 (kinh độ/vĩ độ) hay đã là VN-2000 (theo trị số) để quyết định
+          có quy đổi hay dùng thẳng; nếu là WGS84 thì cũng cần Kinh tuyến trục của dự án như KML.
+        Ở cả 4 định dạng: đối chiếu trùng theo Tờ+Thửa trên cùng mảnh, yêu cầu xác nhận ghi đè
         (field confirm_overwrite=1) nếu có trùng — không âm thầm ghi đè dữ liệu đã có. Diện tích luôn
         TÍNH TỰ ĐỘNG bằng công thức Shoelace từ tọa độ các đỉnh sau khi khép kín."""
         sess = self.require_auth()
@@ -3743,6 +3836,54 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     })
                 if not parsed_rows:
                     msg = 'Không có hình nào hợp lệ trong file KML/KMZ (mỗi Placemark cần ít nhất 3 đỉnh).'
+                    if skipped_short:
+                        msg += ' Bỏ qua: ' + ', '.join(skipped_short)
+                    self.send_json({'error': msg}, 400); return
+            elif ext in ('.geojson', '.json'):
+                try:
+                    geo_groups = self._extract_geojson_groups(file_bytes)
+                except Exception as e:
+                    self.send_json({'error': f'Không đọc được file: {e}'}, 400); return
+
+                needs_ktt = any(g['is_wgs84'] for g in geo_groups)
+                ktt = None
+                if needs_ktt:
+                    if m['project_id']:
+                        proj = db.execute('SELECT kinh_tuyen_truc FROM bt_projects WHERE id=?', (m['project_id'],)).fetchone()
+                        if proj and proj['kinh_tuyen_truc'] not in (None, ''):
+                            ktt = proj['kinh_tuyen_truc']
+                    if ktt is None:
+                        self.send_json({'error': 'File GeoJSON đang chứa tọa độ WGS84 (kinh độ/vĩ độ) — cần khai '
+                                                  'Kinh tuyến trục của dự án để quy đổi sang VN-2000. Vào "Sửa dự '
+                                                  'án" để nhập trước khi import (tra theo tỉnh dự án tọa lạc, Phụ '
+                                                  'lục 2 Thông tư 25/2014/TT-BTNMT, hoặc hỏi đơn vị đo đạc).'}, 400)
+                        return
+
+                parsed_rows = []
+                skipped_short = []
+                skipped_no_thua = []
+                for g in geo_groups:
+                    pts = g['pts']
+                    if len(pts) > 1 and pts[0] == pts[-1]:
+                        pts = pts[:-1]
+                    if len(pts) < 3:
+                        label = f"Tờ {g['so_to']} - Thửa {g['so_thua']}" if g['so_to'] else g['so_thua']
+                        skipped_short.append(label)
+                        continue
+                    if g['is_wgs84']:
+                        ring = [list(self._wgs84_lonlat_to_vn2000(lon, lat, ktt)) for lon, lat in pts]
+                    else:
+                        ring = [[float(x), float(y)] for x, y in pts]
+                    if ring[0][0] != ring[-1][0] or ring[0][1] != ring[-1][1]:
+                        ring.append(ring[0])
+                    toa_do = json.dumps({'type': 'Polygon', 'coordinates': [ring]}, ensure_ascii=False)
+                    dien_tich = round(self._polygon_area(ring), 2)
+                    parsed_rows.append({
+                        'so_to': g['so_to'], 'so_thua': g['so_thua'],
+                        'dien_tich': dien_tich, 'thu_hoi': 0, 'toa_do': toa_do,
+                    })
+                if not parsed_rows:
+                    msg = 'Không có hình nào hợp lệ trong file GeoJSON (mỗi Feature cần Polygon ít nhất 3 đỉnh).'
                     if skipped_short:
                         msg += ' Bỏ qua: ' + ', '.join(skipped_short)
                     self.send_json({'error': msg}, 400); return
@@ -3975,6 +4116,55 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_header('Content-Length', str(len(buf.getvalue())))
         self.end_headers()
         self.wfile.write(buf.getvalue())
+
+    def api_bt_gpmb_geojson_template(self):
+        """Trả về file .geojson mẫu để import Bản đồ GPMB — minh họa đúng tên thuộc tính so_to/so_thua
+        cần khai trong phần mềm CAD/đo đạc để hệ thống đọc được Tờ/Thửa chính xác 100% từ properties,
+        không phải đoán từ tên hình như KML. Toạ độ mẫu lấy thẳng VN-2000 (không cần quy đổi) — nếu
+        phần mềm của Minh chỉ xuất được kinh độ/vĩ độ (WGS84) thì hệ thống vẫn tự nhận diện và quy đổi
+        được, chỉ cần khai Kinh tuyến trục của dự án trước."""
+        sess = self.require_auth()
+        if not sess: return
+        geo = {
+            'type': 'FeatureCollection',
+            'features': [
+                {
+                    'type': 'Feature',
+                    'properties': {'so_to': '1', 'so_thua': '4'},
+                    'geometry': {
+                        'type': 'Polygon',
+                        'coordinates': [[
+                            [590943.981, 2313150.975],
+                            [591014.629, 2313128.736],
+                            [591009.393, 2313109.651],
+                            [590938.240, 2313132.048],
+                            [590943.981, 2313150.975],
+                        ]],
+                    },
+                },
+                {
+                    'type': 'Feature',
+                    'properties': {'so_to': '1', 'so_thua': '5'},
+                    'geometry': {
+                        'type': 'Polygon',
+                        'coordinates': [[
+                            [590938.240, 2313132.048],
+                            [591009.393, 2313109.651],
+                            [591003.867, 2313089.506],
+                            [590932.179, 2313112.071],
+                            [590938.240, 2313132.048],
+                        ]],
+                    },
+                },
+            ],
+        }
+        buf = json.dumps(geo, ensure_ascii=False, indent=2).encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/geo+json')
+        self.send_header('Content-Disposition', 'attachment; filename="mau-import-ban-do-gpmb.geojson"')
+        self.send_header('Content-Length', str(len(buf)))
+        self.end_headers()
+        self.wfile.write(buf)
 
     def api_bt_map_files_upload(self, map_id):
         sess = self.require_auth()

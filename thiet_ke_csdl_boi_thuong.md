@@ -599,6 +599,20 @@ Chênh lệch 37m² nhiều khả năng đến từ **phần mềm khác dùng m
 - Ranh giới anh dùng để đối chiếu trong phần mềm khác có đúng là file `21_05 RGQH New.kmz` này, cùng ngày/phiên bản không? Nếu khác file, đó là nguồn gây lệch.
 - Kinh tuyến trục đang cấu hình cho dự án trong app hiện là bao nhiêu? Nếu đang để 105.75° thay vì 105.0°, cần sửa lại field dự án — dù bản đồ mốc giới đã import trước đó vẫn hiển thị đúng vị trí trên nền OSM (do lúc import dùng giá trị nào đó cho ra đúng), nhưng nếu field dự án đang lưu sai giá trị thì các lần import KML/KMZ sau này có nguy cơ bị lệch ~79km.
 
+## Cập nhật 2026-07-15 (tính năng mới): import Bản đồ GPMB bằng GeoJSON — lấy Tờ/Thửa trực tiếp từ thuộc tính, không đoán từ tên
+
+Minh xuất thử 1 thửa ra KMZ từ phần mềm CAD, phát hiện file gồm nhiều đoạn đường rời rạc (không phải 1 đa giác khép kín), khiến ranh giới import vào bị sai lệch so với bản Excel gốc. Xác nhận phần mềm CAD/đo đạc của Minh (AutoCAD, MicroStation, và phần mềm bản đồ khác) đều xuất được **1 đa giác khép kín riêng cho từng thửa**, nhưng Minh vẫn muốn Excel làm nguồn dữ liệu chính vì gán được Tờ/Thửa trực tiếp theo từng thửa. Yêu cầu: tìm 1 định dạng bản đồ vừa mang hình vừa mang chính xác 100% thuộc tính Tờ/Thửa.
+
+Đã tra cứu Thông tư 09/2024/TT-BTNMT (chuẩn CSDL đất đai quốc gia) — quy định dùng GML hoặc GeoJSON cho dữ liệu không gian, XML/JSON mở rộng cho dữ liệu thuộc tính khi trao đổi dữ liệu đất đai. Chọn **GeoJSON** làm định dạng import mới (đơn giản hơn GML, không cần thư viện ngoài — chỉ dùng `json` chuẩn, đúng khuyến nghị của Bộ TN&MT) thay vì Shapefile (phức tạp hơn: nhiều file, tên trường DBF giới hạn 10 ký tự, cần thư viện ngoài `pyshp`).
+
+**Cơ chế:** mỗi Feature trong file GeoJSON (FeatureCollection) có sẵn `geometry` (Polygon/MultiPolygon) VÀ `properties` (thuộc tính Tờ/Thửa gán sẵn bởi phần mềm CAD/đo đạc) — đọc thẳng từ `properties`, không đoán từ tên như KML. Tên thuộc tính khuyến nghị: `so_to`/`so_thua`; chấp nhận thêm vài tên đồng nghĩa (`to`/`thua`, `sheet`/`parcel`...) nhưng **khớp CHÍNH XÁC theo khoá đã chuẩn hoá** (bỏ dấu, chữ thường, bỏ ký tự đặc biệt), không phải "chứa chuỗi con" như cột Excel — để tránh khớp nhầm 1 thuộc tính không liên quan chỉ vì tên có chứa "to" (VD "toa_do", "tong_dt") — đã viết test riêng xác nhận việc này (`_GEOJSON_SO_TO_KEYS`/`_GEOJSON_SO_THUA_KEYS` trong `server.py`).
+
+Tự nhận diện tọa độ trong file đang ở hệ WGS84 (kinh độ/vĩ độ, trị tuyệt đối ≤180/≤90) hay đã là VN-2000 (trị lớn) để quyết định có quy đổi theo Kinh tuyến trục của dự án hay dùng thẳng — vì tùy phần mềm mà GeoJSON xuất ra có thể ở 1 trong 2 hệ.
+
+**Tích hợp:** `api_bt_map_parcels_import` giờ nhận 4 định dạng (.xlsx, .kml/.kmz, .geojson/.json) qua cùng 1 endpoint, cùng 1 luồng đối chiếu trùng/xác nhận ghi đè như trước. Thêm endpoint `GET /api/bt/gpmb-geojson-template` trả về file mẫu minh họa đúng cấu trúc + tên thuộc tính. Frontend: input file trong tab Bản đồ GPMB nhận thêm `.geojson,.json`, thêm nút tải file mẫu GeoJSON, cập nhật hướng dẫn trong modal.
+
+Verify bằng test độc lập với dữ liệu thật (Thửa 6 Tờ 1, tọa độ Excel 39 đỉnh): dựng GeoJSON có `properties: {so_to:'1', so_thua:'6'}` + toạ độ VN-2000 gốc, chạy qua bản mirror của `_extract_geojson_groups` — ra đúng so_to/so_thua và diện tích khớp chính xác 34.644,95 m² (bằng Shoelace, không lệch). Cũng test: tự nhận WGS84 khi tọa độ là kinh/vĩ độ, tên thuộc tính có dấu ("Tờ"/"Thửa") vẫn khớp đúng, thuộc tính giả/không liên quan ("toa_do", "tong_dt") KHÔNG bị khớp nhầm thành so_to, và 2 Feature trùng Tờ/Thửa trong cùng file được tự đánh số phân biệt.
+
 ## Việc chưa nằm trong phạm vi thiết kế này (backlog)
 
 - Tính năng tính đơn giá/thành tiền cho Tài sản (theo bảng giá tỉnh, hệ số bồi thường/hỗ trợ) → ghi vào `bt_parcel_decisions.tien_bt_tai_san`.
