@@ -3037,6 +3037,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
             (parcel_master_id, so_to, so_thua, tong_dt or 0, thu_hoi_dt or 0, con_lai, parcel_id)
         )
 
+    def _shapely_repair(self, geom):
+        """Sửa hình không hợp lệ (tự cắt chéo nhẹ ở đỉnh, đỉnh trùng/gần trùng...) bằng kỹ thuật
+        buffer(0) chuẩn của shapely, thay vì bỏ qua hẳn — dữ liệu ranh giới/thửa thực tế (đặc biệt
+        hình nhiều đỉnh phức tạp, hoặc ranh giới đã qua bước tự sắp xếp lại đỉnh 'auto_reorder' của
+        tính năng import Excel) có thể lệch nhẹ ở mức đỉnh chứ không sai lệch nghiêm trọng — sửa sẽ
+        cho kết quả sát với hình thật hơn là loại bỏ toàn bộ. Trả về None nếu không sửa được."""
+        if geom.is_valid:
+            return geom if (not geom.is_empty and geom.area > 0) else None
+        try:
+            fixed = geom.buffer(0)
+        except Exception:
+            return None
+        if fixed.is_empty or fixed.area <= 0:
+            return None
+        return fixed
+
     def _compute_mocgioi_overlap(self, db, mocgioi_map_id):
         """Tính giao hình học giữa polygon(s) của 1 Bản đồ mốc giới GPMB và từng thửa trên các Mảnh
         trích đo GPMB đã khai liên kết (mocgioi_manh_ids), trả về danh sách thửa có diện tích thu hồi
@@ -3044,7 +3060,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         KHÔNG tự ghi đè — chỉ trả về để phía gọi (recompute-check) hiển thị cho người dùng xác nhận,
         hoặc (apply-recompute) áp dụng sau khi đã xác nhận. Dùng shapely — ném RuntimeError rõ ràng
         nếu thư viện chưa cài được trên môi trường đang chạy (không có sẵn trong dev sandbox lúc viết
-        code này, chỉ cài qua requirements.txt lúc Railway build — xem ghi chú trong tài liệu thiết kế)."""
+        code này, chỉ cài qua requirements.txt lúc Railway build — xem ghi chú trong tài liệu thiết kế).
+        Diện tích tổng của mỗi thửa dùng trong công thức LUÔN lấy từ `thua_poly.area` (shapely, trên
+        chính hình đã dùng để tính giao — sau khi sửa nếu cần) thay vì số `dien_tich_tren_ban_do` lưu
+        sẵn trong CSDL (tính bằng công thức Shoelace ở Python lúc import) — để phép trừ "tổng − giao"
+        luôn nhất quán trong cùng 1 bộ máy tính toán hình học, tránh lệch nhỏ do 2 công thức khác nhau
+        xử lý hình không hoàn toàn hợp lệ (tự cắt chéo nhẹ) theo 2 cách khác nhau."""
         try:
             from shapely.geometry import Polygon
             from shapely.ops import unary_union
@@ -3073,14 +3094,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not ring:
                 continue
             try:
-                p = Polygon(ring)
-                if p.is_valid and p.area > 0:
+                p = self._shapely_repair(Polygon(ring))
+                if p is not None:
                     mg_polys.append(p)
             except Exception:
                 continue
         if not mg_polys:
             return []
         mg_union = unary_union(mg_polys)
+        if not mg_union.is_valid:
+            mg_union = self._shapely_repair(mg_union)
+            if mg_union is None:
+                return []
 
         diffs = []
         for manh_id in manh_ids:
@@ -3096,13 +3121,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if not ring:
                     continue
                 try:
-                    thua_poly = Polygon(ring)
-                    if not thua_poly.is_valid or thua_poly.area <= 0:
+                    thua_poly = self._shapely_repair(Polygon(ring))
+                    if thua_poly is None:
                         continue
                     inter_area = thua_poly.intersection(mg_union).area
                 except Exception:
                     continue
-                tong_dt = tr['dien_tich_tren_ban_do'] or thua_poly.area
+                tong_dt = thua_poly.area
                 if trong_la == 'thu_hoi':
                     new_thu_hoi = round(inter_area, 2)
                 else:
@@ -3114,7 +3139,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         'so_to': tr['so_to_tren_ban_do'], 'so_thua': tr['so_thua_tren_ban_do'],
                         'dien_tich_thu_hoi_cu': cur_thu_hoi, 'dien_tich_thu_hoi_moi': new_thu_hoi,
                         'parcel_id': tr['parcel_id'], 'parcel_master_id': tr['parcel_master_id'],
-                        'tong_dien_tich': tong_dt,
+                        'tong_dien_tich': round(tong_dt, 2),
                     })
         return diffs
 

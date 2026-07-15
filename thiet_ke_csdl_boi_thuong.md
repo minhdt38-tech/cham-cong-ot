@@ -308,6 +308,18 @@ Xác minh bằng test độc lập tương tự (`/sessions/trusting-vibrant-tur
 
 ---
 
+## Cập nhật 2026-07-15 (follow-up): Minh báo diện tích thu hồi tính ra lệch với phần mềm khác — sửa xử lý hình không hợp lệ
+
+Minh kiểm tra chéo bằng phần mềm GIS khác: Thửa 6 (Tờ 1, tổng diện tích 34.644,95 m²) hệ thống tính ra diện tích thu hồi 29.766,67 m², nhưng phần mềm kia cho 29.729,56 m² — lệch 37,11 m² (~0,1%). Minh xác nhận ranh giới bản đồ (hình vẽ) đã đúng, nghi vấn nằm ở cách tính.
+
+**Nguyên nhân nghi ngờ nhiều nhất:** Thửa 6 là hình phức tạp 39 đỉnh (đã ghi chú từ trước, xem cập nhật 2026-07-15 sớm hơn: "có thể lõm"), và ranh giới Mốc giới GPMB liên quan từng phải sửa qua tính năng "tự động sắp xếp lại đỉnh" (do dữ liệu gốc bị xáo trộn thứ tự — xem mục "import Bản đồ ranh giới GPMB bị rối hình"). Cả 2 loại hình này đều có nguy cơ hình học không hoàn toàn "hợp lệ" theo chuẩn GIS (tự cắt chéo nhẹ ở 1-2 đỉnh, dù nhìn bằng mắt vẫn có vẻ đúng) — code cũ khi gặp polygon không hợp lệ (`is_valid == False`) sẽ **bỏ qua hẳn** thay vì cố gắng sửa, có thể khiến phép tính giao dùng thiếu 1 phần hình hoặc GEOS xử lý hình không hợp lệ theo cách không như mong đợi.
+
+**Đã sửa:** thêm `_shapely_repair(geom)` — dùng kỹ thuật `buffer(0)` chuẩn của shapely để tự sửa các lỗi hình học nhẹ (tự cắt chéo, đỉnh trùng/gần trùng) thay vì loại bỏ toàn bộ hình. Áp dụng cho cả polygon Mốc giới GPMB (từng đoạn, và cả sau khi hợp nhất `unary_union`) lẫn polygon từng thửa trước khi tính giao. Đồng thời đổi cách lấy "tổng diện tích thửa" dùng trong công thức: trước đây ưu tiên số `dien_tich_tren_ban_do` lưu sẵn (tính bằng Shoelace ở Python lúc import), giờ LUÔN lấy từ `thua_poly.area` (shapely, trên chính hình đã dùng để tính giao, sau khi sửa nếu cần) — để phép trừ "tổng − giao" luôn nhất quán trong cùng 1 bộ máy tính toán hình học, tránh 2 công thức khác nhau (Python shoelace thuần vs GEOS) xử lý hình không hoàn toàn hợp lệ theo 2 cách khác nhau, vốn có thể là nguồn gây lệch số như Minh gặp phải.
+
+**QUAN TRỌNG — vẫn chưa xác minh được bằng số thật:** như đã báo trước, sandbox này không cài được `shapely` (không có mạng) nên **không thể chạy lại đúng dữ liệu Thửa 6 để xác nhận sau khi sửa có ra đúng 29.729,56 m² hay không**. Đây là 1 sửa lỗi có cơ sở kỹ thuật vững (buffer(0) là kỹ thuật tiêu chuẩn, rất phổ biến để xử lý đúng tình huống "hình gần hợp lệ" như nghi ngờ ở đây), nhưng không đảm bảo chắc chắn khớp chính xác con số Minh đưa ra. **Đề nghị Minh sau khi deploy: mở lại Bản đồ Mốc giới GPMB liên quan, bấm rà soát lại (sửa/lưu lại 1 lần để trigger tính năng rà soát), xem số mới ra bao nhiêu, rồi báo lại** — nếu vẫn lệch, cần thêm bước chẩn đoán sâu hơn (có thể cần tôi xem trực tiếp tọa độ thô của Thửa 6 và ranh giới Mốc giới GPMB tương ứng để so khớp từng đỉnh).
+
+---
+
 ## Nguyên tắc thiết kế chung
 
 1. **Mở rộng linh hoạt:** mọi bảng nghiệp vụ đều có cột `custom_fields` (JSON) để thêm thuộc tính phát sinh mà không cần sửa code ngay; trường dùng thường xuyên sẽ được nâng thành cột chính thức sau.
