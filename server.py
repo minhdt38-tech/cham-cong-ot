@@ -561,6 +561,12 @@ def init_db():
         if 'toa_do' not in map_parcel_cols:
             db.execute("ALTER TABLE bt_map_parcels ADD COLUMN toa_do TEXT DEFAULT NULL")
 
+        # Bồi thường v2.2: tab Bản đồ (chung) — nhóm các mảnh bản đồ lại thành đầu mục tùy chỉnh
+        # (VD "Mảnh bản đồ xã Chương Dương" gồm nhiều tờ) — nhãn tự do, gom nhóm ở phía UI theo giá trị trùng nhau.
+        map_cols = [r[1] for r in db.execute("PRAGMA table_info(bt_maps)").fetchall()]
+        if 'nhom_ban_do' not in map_cols:
+            db.execute("ALTER TABLE bt_maps ADD COLUMN nhom_ban_do TEXT DEFAULT ''")
+
         row = db.execute("SELECT id FROM users WHERE username='admin'").fetchone()
         if not row:
             pwd = hash_password('admin123')
@@ -2889,8 +2895,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             params.append(project_id)
         if q:
             like = f'%{q}%'
-            sql += 'AND (m.ten_ban_do LIKE ? OR m.loai_ban_do LIKE ? OR m.don_vi_lap LIKE ?) '
-            params += [like, like, like]
+            sql += 'AND (m.ten_ban_do LIKE ? OR m.loai_ban_do LIKE ? OR m.don_vi_lap LIKE ? OR m.nhom_ban_do LIKE ?) '
+            params += [like, like, like, like]
         sql += 'GROUP BY m.id ORDER BY m.id DESC'
         with get_db() as db:
             rows = db.execute(sql, params).fetchall()
@@ -2920,11 +2926,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self.read_json()
         with get_db() as db:
             cur = db.execute(
-                'INSERT INTO bt_maps (project_id, loai_ban_do, ten_ban_do, ngay_lap, don_vi_lap, ghi_chu, custom_fields) '
-                'VALUES (?,?,?,?,?,?,?)',
+                'INSERT INTO bt_maps (project_id, loai_ban_do, ten_ban_do, nhom_ban_do, ngay_lap, don_vi_lap, ghi_chu, custom_fields) '
+                'VALUES (?,?,?,?,?,?,?,?)',
                 (body.get('project_id') or None, body.get('loai_ban_do', ''), body.get('ten_ban_do', ''),
-                 body.get('ngay_lap') or None, body.get('don_vi_lap', ''), body.get('ghi_chu', ''),
-                 json.dumps(body.get('custom_fields', {}), ensure_ascii=False))
+                 body.get('nhom_ban_do', ''), body.get('ngay_lap') or None, body.get('don_vi_lap', ''),
+                 body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False))
             )
             db.commit()
             new_id = cur.lastrowid
@@ -2936,11 +2942,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         body = self.read_json()
         with get_db() as db:
             db.execute(
-                'UPDATE bt_maps SET project_id=?, loai_ban_do=?, ten_ban_do=?, ngay_lap=?, don_vi_lap=?, ghi_chu=?, custom_fields=? '
+                'UPDATE bt_maps SET project_id=?, loai_ban_do=?, ten_ban_do=?, nhom_ban_do=?, ngay_lap=?, don_vi_lap=?, ghi_chu=?, custom_fields=? '
                 'WHERE id=?',
                 (body.get('project_id') or None, body.get('loai_ban_do', ''), body.get('ten_ban_do', ''),
-                 body.get('ngay_lap') or None, body.get('don_vi_lap', ''), body.get('ghi_chu', ''),
-                 json.dumps(body.get('custom_fields', {}), ensure_ascii=False), map_id)
+                 body.get('nhom_ban_do', ''), body.get('ngay_lap') or None, body.get('don_vi_lap', ''),
+                 body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False), map_id)
             )
             db.commit()
         self.send_json({'ok': True})

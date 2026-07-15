@@ -141,6 +141,24 @@ Minh gửi file dữ liệu đo đạc thật (`Copy of DanhSachToaDo.xls`, cộ
 
 ---
 
+## Cập nhật 2026-07-15 (sau khi thử import thật): hợp nhất tab "Bản đồ GPMB" thành tab "Bản đồ" chung — quản lý nhiều loại bản đồ, nhóm theo đầu mục, chồng nhiều lớp
+
+Sau khi Minh import thành công dữ liệu thật và xem bản đồ, anh yêu cầu mở rộng tab Bản đồ GPMB thành nơi quản lý **mọi loại bản đồ** của dự án, không chỉ GPMB, theo đúng giao diện split-pane + Leaflet đã có.
+
+**Phát hiện quan trọng trước khi sửa:** codebase đã có sẵn HAI khái niệm "Bản đồ" riêng biệt — tab "📐 Bản đồ GPMB" (`tab-gpmb`, xây dựng xuyên suốt phiên này, có polygon/tọa độ/import Excel/Leaflet) và một tab "🗂️ Bản đồ" cũ hơn (`tab-maps`, xây từ đầu dự án — chỉ lưu metadata + file đính kèm, KHÔNG có bản đồ không gian, đã có sẵn dropdown Loại bản đồ với 4 giá trị gần giống yêu cầu mới của Minh: Bản đồ trích lục/Bản đồ giao ruộng thời kỳ trước/Bản đồ địa chính/Khác). Cả hai cùng dùng chung bảng `bt_maps`/API `/api/bt/maps` — `tab-maps` không lọc `loai_ban_do` (hiển thị lẫn cả bản đồ GPMB), còn `tab-gpmb` lọc cứng `loai_ban_do === 'Bản đồ GPMB'`. Quyết định: biến `tab-gpmb` (giao diện mạnh hơn) thành tab Bản đồ duy nhất, **gỡ bỏ nút điều hướng của `tab-maps` cũ** (còn lại code/modal cũ nằm im, không xóa hẳn để giảm rủi ro — cờ dọn dẹp sau nếu Minh muốn). Đã báo quyết định này thay vì hỏi, vì cách đọc yêu cầu của Minh ("biến tab Bản đồ GPMB này thành tab Bản đồ") khá rõ ràng.
+
+**Schema:** thêm cột `bt_maps.nhom_ban_do` (TEXT, tự do) — nhãn đầu mục để nhóm các mảnh lại (VD "Xã Chương Dương"), không phải bảng riêng — nhóm được suy ra ở phía UI theo giá trị trùng nhau, giống cách module Tài liệu đã dùng tag tự do khớp theo tên dự án. `loai_ban_do` vẫn là TEXT tự do như cũ (không đổi thành enum cứng DB-side), chỉ ràng buộc ở UI qua dropdown 4 giá trị: Bản đồ GPMB / Bản đồ mốc giới GPMB / Bản đồ địa chính / Bản đồ khác.
+
+**Quy tắc quan trọng — chỉ loại "Bản đồ GPMB" mới tự sinh Thửa đất:** logic `_create_parcel_from_map_entry`/`_sync_parcel_from_map_entry` vốn đã kiểm tra chính xác `loai_ban_do == 'Bản đồ GPMB'` trước khi đồng bộ — không cần sửa gì thêm, chỉ cần đảm bảo giá trị mới không phá vỡ điều kiện này. 3 loại còn lại (mốc giới/địa chính/khác) dùng CHUNG cơ chế nhập liệu (form thủ công + import Excel theo dạng đỉnh) nhưng dữ liệu thửa/tờ của chúng độc lập, không tạo Thửa đất — đúng như Minh mô tả.
+
+**Frontend — mô hình hiển thị nhiều lớp:** thay hẳn khái niệm "chọn 1 mảnh để xem" (`selectedGpmbMapId`) bằng tập hợp `visibleMapIds` (Set các id đang bật 👁) + `mapDetailCache` (cache chi tiết từng bản đồ, tải theo yêu cầu qua `ensureMapDetail()`, xóa cache khi có sửa đổi). Panel trái nhóm các bản đồ theo `nhom_ban_do` (`renderGpmbMapsPanel`, nhóm không tên → "(Chưa phân nhóm)"), mỗi nhóm có header thu gọn/mở rộng (▼/▶) + 1 nút mắt cấp nhóm (bật/tắt cả nhóm cùng lúc — nếu có ít nhất 1 mảnh trong nhóm đang tắt thì bấm sẽ bật tất cả, ngược lại tắt tất cả). Mỗi bản đồ có nút mắt riêng + 1 chấm màu theo loại (`gpmbTypeStyle`: GPMB=xanh dương, mốc giới=cam, địa chính=xanh lá, khác=xám) để phân biệt khi chồng nhiều lớp. Mặc định khi tải trang: chỉ các bản đồ loại "Bản đồ GPMB" được bật sẵn (đúng yêu cầu #2 của Minh — "bản đồ bên phải hiển thị hết các mảnh bản đồ GPMB"), các loại khác mặc định tắt để không gây rối; nhưng chỉ áp dụng mặc định 1 lần cho mỗi id mới thấy (`seenMapIds`) — không ghi đè lựa chọn người dùng đã tự bật/tắt ở lần tải sau. `renderGpmbMapCanvas()` giờ không nhận tham số, tự gom parcels từ tất cả bản đồ đang bật trong cache, vẽ chồng cả SVG minh họa lẫn Leaflet thật theo đúng màu loại bản đồ.
+
+**Việc chưa làm (được Minh mô tả mục đích nhưng không yêu cầu triển khai cụ thể lần này):** tính tự động diện tích thu hồi bằng cách giao (intersect) hình học giữa Bản đồ mốc giới GPMB và nền Bản đồ GPMB — hiện tại mới dừng ở mức hiển thị chồng lớp trực quan (xem bằng mắt), chưa tính toán số liệu giao nhau. Cần thư viện hình học đa giác (shapely hoặc tương đương) nếu triển khai, đã có tiền lệ cân nhắc SQLite+Shapely trong [[gis-architecture-decision]].
+
+**Xác minh:** logic nhóm + toggle hiển thị (mặc định theo loại, toggle từng mảnh, toggle cả nhóm, dọn id đã xóa) viết lại thành script Node độc lập (`/tmp/verify_import/gpmb_grouping.mjs`) do bash tiếp tục đông cứng view `boi-thuong.html`/`server.py` phiên này (xác nhận qua `wc -l` lệch xa so với số dòng thực đọc bằng Read tool) — mọi assertion pass. Chưa xác minh trực quan qua browser thật (không có quyền truy cập) — Minh nên thử bấm 👁 từng mảnh và cả nhóm sau khi pull code mới.
+
+---
+
 ## Nguyên tắc thiết kế chung
 
 1. **Mở rộng linh hoạt:** mọi bảng nghiệp vụ đều có cột `custom_fields` (JSON) để thêm thuộc tính phát sinh mà không cần sửa code ngay; trường dùng thường xuyên sẽ được nâng thành cột chính thức sau.

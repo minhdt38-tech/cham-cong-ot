@@ -54,8 +54,19 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .gpmb-split-resizer{width:6px;flex-shrink:0;cursor:col-resize;background:rgba(255,255,255,.06)}
 .gpmb-split-resizer:hover,.gpmb-split-resizer.dragging{background:rgba(255,255,255,.18)}
 .gpmb-split-right{flex:1;overflow:auto;display:flex;flex-direction:column;padding:14px;min-width:200px}
-.gpmb-map-row{cursor:pointer}
-.gpmb-map-row.selected{background:rgba(52,152,219,.14)}
+.gpmb-map-row{display:flex;align-items:center;gap:8px;padding:6px 10px 6px 26px;border-bottom:1px solid var(--border)}
+.gpmb-map-row.selected{background:rgba(52,152,219,.10)}
+.gpmb-map-name{flex:1;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.gpmb-map-meta{font-size:11px;color:var(--muted);white-space:nowrap}
+.gpmb-type-dot{width:9px;height:9px;border-radius:50%;flex-shrink:0}
+.gpmb-group-header{display:flex;align-items:center;gap:8px;padding:8px 10px;background:#162d45;
+  position:sticky;top:0;z-index:1;border-bottom:1px solid var(--border);cursor:pointer}
+.gpmb-group-chevron{width:14px;color:var(--muted);font-size:11px}
+.gpmb-group-name{flex:1;font-size:12px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.gpmb-group-count{font-weight:400;color:var(--muted);margin-left:4px}
+.gpmb-eye-btn{cursor:pointer;font-size:14px;width:20px;text-align:center;flex-shrink:0;opacity:.4}
+.gpmb-eye-btn.on{opacity:1}
+.gpmb-eye-btn.partial{opacity:.75}
 .gpmb-parcel-label{background:rgba(20,28,48,.82);color:#fff;font-size:11px;font-weight:600;padding:1px 5px;
   border-radius:4px;white-space:nowrap;transform:translate(-50%,-50%);pointer-events:none;border:1px solid rgba(93,173,226,.6)}
 
@@ -185,9 +196,8 @@ td.td-ctr{text-align:center}
     <h1 id="proj-title">Quản lý Bồi thường, Hỗ trợ</h1>
     <div class="tab-bar" id="tab-bar" style="display:none">
       <button class="tab-btn active" onclick="switchTab('dashboard')">📊 Tổng quan</button>
-      <button class="tab-btn" onclick="switchTab('gpmb')">📐 Bản đồ GPMB</button>
+      <button class="tab-btn" onclick="switchTab('gpmb')">🗂️ Bản đồ</button>
       <button class="tab-btn" id="tabbtn-parcels" onclick="switchTab('parcels')">🗺️ Thửa đất</button>
-      <button class="tab-btn" id="tabbtn-maps" onclick="switchTab('maps')">🗂️ Bản đồ</button>
       <button class="tab-btn" id="tabbtn-assets" onclick="switchTab('assets')">🌳 Tài sản</button>
       <button class="tab-btn" id="tabbtn-dossiers" onclick="switchTab('dossiers')">💰 Hồ sơ Hộ</button>
       <button class="tab-btn" onclick="switchTab('records')">📋 Hồ sơ</button>
@@ -216,34 +226,21 @@ td.td-ctr{text-align:center}
   <div id="tab-gpmb" style="flex:1;display:none;flex-direction:column;overflow:hidden">
     <div class="toolbar">
       <div class="search-box">
-        <input id="gpmb-search-inp" type="text" placeholder="Tìm tên mảnh, đơn vị lập..." oninput="debouncedLoadGpmbMaps()">
+        <input id="gpmb-search-inp" type="text" placeholder="Tìm tên bản đồ, đơn vị lập..." oninput="debouncedLoadGpmbMaps()">
       </div>
-      <button class="btn btn-primary" onclick="openGpmbModal()">＋ Thêm mảnh trích đo Bản đồ GPMB</button>
+      <button class="btn btn-primary" onclick="openGpmbModal()">＋ Thêm bản đồ</button>
     </div>
     <div class="form-group form-full" style="font-size:12px;color:var(--muted);padding:0 16px 10px">
-      Bản đồ GPMB là bước đầu tiên của quy trình GPMB. Một dự án thường trải nhiều xã — mỗi xã lập 1 <strong>mảnh trích đo</strong> riêng; mỗi mảnh có nhiều tờ, mỗi tờ có nhiều thửa. Số tờ, số thửa, diện tích khai báo tại đây sẽ tự động sinh/cập nhật bản ghi Thửa đất tương ứng; thửa đất được gộp từ tất cả các mảnh. Bấm vào 1 dòng bên trái để xem bản đồ của mảnh đó bên phải. Nếu dự án đã khai <strong>Kinh tuyến trục</strong> (Sửa dự án), tọa độ nhập theo thứ tự X (Đông), Y (Bắc) — đúng theo cột trong hồ sơ đo đạc/CAD thông thường — bản đồ bên phải sẽ là bản đồ thực (OpenStreetMap); nếu chưa, chỉ hiện sơ đồ minh họa.
+      Quản lý chung mọi loại bản đồ của dự án: <strong>Bản đồ GPMB</strong> (tự động sinh Thửa đất — số tờ/số thửa/diện tích ở đây dùng chung cho mọi CSDL khác), <strong>Bản đồ mốc giới GPMB</strong> (ranh giới thu hồi theo từng xã, chồng lên nền GPMB để biết diện tích thu hồi), <strong>Bản đồ địa chính qua từng thời kỳ</strong> và <strong>bản đồ khác</strong> (tham khảo, dữ liệu độc lập). Bấm 👁 để bật/tắt từng bản đồ hoặc cả 1 nhóm trên bản đồ bên phải — có thể chồng nhiều bản đồ cùng lúc. Nếu dự án đã khai <strong>Kinh tuyến trục</strong> (Sửa dự án), tọa độ nhập theo thứ tự X (Đông), Y (Bắc) — bản đồ bên phải sẽ là bản đồ thực (OpenStreetMap); nếu chưa, chỉ hiện sơ đồ minh họa.
     </div>
     <div class="gpmb-split" id="gpmb-split">
       <div class="gpmb-split-left" id="gpmb-split-left" style="width:40%">
         <div class="tbl-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>#</th>
-                <th>Tên mảnh trích đo</th>
-                <th>Ngày lập</th>
-                <th>Đơn vị lập</th>
-                <th style="text-align:center">Số thửa</th>
-                <th style="text-align:center">Tệp</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody id="gpmb-tbl-body"></tbody>
-          </table>
+          <div id="gpmb-tbl-body"></div>
           <div id="gpmb-tbl-empty" class="empty-state" style="display:none">
-            <div class="es-icon">📐</div>
-            <p>Chưa có mảnh trích đo Bản đồ GPMB nào — hãy tạo mảnh đầu tiên để bắt đầu quy trình GPMB</p>
-            <button class="btn btn-primary" onclick="openGpmbModal()">＋ Thêm mảnh trích đo đầu tiên</button>
+            <div class="es-icon">🗂️</div>
+            <p>Chưa có bản đồ nào — hãy tạo Bản đồ GPMB đầu tiên để bắt đầu quy trình GPMB</p>
+            <button class="btn btn-primary" onclick="openGpmbModal()">＋ Thêm bản đồ đầu tiên</button>
           </div>
         </div>
       </div>
@@ -251,7 +248,7 @@ td.td-ctr{text-align:center}
       <div class="gpmb-split-right" id="gpmb-split-right">
         <div id="gpmb-map-title" style="font-size:13px;font-weight:600;color:var(--muted);margin-bottom:8px"></div>
         <div id="gpmb-map-canvas-wrap" style="flex:1;display:flex;align-items:center;justify-content:center;min-height:0;background:var(--card);border-radius:8px;position:relative;overflow:hidden">
-          <div id="gpmb-map-empty" style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Chọn 1 mảnh trích đo bên trái để xem bản đồ</div>
+          <div id="gpmb-map-empty" style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Bấm 👁 bên trái để bật hiển thị bản đồ</div>
           <svg id="gpmb-map-svg" style="display:none;width:100%;height:100%" preserveAspectRatio="xMidYMid meet"></svg>
           <div id="gpmb-map-leaflet" style="display:none;width:100%;height:100%;border-radius:8px"></div>
         </div>
@@ -262,8 +259,8 @@ td.td-ctr{text-align:center}
   <!-- LOCKED PLACEHOLDER — khi dự án chưa có Bản đồ GPMB -->
   <div id="tab-locked" style="display:none;flex:1;flex-direction:column;align-items:center;justify-content:center;gap:14px;color:var(--muted)">
     <div style="font-size:48px">🔒</div>
-    <p style="font-size:14px;max-width:440px;text-align:center">Mục này chỉ mở khi dự án đã có Bản đồ GPMB với ít nhất 1 thửa đất. Vui lòng tạo Bản đồ GPMB trước.</p>
-    <button class="btn btn-primary" onclick="switchTab('gpmb')">📐 Đi tới Bản đồ GPMB</button>
+    <p style="font-size:14px;max-width:440px;text-align:center">Mục này chỉ mở khi dự án đã có Bản đồ GPMB với ít nhất 1 thửa đất. Vui lòng tạo Bản đồ GPMB trước (tab 🗂️ Bản đồ).</p>
+    <button class="btn btn-primary" onclick="switchTab('gpmb')">🗂️ Đi tới Bản đồ</button>
   </div>
 
   <!-- PARCELS TAB (Thửa đất) -->
@@ -274,7 +271,7 @@ td.td-ctr{text-align:center}
       </div>
     </div>
     <div class="form-group form-full" style="font-size:12px;color:var(--muted);padding:0 16px 10px">
-      Thửa đất được tạo tự động từ Bản đồ GPMB. Để thêm/sửa/xóa thửa hoặc thay đổi số tờ, số thửa, diện tích — vào tab 📐 Bản đồ GPMB.
+      Thửa đất được tạo tự động từ Bản đồ GPMB. Để thêm/sửa/xóa thửa hoặc thay đổi số tờ, số thửa, diện tích — vào tab 🗂️ Bản đồ (loại Bản đồ GPMB).
     </div>
     <div class="tbl-wrap">
       <table>
@@ -720,7 +717,7 @@ td.td-ctr{text-align:center}
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-section">🗺️ Thông tin thửa đất</div>
-        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">📐 Số tờ, số thửa, diện tích chỉ đọc tại đây — sửa tại Bản đồ GPMB</div>
+        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">🗂️ Số tờ, số thửa, diện tích chỉ đọc tại đây — sửa tại tab Bản đồ (loại Bản đồ GPMB)</div>
         <div class="form-group"><label>Số tờ</label><input id="plf-so-to" type="text" disabled></div>
         <div class="form-group"><label>Số thửa</label><input id="plf-so-thua" type="text" disabled></div>
         <div class="form-group"><label>Loại đất</label>
@@ -814,20 +811,35 @@ td.td-ctr{text-align:center}
 <div class="modal-overlay" id="modal-gpmb-map">
   <div class="modal">
     <div class="modal-head">
-      <h3 id="gpmb-modal-title">Thêm mảnh trích đo Bản đồ GPMB</h3>
+      <h3 id="gpmb-modal-title">Thêm bản đồ</h3>
       <button class="modal-close" onclick="closeGpmbModal()">✕</button>
     </div>
     <div class="modal-body">
       <div class="form-grid">
-        <div class="form-section">📐 Thông tin mảnh trích đo Bản đồ GPMB</div>
-        <div class="form-group"><label>Tên mảnh trích đo</label><input id="gf-ten-ban-do" type="text" placeholder="VD: Mảnh trích đo xã Xuân Phú"></div>
+        <div class="form-section">🗂️ Thông tin bản đồ</div>
+        <div class="form-group">
+          <label>Loại bản đồ</label>
+          <select id="gf-loai-ban-do" onchange="onGpmbLoaiChange()">
+            <option value="Bản đồ GPMB">Bản đồ GPMB</option>
+            <option value="Bản đồ mốc giới GPMB">Bản đồ mốc giới GPMB</option>
+            <option value="Bản đồ địa chính">Bản đồ địa chính qua từng thời kỳ</option>
+            <option value="Bản đồ khác">Bản đồ khác</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Nhóm bản đồ (đầu mục)</label>
+          <input id="gf-nhom-ban-do" type="text" list="gpmb-nhom-options" placeholder="VD: Xã Chương Dương">
+          <datalist id="gpmb-nhom-options"></datalist>
+        </div>
+        <div class="form-group"><label>Tên bản đồ</label><input id="gf-ten-ban-do" type="text" placeholder="VD: Tờ 1, 2 - xã Xuân Phú"></div>
         <div class="form-group"><label>Ngày lập</label><input id="gf-ngay-lap" type="date"></div>
         <div class="form-group"><label>Đơn vị lập</label><input id="gf-don-vi-lap" type="text"></div>
         <div class="form-group form-full"><label>Ghi chú</label><textarea id="gf-ghi-chu"></textarea></div>
+        <div class="form-group form-full" id="gf-loai-hint" style="font-size:12px;color:var(--muted)"></div>
       </div>
 
       <div id="gpmb-sub-sections" style="display:none;margin-top:18px">
-        <div class="form-section">🗺️ Thửa đất trên mảnh trích đo (tự động sinh Thửa đất)</div>
+        <div class="form-section" id="gpmb-sub-section-title">🗺️ Thửa đất trên bản đồ (tự động sinh Thửa đất)</div>
         <div id="gpmb-parcels-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
         <div id="gpmb-combined-preview" style="display:none;margin-bottom:10px"></div>
         <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
@@ -864,7 +876,7 @@ td.td-ctr{text-align:center}
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeGpmbModal()">Đóng</button>
-      <button class="btn btn-primary" onclick="saveGpmbMap()">Lưu mảnh trích đo Bản đồ GPMB</button>
+      <button class="btn btn-primary" onclick="saveGpmbMap()">Lưu bản đồ</button>
     </div>
   </div>
 </div>
@@ -1110,7 +1122,7 @@ async function refreshGpmbStatus() {
 }
 
 function updateTabLockUI() {
-  ['tabbtn-parcels','tabbtn-maps','tabbtn-assets','tabbtn-dossiers'].forEach(elId => {
+  ['tabbtn-parcels','tabbtn-assets','tabbtn-dossiers'].forEach(elId => {
     const btn = document.getElementById(elId);
     if (!btn) return;
     btn.classList.toggle('tab-locked', !currentProjGpmbOk);
@@ -1830,7 +1842,20 @@ function debouncedLoadGpmbMaps() {
   gpmbSearchTimer = setTimeout(loadGpmbMaps, 300);
 }
 
-let selectedGpmbMapId = null;
+const GPMB_TYPE_STYLE = {
+  'Bản đồ GPMB':          { color: '#5dade2', badge: 'GPMB' },
+  'Bản đồ mốc giới GPMB': { color: '#e67e22', badge: 'Mốc giới' },
+  'Bản đồ địa chính':     { color: '#2ecc71', badge: 'Địa chính' },
+};
+const GPMB_TYPE_DEFAULT_STYLE = { color: '#95a5a6', badge: 'Khác' };
+function gpmbTypeStyle(loai) { return GPMB_TYPE_STYLE[loai] || GPMB_TYPE_DEFAULT_STYLE; }
+
+let visibleMapIds = new Set();      // các mảnh đang bật hiển thị trên bản đồ phải
+let seenMapIds = new Set();         // đã từng thấy id này (để chỉ đặt mặc định 1 lần, không ghi đè lựa chọn của người dùng)
+let collapsedGroups = new Set();    // tên nhóm đang thu gọn
+let mapDetailCache = {};            // id -> chi tiết bản đồ (đã có parcels) tải từ /api/bt/maps/:id
+
+function groupKeyOf(m) { return (m.nhom_ban_do || '').trim() || '(Chưa phân nhóm)'; }
 
 async function loadGpmbMaps() {
   if (!currentProjId) return;
@@ -1839,51 +1864,101 @@ async function loadGpmbMaps() {
   if (q) params.set('q', q);
   const res = await fetch(`/api/bt/maps?${params}`);
   if (!res.ok) return;
-  gpmbMapsList = (await res.json()).filter(m => m.loai_ban_do === 'Bản đồ GPMB');
-  renderGpmbMapsTable();
-  if (!gpmbMapsList.some(m => m.id === selectedGpmbMapId)) {
-    selectedGpmbMapId = gpmbMapsList.length ? gpmbMapsList[0].id : null;
-  }
-  if (selectedGpmbMapId) {
-    await selectGpmbMap(selectedGpmbMapId);
-  } else {
-    document.getElementById('gpmb-map-title').textContent = '';
-    const emptyEl = document.getElementById('gpmb-map-empty');
-    emptyEl.textContent = 'Chọn 1 mảnh trích đo bên trái để xem bản đồ';
-    emptyEl.style.display = 'block';
-    document.getElementById('gpmb-map-svg').style.display = 'none';
-  }
+  gpmbMapsList = await res.json();
+  // Mặc định bật hiển thị các mảnh Bản đồ GPMB lần đầu thấy (không đụng tới lựa chọn người dùng đã tự tắt/bật)
+  gpmbMapsList.forEach(m => {
+    if (!seenMapIds.has(m.id)) {
+      seenMapIds.add(m.id);
+      if (m.loai_ban_do === 'Bản đồ GPMB') visibleMapIds.add(m.id);
+    }
+  });
+  // Dọn id không còn tồn tại (đã bị xóa)
+  const stillExist = new Set(gpmbMapsList.map(m => m.id));
+  [...visibleMapIds].forEach(id => { if (!stillExist.has(id)) visibleMapIds.delete(id); });
+  await Promise.all([...visibleMapIds].map(id => ensureMapDetail(id)));
+  renderGpmbMapsPanel();
+  renderGpmbMapCanvas();
 }
 
-function renderGpmbMapsTable() {
+async function ensureMapDetail(id) {
+  if (mapDetailCache[id]) return mapDetailCache[id];
+  const res = await fetch(`/api/bt/maps/${id}`);
+  if (!res.ok) return null;
+  const m = await res.json();
+  mapDetailCache[id] = m;
+  return m;
+}
+
+async function toggleMapVisibility(id) {
+  if (visibleMapIds.has(id)) {
+    visibleMapIds.delete(id);
+  } else {
+    visibleMapIds.add(id);
+    await ensureMapDetail(id);
+  }
+  renderGpmbMapsPanel();
+  renderGpmbMapCanvas();
+}
+
+async function toggleGroupVisibility(groupKey) {
+  const members = gpmbMapsList.filter(m => groupKeyOf(m) === groupKey);
+  const allVisible = members.every(m => visibleMapIds.has(m.id));
+  if (allVisible) {
+    members.forEach(m => visibleMapIds.delete(m.id));
+  } else {
+    await Promise.all(members.map(async m => { visibleMapIds.add(m.id); await ensureMapDetail(m.id); }));
+  }
+  renderGpmbMapsPanel();
+  renderGpmbMapCanvas();
+}
+
+function toggleGroupCollapsed(groupKey) {
+  if (collapsedGroups.has(groupKey)) collapsedGroups.delete(groupKey);
+  else collapsedGroups.add(groupKey);
+  renderGpmbMapsPanel();
+}
+
+function renderGpmbMapsPanel() {
   const body = document.getElementById('gpmb-tbl-body');
   const empty = document.getElementById('gpmb-tbl-empty');
   if (!gpmbMapsList.length) { body.innerHTML = ''; empty.style.display = 'flex'; return; }
   empty.style.display = 'none';
-  body.innerHTML = gpmbMapsList.map((m, i) => `
-    <tr class="gpmb-map-row${m.id===selectedGpmbMapId ? ' selected' : ''}" onclick="selectGpmbMap(${m.id})">
-      <td>${i+1}</td>
-      <td>${esc(m.ten_ban_do)}</td>
-      <td>${esc(m.ngay_lap || '')}</td>
-      <td>${esc(m.don_vi_lap)}</td>
-      <td class="td-ctr">${m.so_thua || 0}</td>
-      <td class="td-ctr">${m.so_file || 0}</td>
-      <td>
-        <button class="btn btn-ghost btn-sm" onclick="event.stopPropagation();openGpmbModal(${m.id})">✏️</button>
-        <button class="btn btn-danger btn-sm" onclick="event.stopPropagation();askDeleteGpmbMap(${m.id})">🗑️</button>
-      </td>
-    </tr>
-  `).join('');
-}
 
-async function selectGpmbMap(id) {
-  selectedGpmbMapId = id;
-  renderGpmbMapsTable();
-  const res = await fetch(`/api/bt/maps/${id}`);
-  if (!res.ok) return;
-  const m = await res.json();
-  document.getElementById('gpmb-map-title').textContent = m.ten_ban_do || '(chưa đặt tên)';
-  renderGpmbMapCanvas(m.parcels || []);
+  const groups = new Map();
+  gpmbMapsList.forEach(m => {
+    const k = groupKeyOf(m);
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(m);
+  });
+
+  let html = '';
+  [...groups.entries()].forEach(([groupKey, members]) => {
+    const collapsed = collapsedGroups.has(groupKey);
+    const allVisible = members.every(m => visibleMapIds.has(m.id));
+    const someVisible = members.some(m => visibleMapIds.has(m.id));
+    html += `
+      <div class="gpmb-group-header">
+        <span class="gpmb-group-chevron" onclick="toggleGroupCollapsed('${esc(groupKey)}')">${collapsed ? '▶' : '▼'}</span>
+        <span class="gpmb-group-name" onclick="toggleGroupCollapsed('${esc(groupKey)}')">${esc(groupKey)}<span class="gpmb-group-count">(${members.length})</span></span>
+        <span class="gpmb-eye-btn${allVisible ? ' on' : (someVisible ? ' partial' : '')}" title="Bật/tắt cả nhóm" onclick="toggleGroupVisibility('${esc(groupKey)}')">${allVisible ? '👁' : (someVisible ? '👁' : '🚫')}</span>
+      </div>`;
+    if (!collapsed) {
+      members.forEach(m => {
+        const style = gpmbTypeStyle(m.loai_ban_do);
+        const on = visibleMapIds.has(m.id);
+        html += `
+          <div class="gpmb-map-row${on ? ' selected' : ''}">
+            <span class="gpmb-eye-btn${on ? ' on' : ''}" title="Bật/tắt hiển thị" onclick="toggleMapVisibility(${m.id})">${on ? '👁' : '🚫'}</span>
+            <span class="gpmb-type-dot" style="background:${style.color}" title="${esc(m.loai_ban_do || '')}"></span>
+            <span class="gpmb-map-name" title="${esc(m.ten_ban_do)}">${esc(m.ten_ban_do || '(chưa đặt tên)')}</span>
+            <span class="gpmb-map-meta">${m.so_thua || 0} thửa · ${esc(m.ngay_lap || '')}</span>
+            <button class="btn btn-ghost btn-sm" onclick="openGpmbModal(${m.id})">✏️</button>
+            <button class="btn btn-danger btn-sm" onclick="askDeleteGpmbMap(${m.id})">🗑️</button>
+          </div>`;
+      });
+    }
+  });
+  body.innerHTML = html;
 }
 
 let gpmbLeafletMap = null;
@@ -1930,19 +2005,30 @@ function gpmbParcelLabel(p) {
   return `${esc(p.so_thua_tren_ban_do)}.${esc(p.so_to_tren_ban_do)}.${dt}m2`;
 }
 
-function renderGpmbMapCanvas(parcels) {
+function renderGpmbMapCanvas() {
   const emptyEl = document.getElementById('gpmb-map-empty');
   const svg = document.getElementById('gpmb-map-svg');
   const leafletEl = document.getElementById('gpmb-map-leaflet');
+  const titleEl = document.getElementById('gpmb-map-title');
   const proj = projectsList.find(pr => pr.id === currentProjId);
   const ktt = proj && proj.kinh_tuyen_truc != null && proj.kinh_tuyen_truc !== '' ? parseFloat(proj.kinh_tuyen_truc) : null;
 
-  const withGeo = (parcels || [])
-    .map(p => ({ p, rings: parseToaDoToRings(p.toa_do) }))
-    .filter(x => x.rings && x.rings.flat().some(pt => Array.isArray(pt) && pt.length >= 2));
+  const visibleMaps = [...visibleMapIds].map(id => mapDetailCache[id]).filter(Boolean);
+  titleEl.textContent = visibleMaps.length
+    ? `Đang hiển thị ${visibleMaps.length} bản đồ: ${visibleMaps.map(m => m.ten_ban_do || '(chưa đặt tên)').join(', ')}`
+    : '';
+
+  const withGeo = visibleMaps.flatMap(m => {
+    const style = gpmbTypeStyle(m.loai_ban_do);
+    return (m.parcels || [])
+      .map(p => ({ p, rings: parseToaDoToRings(p.toa_do), color: style.color }))
+      .filter(x => x.rings && x.rings.flat().some(pt => Array.isArray(pt) && pt.length >= 2));
+  });
 
   if (!withGeo.length) {
-    emptyEl.textContent = 'Mảnh này chưa có thửa nào có tọa độ để hiển thị bản đồ — bấm ✏️ để thêm tọa độ cho từng thửa, hoặc import Excel.';
+    emptyEl.textContent = visibleMaps.length
+      ? 'Các bản đồ đang bật chưa có thửa/điểm nào có tọa độ — bấm ✏️ để thêm tọa độ, hoặc import Excel.'
+      : 'Bấm 👁 bên trái để bật hiển thị bản đồ';
     emptyEl.style.display = 'block';
     svg.style.display = 'none';
     leafletEl.style.display = 'none';
@@ -1973,11 +2059,11 @@ function renderGpmbSvgCanvas(withGeo) {
   const scale = Math.min((w - pad*2) / spanX, (h - pad*2) / spanY);
   const toXY = (pt) => [pad + (pt[0]-minX)*scale, h - pad - (pt[1]-minY)*scale];
   let parts = '';
-  withGeo.forEach(({ p, rings }) => {
+  withGeo.forEach(({ p, rings, color }) => {
     rings.forEach(ring => {
       const ptsStr = ring.filter(pt => Array.isArray(pt) && pt.length >= 2)
         .map(toXY).map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
-      parts += `<polygon points="${ptsStr}" fill="none" stroke="#5dade2" stroke-width="2"/>`;
+      parts += `<polygon points="${ptsStr}" fill="none" stroke="${color}" stroke-width="2"/>`;
     });
     const outer = rings[0] && rings[0].filter(pt => Array.isArray(pt) && pt.length >= 2);
     const centroid = outer && outer.length >= 3 ? polygonCentroid(outer) : null;
@@ -2001,7 +2087,7 @@ function renderGpmbLeafletMap(withGeo, ktt) {
   }
   if (gpmbLeafletLayer) { gpmbLeafletMap.removeLayer(gpmbLeafletLayer); gpmbLeafletLayer = null; }
   const layers = [];
-  withGeo.forEach(({ p, rings }) => {
+  withGeo.forEach(({ p, rings, color }) => {
     let outerRing = null;
     rings.forEach((ring, idx) => {
       const rawPts = ring.filter(pt => Array.isArray(pt) && pt.length >= 2);
@@ -2011,7 +2097,7 @@ function renderGpmbLeafletMap(withGeo, ktt) {
         .filter(ll => ll)
         .map(([lon, lat]) => [lat, lon]);
       if (latlngs.length < 3) return;
-      const poly = L.polygon(latlngs, { color: '#5dade2', weight: 2, fill: false });
+      const poly = L.polygon(latlngs, { color, weight: 2, fill: false });
       layers.push(poly);
     });
     if (outerRing && outerRing.length >= 3) {
@@ -2066,23 +2152,49 @@ function renderGpmbLeafletMap(withGeo, ktt) {
   });
 })();
 
+const GPMB_LOAI_HINTS = {
+  'Bản đồ GPMB': 'Là kết quả đo đạc hiện trạng sử dụng đất tại thời điểm đo — số tờ/số thửa/diện tích khai báo ở đây sẽ TỰ ĐỘNG sinh/cập nhật Thửa đất, dùng chung cho mọi CSDL khác trong dự án.',
+  'Bản đồ mốc giới GPMB': 'Xác định ranh giới thu hồi của dự án, lập theo từng xã. Chồng lên nền Bản đồ GPMB để biết diện tích thu hồi. KHÔNG tự sinh Thửa đất.',
+  'Bản đồ địa chính': 'Bản đồ địa chính qua từng thời kỳ, dùng để tham khảo quá trình sử dụng đất. Dữ liệu độc lập, KHÔNG ảnh hưởng các CSDL khác.',
+  'Bản đồ khác': 'Bản đồ tham khảo/đối chiếu khác. Dữ liệu độc lập, KHÔNG ảnh hưởng các CSDL khác.',
+};
+
+function onGpmbLoaiChange() {
+  const loai = document.getElementById('gf-loai-ban-do').value;
+  document.getElementById('gf-loai-hint').textContent = GPMB_LOAI_HINTS[loai] || '';
+  const isGpmb = loai === 'Bản đồ GPMB';
+  document.getElementById('gpmb-sub-section-title').textContent = isGpmb
+    ? '🗺️ Thửa đất trên bản đồ (tự động sinh Thửa đất)'
+    : '🗺️ Các đối tượng (điểm/thửa) trên bản đồ này';
+}
+
+function populateGpmbNhomOptions() {
+  const dl = document.getElementById('gpmb-nhom-options');
+  const names = [...new Set((gpmbMapsList || []).map(m => (m.nhom_ban_do || '').trim()).filter(Boolean))].sort();
+  dl.innerHTML = names.map(n => `<option value="${esc(n)}">`).join('');
+}
+
 async function openGpmbModal(id) {
   editGpmbMapId = id || null;
   selectedGpmbParcelMasterId = null;
   currentGpmbParcels = [];
   currentGpmbFiles = [];
   editingGpmbParcelId = null;
-  document.getElementById('gpmb-modal-title').textContent = id ? 'Sửa mảnh trích đo Bản đồ GPMB' : 'Thêm mảnh trích đo Bản đồ GPMB';
-  ['ten-ban-do','ngay-lap','don-vi-lap','ghi-chu'].forEach(f => {
+  document.getElementById('gpmb-modal-title').textContent = id ? 'Sửa bản đồ' : 'Thêm bản đồ';
+  ['ten-ban-do','ngay-lap','don-vi-lap','ghi-chu','nhom-ban-do'].forEach(f => {
     const el = document.getElementById('gf-'+f);
     if (el) el.value = '';
   });
+  document.getElementById('gf-loai-ban-do').value = 'Bản đồ GPMB';
+  populateGpmbNhomOptions();
   resetGpmbParcelForm();
 
   if (id) {
     const res = await fetch(`/api/bt/maps/${id}`);
     if (res.ok) {
       const m = await res.json();
+      document.getElementById('gf-loai-ban-do').value = m.loai_ban_do || 'Bản đồ GPMB';
+      document.getElementById('gf-nhom-ban-do').value = m.nhom_ban_do || '';
       document.getElementById('gf-ten-ban-do').value = m.ten_ban_do || '';
       document.getElementById('gf-ngay-lap').value = m.ngay_lap || '';
       document.getElementById('gf-don-vi-lap').value = m.don_vi_lap || '';
@@ -2096,6 +2208,7 @@ async function openGpmbModal(id) {
     document.getElementById('gpmb-sub-sections').style.display = 'none';
     document.getElementById('gpmb-sub-hint').style.display = 'block';
   }
+  onGpmbLoaiChange();
   renderGpmbParcelsList();
   renderGpmbFilesList();
   document.getElementById('modal-gpmb-map').classList.add('open');
@@ -2103,7 +2216,7 @@ async function openGpmbModal(id) {
 
 async function closeGpmbModal() {
   document.getElementById('modal-gpmb-map').classList.remove('open');
-  if (editGpmbMapId) selectedGpmbMapId = editGpmbMapId;
+  if (editGpmbMapId) visibleMapIds.add(editGpmbMapId);
   editGpmbMapId = null;
   await loadGpmbMaps();
   await refreshGpmbStatus();
@@ -2113,7 +2226,8 @@ async function closeGpmbModal() {
 async function saveGpmbMap() {
   const body = {
     project_id: currentProjId,
-    loai_ban_do: 'Bản đồ GPMB',
+    loai_ban_do: document.getElementById('gf-loai-ban-do').value || 'Bản đồ GPMB',
+    nhom_ban_do: document.getElementById('gf-nhom-ban-do').value,
     ten_ban_do: document.getElementById('gf-ten-ban-do').value,
     ngay_lap: document.getElementById('gf-ngay-lap').value || null,
     don_vi_lap: document.getElementById('gf-don-vi-lap').value,
@@ -2126,24 +2240,31 @@ async function saveGpmbMap() {
     const data = await res.json();
     if (!editGpmbMapId) {
       editGpmbMapId = data.id;
-      document.getElementById('gpmb-modal-title').textContent = 'Sửa mảnh trích đo Bản đồ GPMB';
+      document.getElementById('gpmb-modal-title').textContent = 'Sửa bản đồ';
       document.getElementById('gpmb-sub-sections').style.display = 'block';
       document.getElementById('gpmb-sub-hint').style.display = 'none';
     }
-    toast('Đã lưu mảnh trích đo Bản đồ GPMB');
+    delete mapDetailCache[editGpmbMapId];
+    toast('Đã lưu bản đồ');
     loadGpmbMaps();
-  } else { toast('Lỗi khi lưu Bản đồ GPMB', true); }
+  } else { toast('Lỗi khi lưu bản đồ', true); }
 }
 
 function askDeleteGpmbMap(id) {
-  document.getElementById('confirm-msg').textContent = 'Xóa mảnh trích đo Bản đồ GPMB này? Toàn bộ Thửa đất được sinh ra từ mảnh này (và các liên kết chủ sở hữu, tài sản, quyết định gắn với các thửa đó) cũng sẽ bị xóa. Hành động này không thể hoàn tác.';
+  const m = gpmbMapsList.find(x => x.id === id);
+  const isGpmb = m && m.loai_ban_do === 'Bản đồ GPMB';
+  document.getElementById('confirm-msg').textContent = isGpmb
+    ? 'Xóa bản đồ này? Đây là Bản đồ GPMB — toàn bộ Thửa đất được sinh ra từ đây (và các liên kết chủ sở hữu, tài sản, quyết định gắn với các thửa đó) cũng sẽ bị xóa. Hành động này không thể hoàn tác.'
+    : 'Xóa bản đồ này? Hành động không thể hoàn tác.';
   confirmCb = async () => {
     const res = await fetch(`/api/bt/maps/${id}`, {method:'DELETE'});
     if (res.ok) {
+      delete mapDetailCache[id];
+      visibleMapIds.delete(id);
       await loadGpmbMaps();
       await refreshGpmbStatus();
       updateTabLockUI();
-      toast('Đã xóa mảnh trích đo Bản đồ GPMB');
+      toast('Đã xóa bản đồ');
     } else toast('Lỗi khi xóa', true);
   };
   document.getElementById('modal-confirm').classList.add('open');
@@ -2380,6 +2501,7 @@ function renderGpmbFilesList() {
 
 async function reloadGpmbDetail() {
   if (!editGpmbMapId) return;
+  delete mapDetailCache[editGpmbMapId]; // dữ liệu vừa đổi — buộc tải lại lần sau khi hiển thị bên phải
   const res = await fetch(`/api/bt/maps/${editGpmbMapId}`);
   if (!res.ok) return;
   const m = await res.json();
@@ -2889,10 +3011,10 @@ function askDeleteDossier(id) {
 // TABS
 // ══════════════════════════════════════════════════════════════
 function switchTab(tab) {
-  const gated = ['parcels','maps','assets','dossiers'];
+  const gated = ['parcels','assets','dossiers'];
   const isLocked = gated.includes(tab) && !currentProjGpmbOk;
   currentTab = tab;
-  const tabOrder = ['dashboard','gpmb','parcels','maps','assets','dossiers','records'];
+  const tabOrder = ['dashboard','gpmb','parcels','assets','dossiers','records'];
   document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', tabOrder[i] === tab));
   document.getElementById('tab-dashboard').classList.toggle('show', tab==='dashboard');
   document.getElementById('tab-gpmb').style.display = (tab==='gpmb') ? 'flex' : 'none';
