@@ -3619,6 +3619,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 g['so_thua'] = f"{g['so_thua']}-{seen_keys[key]}"
         return groups
 
+    def _parse_coord_num(self, v):
+        """Chuyển 1 giá trị tọa độ (X hoặc Y) từ ô Excel thành float, chấp nhận cả 2 kiểu dấu thập
+        phân — vì Excel ở vùng miền Việt Nam mặc định lấy DẤU PHẨY làm dấu thập phân và DẤU CHẤM làm
+        dấu phân cách nghìn (ngược với quy ước lập trình dùng dấu chấm), nên nếu người dùng gõ số kiểu
+        '590908,661' mà Excel lưu lại thành chữ (text) thay vì số, float() thường sẽ báo lỗi thay vì
+        đọc đúng. Thử kiểu chấm-thập-phân trước (phổ biến nhất với dữ liệu đo đạc/CAD xuất ra), nếu
+        không được thì thử lại coi dấu chấm là phân cách nghìn + dấu phẩy là thập phân."""
+        if v is None:
+            raise ValueError('empty')
+        if isinstance(v, (int, float)):
+            return float(v)
+        s = str(v).strip()
+        if not s:
+            raise ValueError('empty')
+        try:
+            return float(s)
+        except ValueError:
+            s2 = s.replace('.', '').replace(',', '.')
+            return float(s2)
+
     def _normalize_toa_do(self, raw):
         """Chuẩn hóa ô nhập tọa độ thửa về GeoJSON, chấp nhận 2 kiểu nhập — dùng chung cho thêm/sửa 1 thửa
         (form tay) và import Excel hàng loạt, để không ai phải tự tay viết đúng cú pháp GeoJSON:
@@ -3782,8 +3802,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if not so_to and not so_thua:
                         continue
                     try:
-                        x = float(x_raw)
-                        y = float(y_raw)
+                        x = self._parse_coord_num(x_raw)
+                        y = self._parse_coord_num(y_raw)
                     except Exception:
                         continue
                     key = (so_to, so_thua)
