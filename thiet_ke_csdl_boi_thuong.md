@@ -159,6 +159,24 @@ Sau khi Minh import thành công dữ liệu thật và xem bản đồ, anh yê
 
 ---
 
+## Cập nhật 2026-07-15 (follow-up ngay sau): popup hướng dẫn thay banner cố định + bản đồ nền thật (basemap switcher)
+
+Minh phản hồi 2 việc sau khi thấy giao diện tab Bản đồ mới: (1) banner ghi chú dài (giải thích 4 loại bản đồ + kinh tuyến trục) chiếm quá nhiều diện tích màn hình, muốn gom vào popup mở khi bấm 1 nút ❗ cạnh nút "Thêm bản đồ"; (2) muốn biến OpenStreetMap hiện tại thành 1 "bản đồ nền" có thể đổi, và tìm thêm các nguồn bản đồ nền miễn phí khác nếu có.
+
+**Popup hướng dẫn:** thêm nút `❗` (`.gpmb-info-btn`) cạnh nút Thêm bản đồ, mở modal mới `#modal-gpmb-info` (`openGpmbInfoModal`/`closeGpmbInfoModal`) chứa đúng nội dung banner cũ, trình bày lại rõ ràng hơn theo từng đoạn. Banner cố định trong `#tab-gpmb` đã được xoá hẳn khỏi layout.
+
+**Bản đồ nền thật (basemap switcher):** trước đây `renderGpmbLeafletMap` chỉ gắn cứng 1 lớp tile OpenStreetMap. Đã thêm `buildGpmbBasemaps()` trả về nhiều lớp tile lựa chọn được qua `L.control.layers()` (control có sẵn của Leaflet, góc trên-phải bản đồ, không cần thư viện thêm) — đã web-search xác nhận các nguồn này miễn phí, không cần API key, tính đến 2026:
+- **OpenStreetMap** (mặc định, giữ nguyên) — `tile.openstreetmap.org`.
+- **Vệ tinh (Esri World Imagery)** — `server.arcgisonline.com/.../World_Imagery` — Esri công khai cho phép dùng miễn phí trong các dự án dạng OSM-style mapping, không yêu cầu key hay attribution bắt buộc theo pháp lý (dù vẫn ghi "Tiles © Esri" cho lịch sự).
+- **Địa hình (OpenTopoMap)** — `tile.opentopomap.org` — miễn phí cho khối lượng thấp (dưới ~400.000 tile/tháng là "chấp nhận được" theo chính họ công bố) — phù hợp quy mô 1 ứng dụng nội bộ dùng cho vài dự án.
+- **Nền tối (CartoDB dark_all)** — `basemaps.cartocdn.com/dark_all` — dịch vụ tile nền miễn phí lâu năm của CARTO, tách biệt với sản phẩm phân tích không gian trả phí của họ (Builder/Enable) — chọn thêm vì hợp với theme tối sẵn có của app.
+
+Đổi bản đồ nền chỉ đổi hình ảnh hiển thị, KHÔNG đụng tới dữ liệu `toa_do` đã lưu (vẫn nguyên VN-2000, không convert lại). Có thêm CSS override để hộp chọn layer của Leaflet (mặc định nền trắng) hoà với theme tối của app.
+
+**Lưu ý cho Minh:** trong lúc chờ tính năng này, Minh đã tự tạo 2 bản ghi bản đồ giả ("OpenStreetMap Hình ảnh", "OpenStreetMap Vệ tinh", nhóm "NỀN BẢN ĐỒ", 0 thửa) trong danh sách bên trái như một cách thử nghiệm/đề xuất trực quan. Các bản ghi này KHÔNG phải là bản đồ nền thật — chúng chỉ là các dòng metadata trống trong `bt_maps`, không có tile ảnh nào cả. Bản đồ nền thật giờ nằm ở nút điều khiển góc trên-phải của chính khung bản đồ Leaflet (không phải là 1 mục trong danh sách bên trái). Đã gợi ý Minh xoá 2 bản ghi thử nghiệm đó vì không còn cần thiết.
+
+---
+
 ## Nguyên tắc thiết kế chung
 
 1. **Mở rộng linh hoạt:** mọi bảng nghiệp vụ đều có cột `custom_fields` (JSON) để thêm thuộc tính phát sinh mà không cần sửa code ngay; trường dùng thường xuyên sẽ được nâng thành cột chính thức sau.
