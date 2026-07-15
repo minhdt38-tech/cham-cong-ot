@@ -2053,6 +2053,20 @@ function renderGpmbMapCanvas() {
       .filter(x => x.rings && x.rings.flat().some(pt => Array.isArray(pt) && pt.length >= 2));
   });
 
+  const canUseLeaflet = ktt !== null && !Number.isNaN(ktt) && typeof proj4 === 'function' && typeof L === 'object';
+
+  if (canUseLeaflet) {
+    // Bản đồ nền (Leaflet) luôn hiển thị để có ngữ cảnh địa lý — KHÔNG phụ thuộc việc có mảnh nào
+    // đang bật 👁 hay không. Chỉ các lớp ranh giới thửa mới bật/tắt theo lựa chọn của người dùng.
+    emptyEl.style.display = 'none';
+    svg.style.display = 'none';
+    leafletEl.style.display = 'block';
+    renderGpmbLeafletMap(withGeo, ktt);
+    return;
+  }
+
+  // Chưa khai Kinh tuyến trục -> không quy đổi được toạ độ thực -> chỉ vẽ được sơ đồ minh hoạ,
+  // và sơ đồ minh hoạ thì cần có ít nhất 1 mảnh đang bật có toạ độ mới vẽ được gì.
   if (!withGeo.length) {
     emptyEl.textContent = visibleMaps.length
       ? 'Các bản đồ đang bật chưa có thửa/điểm nào có tọa độ — bấm ✏️ để thêm tọa độ, hoặc import Excel.'
@@ -2064,17 +2078,10 @@ function renderGpmbMapCanvas() {
     return;
   }
 
-  if (ktt !== null && !Number.isNaN(ktt) && typeof proj4 === 'function' && typeof L === 'object') {
-    emptyEl.style.display = 'none';
-    svg.style.display = 'none';
-    leafletEl.style.display = 'block';
-    renderGpmbLeafletMap(withGeo, ktt);
-  } else {
-    leafletEl.style.display = 'none';
-    emptyEl.style.display = 'none';
-    svg.style.display = 'block';
-    renderGpmbSvgCanvas(withGeo);
-  }
+  leafletEl.style.display = 'none';
+  emptyEl.style.display = 'none';
+  svg.style.display = 'block';
+  renderGpmbSvgCanvas(withGeo);
 }
 
 function renderGpmbSvgCanvas(withGeo) {
@@ -2124,13 +2131,23 @@ function buildGpmbBasemaps() {
 
 function renderGpmbLeafletMap(withGeo, ktt) {
   const container = document.getElementById('gpmb-map-leaflet');
-  if (!gpmbLeafletMap) {
+  const isFirstInit = !gpmbLeafletMap;
+  if (isFirstInit) {
     gpmbLeafletMap = L.map(container, { zoomControl: true });
     const basemaps = buildGpmbBasemaps();
     basemaps['OpenStreetMap (mặc định)'].addTo(gpmbLeafletMap);
     L.control.layers(basemaps, null, { position: 'topright', collapsed: true }).addTo(gpmbLeafletMap);
+    // Khung nhìn mặc định (trước khi có dữ liệu để fitBounds) — trung tâm Việt Nam, để bản đồ nền
+    // luôn có gì đó để hiển thị/điều hướng được ngay cả khi chưa bật mảnh nào.
+    gpmbLeafletMap.setView([16.0, 106.0], 6);
+    setTimeout(() => gpmbLeafletMap && gpmbLeafletMap.invalidateSize(), 50);
   }
   if (gpmbLeafletLayer) { gpmbLeafletMap.removeLayer(gpmbLeafletLayer); gpmbLeafletLayer = null; }
+
+  // Bản đồ nền (basemap) đã được gắn cố định vào gpmbLeafletMap ở lần khởi tạo và KHÔNG bị đụng tới
+  // ở đây — chỉ lớp ranh giới thửa (gpmbLeafletLayer) mới bật/tắt/vẽ lại theo dữ liệu đang hiển thị.
+  if (!withGeo.length) return; // không có mảnh nào đang bật — giữ nguyên bản đồ nền, không vẽ gì thêm
+
   const layers = [];
   withGeo.forEach(({ p, rings, color }) => {
     let outerRing = null;
@@ -2157,10 +2174,9 @@ function renderGpmbLeafletMap(withGeo, ktt) {
     }
   });
   if (!layers.length) {
-    document.getElementById('gpmb-map-empty').textContent =
-      'Không quy đổi được tọa độ sang bản đồ thực — kiểm tra lại Kinh tuyến trục hoặc định dạng tọa độ (X-Đông, Y-Bắc).';
-    document.getElementById('gpmb-map-empty').style.display = 'block';
-    document.getElementById('gpmb-map-leaflet').style.display = 'none';
+    // Có dữ liệu nhưng không quy đổi được toạ độ (VD sai Kinh tuyến trục) — báo bằng toast,
+    // KHÔNG ẩn bản đồ nền, vì bản đồ nền vẫn phải luôn hiển thị được.
+    toast('Không quy đổi được tọa độ sang bản đồ thực — kiểm tra lại Kinh tuyến trục hoặc định dạng tọa độ (X-Đông, Y-Bắc).', true);
     return;
   }
   gpmbLeafletLayer = L.layerGroup(layers).addTo(gpmbLeafletMap);

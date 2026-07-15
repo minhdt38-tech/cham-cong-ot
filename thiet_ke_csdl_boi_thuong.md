@@ -177,6 +177,20 @@ Minh phản hồi 2 việc sau khi thấy giao diện tab Bản đồ mới: (1)
 
 ---
 
+## Cập nhật 2026-07-15 (follow-up ngay sau): bản đồ nền không được tắt theo mảnh — sửa để nền luôn hiển thị độc lập
+
+Minh test và báo: khi tắt hết 👁 các mảnh (VD nhóm "Xã Hồng Vân" cả 2 mảnh đều tắt), toàn bộ khung bản đồ bên phải biến mất luôn (chỉ còn chữ "Bấm 👁 bên trái để bật hiển thị bản đồ"), thay vì giữ lại bản đồ nền (OpenStreetMap/vệ tinh...) để vẫn có ngữ cảnh địa lý, chỉ ẩn phần ranh giới thửa thôi.
+
+**Nguyên nhân:** `renderGpmbMapCanvas()` bản cũ kiểm tra `withGeo.length` (có mảnh nào đang bật VÀ có tọa độ hay không) TRƯỚC khi quyết định có khởi tạo/hiển thị bản đồ Leaflet hay không — nên hễ không có thửa nào đang bật, cả khung Leaflet (gồm cả bản đồ nền) bị ẩn theo, đúng như Minh mô tả ("lớp nền không tuân theo lệnh bật/tắt các mảnh" — thực ra là bị ẩn CHUNG với các mảnh, ngược với ý Minh muốn).
+
+**Cách sửa — tách rời 2 khái niệm:** bản đồ nền (basemap, hình ảnh street/vệ tinh) là ngữ cảnh địa lý cố định, phải luôn hiển thị nếu dự án đã có Kinh tuyến trục hợp lệ — không phụ thuộc có thửa nào đang bật hay không, giống mọi phần mềm GIS chuẩn (Google Maps, QGIS...). Chỉ RIÊNG lớp ranh giới thửa (`gpmbLeafletLayer`, các polygon + nhãn) mới bật/tắt/vẽ lại theo mảnh đang chọn.
+
+Cụ thể: đảo thứ tự kiểm tra trong `renderGpmbMapCanvas()` — hễ dự án có Kinh tuyến trục hợp lệ (`canUseLeaflet`), LUÔN gọi `renderGpmbLeafletMap()` (bản đồ nền + control chọn nền luôn dựng lên), bất kể `withGeo` rỗng hay không; chỉ khi KHÔNG dùng được Leaflet (chưa khai kinh tuyến trục) mới rơi về nhánh kiểm tra "có thửa nào để vẽ sơ đồ minh hoạ không". Trong `renderGpmbLeafletMap()`: nếu `withGeo` rỗng thì dừng sớm ngay sau khi đảm bảo bản đồ nền đã dựng (không đụng, không xoá gì), giữ nguyên khung nhìn hiện tại. Thêm khung nhìn mặc định `setView([16.0, 106.0], 6)` (trung tâm Việt Nam) cho lần khởi tạo đầu tiên, để có gì đó để nhìn/điều hướng ngay cả khi chưa có mảnh nào bật (trước đây bản đồ chỉ `fitBounds` khi có dữ liệu, nên nếu không có dữ liệu thì chưa từng có khung nhìn nào được set).
+
+Cũng đổi luôn: trường hợp có dữ liệu nhưng quy đổi tọa độ thất bại hoàn toàn (VD sai Kinh tuyến trục) — trước đây ẩn cả bản đồ để hiện dòng cảnh báo, giờ đổi sang cảnh báo bằng `toast()` (không chặn/ẩn bản đồ nền), nhất quán với nguyên tắc "bản đồ nền luôn hiển thị, không bị ẩn vì lý do dữ liệu".
+
+---
+
 ## Nguyên tắc thiết kế chung
 
 1. **Mở rộng linh hoạt:** mọi bảng nghiệp vụ đều có cột `custom_fields` (JSON) để thêm thuộc tính phát sinh mà không cần sửa code ngay; trường dùng thường xuyên sẽ được nâng thành cột chính thức sau.
