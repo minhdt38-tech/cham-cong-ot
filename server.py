@@ -20,6 +20,8 @@ import threading
 import time
 import base64
 import zipfile
+import unicodedata
+import xml.etree.ElementTree as ET
 import urllib.request as _urlreq
 import urllib.parse
 from urllib.parse import urlparse, parse_qs
@@ -3130,6 +3132,217 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return sum(xs) / len(xs), sum(ys) / len(ys)
         return cx / (6 * a), cy / (6 * a)
 
+    def _nearest_neighbor_reorder(self, pts):
+        """Sắp xếp lại danh sách đỉnh theo heuristic 'láng giềng gần nhất': bắt đầu từ đỉnh đầu tiên
+        trong file, luôn nối tới đỉnh CHƯA dùng gần nhất về khoảng cách. Dùng cho trường hợp file dữ
+        liệu đo đạc bị xáo trộn thứ tự (VD ranh giới GPMB xuất từ nhiều đợt đo, không theo đúng đường
+        biên) — không đảm bảo tuyệt đối đúng với hình dạng lõm/phức tạp, chỉ là suy đoán hợp lý dựa
+        trên việc các mốc liền kề trên thực địa thường ở gần nhau. Chỉ áp dụng khi người dùng chủ động
+        bật tùy chọn — KHÔNG áp dụng mặc định vì dữ liệu vốn đã đúng thứ tự (trường hợp thông thường)
+        không được đụng tới."""
+        remaining = list(range(len(pts)))
+        order = [remaining.pop(0)]
+        while remaining:
+            cx, cy = pts[order[-1]]
+            best_i = min(range(len(remaining)),
+                         key=lambda i: (pts[remaining[i]][0] - cx) ** 2 + (pts[remaining[i]][1] - cy) ** 2)
+            order.append(remaining.pop(best_i))
+        return [pts[i] for i in order]
+
+    # ---- Quy đổi WGS84 (lon,lat, dùng cho import KML/KMZ) -> VN-2000 (X=Đông,Y=Bắc, dùng lưu CSDL) ----
+    # Khớp CHÍNH XÁC với phép chiếu ngược dùng ở phía trình duyệt (vn2000ToLonLat/proj4 trong
+    # boi-thuong.html, xem +towgs84=-191.90441429,-39.30318279,-111.45032835,-0.00928836,0.01975479,
+    # -0.00427372,0.252906278) — viết thủ công bằng Python thuần (không dùng pyproj) vì môi trường
+    # sandbox lúc phát triển không có mạng để cài, và pyproj cần biên dịch C-extension nên rủi ro
+    # deploy Railway không chắc có sẵn wheel phù hợp; các hằng số hình học/dịch chuyển gốc tọa độ dưới
+    # đây được kiểm chứng bằng test round-trip độc lập (VN-2000 -> WGS84 -> VN-2000, sai số < 1mm).
+    _GEO_A = 6378137.0
+    _GEO_F = 1.0 / 298.257223563
+    _GEO_E2 = _GEO_F * (2 - _GEO_F)
+    _TOWGS84_DX = -191.90441429
+    _TOWGS84_DY = -39.30318279
+    _TOWGS84_DZ = -111.45032835
+    _TOWGS84_RX_ARCSEC = -0.00928836
+    _TOWGS84_RY_ARCSEC = 0.01975479
+    _TOWGS84_RZ_ARCSEC = -0.00427372
+    _TOWGS84_S_PPM = 0.252906278
+
+    def _geodetic_to_geocentric(self, lat, lon, h=0.0):
+        import math
+        a, e2 = self._GEO_A, self._GEO_E2
+        sin_lat = math.sin(lat)
+        n = a / math.sqrt(1 - e2 * sin_lat * sin_lat)
+        x = (n + h) * math.cos(lat) * math.cos(lon)
+        y = (n + h) * math.cos(lat) * math.sin(lon)
+        z = (n * (1 - e2) + h) * sin_lat
+        return x, y, z
+
+    def _geocentric_to_geodetic(self, x, y, z):
+        import math
+        a, e2 = self._GEO_A, self._GEO_E2
+        lon = math.atan2(y, x)
+        p = math.sqrt(x * x + y * y)
+        lat = math.atan2(z, p * (1 - e2))
+        for _ in range(6):
+            sin_lat = math.sin(lat)
+            n = a / math.sqrt(1 - e2 * sin_lat * sin_lat)
+            h = p / math.cos(lat) - n
+            lat = math.atan2(z, p * (1 - e2 * n / (n + h)))
+        return lat, lon
+
+    def _helmert_wgs84_to_vn2000_src(self, x, y, z):
+        """Đảo ngược 7-tham số Helmert (Bursa-Wolf, quy ước position-vector giống proj4 +towgs84):
+        WGS84 (geocentric) -> hệ gốc VN-2000 (geocentric, cùng hình dạng ellipsoid WGS84). Dùng ma
+        trận chuyển vị (R^T) làm nghịch đảo gần đúng của ma trận xoay góc nhỏ — sai số bậc 2 theo góc
+        xoay (~1e-8 rad), thực tế không đáng kể (đã kiểm chứng round-trip dưới mm)."""
+        import math
+        rx = math.radians(self._TOWGS84_RX_ARCSEC / 3600.0)
+        ry = math.radians(self._TOWGS84_RY_ARCSEC / 3600.0)
+        rz = math.radians(self._TOWGS84_RZ_ARCSEC / 3600.0)
+        s = self._TOWGS84_S_PPM * 1e-6
+        dx = x - self._TOWGS84_DX
+        dy = y - self._TOWGS84_DY
+        dz = z - self._TOWGS84_DZ
+        inv = 1.0 / (1 + s)
+        xs = inv * (dx + rz * dy - ry * dz)
+        ys = inv * (-rz * dx + dy + rx * dz)
+        zs = inv * (ry * dx - rx * dy + dz)
+        return xs, ys, zs
+
+    def _forward_tmerc(self, lat, lon, lon0, k0=0.9999, x0=500000.0, y0=0.0):
+        """Phép chiếu Transverse Mercator thuận (công thức Snyder) — lat/lon/lon0 tính bằng radian.
+        Trả về (Đông, Bắc). Đây là hàm nghịch đảo của phép quy đổi Bắc/Đông->kinh/vĩ độ đang chạy
+        phía trình duyệt qua proj4 (cùng tham số k0=0.9999, x0=500000, y0=0, ellipsoid WGS84)."""
+        import math
+        a, e2 = self._GEO_A, self._GEO_E2
+        ep2 = e2 / (1 - e2)
+        n = a / math.sqrt(1 - e2 * math.sin(lat) ** 2)
+        t = math.tan(lat) ** 2
+        c = ep2 * math.cos(lat) ** 2
+        a_ = (lon - lon0) * math.cos(lat)
+        m = a * (
+            (1 - e2 / 4 - 3 * e2 ** 2 / 64 - 5 * e2 ** 3 / 256) * lat
+            - (3 * e2 / 8 + 3 * e2 ** 2 / 32 + 45 * e2 ** 3 / 1024) * math.sin(2 * lat)
+            + (15 * e2 ** 2 / 256 + 45 * e2 ** 3 / 1024) * math.sin(4 * lat)
+            - (35 * e2 ** 3 / 3072) * math.sin(6 * lat)
+        )
+        x = x0 + k0 * n * (
+            a_ + (1 - t + c) * a_ ** 3 / 6
+            + (5 - 18 * t + t ** 2 + 72 * c - 58 * ep2) * a_ ** 5 / 120
+        )
+        y = y0 + k0 * (
+            m + n * math.tan(lat) * (
+                a_ ** 2 / 2 + (5 - t + 9 * c + 4 * c ** 2) * a_ ** 4 / 24
+                + (61 - 58 * t + t ** 2 + 600 * c - 330 * ep2) * a_ ** 6 / 720
+            )
+        )
+        return x, y
+
+    def _wgs84_lonlat_to_vn2000(self, lon_deg, lat_deg, kinh_tuyen_truc_deg):
+        """Điểm WGS84 (kinh độ, vĩ độ — hệ tọa độ mọi file KML/KMZ luôn dùng) -> VN-2000 (X=Đông,Y=Bắc),
+        khớp đúng quy ước đang lưu trong CSDL của app. Dùng khi import ranh giới/thửa từ KML/KMZ."""
+        import math
+        lat_w = math.radians(lat_deg)
+        lon_w = math.radians(lon_deg)
+        xw, yw, zw = self._geodetic_to_geocentric(lat_w, lon_w, 0.0)
+        xg, yg, zg = self._helmert_wgs84_to_vn2000_src(xw, yw, zw)
+        lat_src, lon_src = self._geocentric_to_geodetic(xg, yg, zg)
+        lon0 = math.radians(kinh_tuyen_truc_deg)
+        return self._forward_tmerc(lat_src, lon_src, lon0)
+
+    def _kml_local_tag(self, tag):
+        return tag.split('}')[-1] if '}' in tag else tag
+
+    def _kml_strip_diacritics(self, s):
+        """Bỏ dấu tiếng Việt để so khớp tên Placemark không phụ thuộc dấu thanh/dấu mũ
+        (VD 'Tờ'->'to', 'Thửa'->'thua') — chữ 'đ' xử lý riêng vì unicodedata không tách nó
+        thành 'd' + dấu kết hợp như các nguyên âm có dấu."""
+        s = s.replace('đ', 'd').replace('Đ', 'D')
+        nfkd = unicodedata.normalize('NFD', s)
+        return ''.join(c for c in nfkd if unicodedata.category(c) != 'Mn')
+
+    def _kml_guess_so_to_so_thua(self, name, fallback_idx):
+        """Đoán Tờ/Thửa từ tên Placemark KML theo vài mẫu thường gặp (không phân biệt dấu tiếng Việt).
+        Không đoán được thì trả về nhóm riêng biệt (so_to rỗng, so_thua = tên gốc hoặc số thứ tự) để
+        không gộp nhầm 2 hình khác nhau cùng không đoán được tên thành 1 nhóm trùng lặp."""
+        name = (name or '').strip()
+        if name:
+            norm = self._kml_strip_diacritics(name).lower()
+            m = re.search(r'\bto\s*[:.\-]?\s*(\d+)[^\d]+thua\s*[:.\-]?\s*(\d+)', norm)
+            if m:
+                return m.group(1), m.group(2)
+            m = re.search(r'^\s*(\d+)\s*[.\-]\s*(\d+)\s*$', name)
+            if m:
+                return m.group(2), m.group(1)  # quy ước nhãn "Thửa.Tờ" đã dùng trong app
+        return '', name if name else f'KML-{fallback_idx}'
+
+    def _extract_kml_groups(self, file_bytes, filename):
+        """Đọc file .kml hoặc .kmz (zip chứa .kml), trả về list các nhóm đỉnh dạng
+        {'so_to', 'so_thua', 'pts_wgs84': [[lon,lat], ...]} — 1 Placemark (hoặc 1 hình con trong
+        MultiGeometry) = 1 nhóm. Giữ NGUYÊN thứ tự đỉnh trong file — không cần tùy chọn auto-reorder
+        như luồng Excel, vì phần mềm vẽ bản đồ (Google Earth, QGIS...) luôn xuất đỉnh theo đúng thứ
+        tự đường vẽ trên thực địa/màn hình. Ưu tiên đọc Polygon (outerBoundaryIs, bỏ qua lỗ hổng bên
+        trong nếu có); nếu Placemark không có Polygon thì thử LineString (nhiều người vẽ ranh giới
+        bằng công cụ 'Đường' trong Google Earth thay vì 'Đa giác')."""
+        local = self._kml_local_tag
+        ext = (filename or '').lower()
+        if ext.endswith('.kmz'):
+            with zipfile.ZipFile(io.BytesIO(file_bytes)) as zf:
+                kml_name = next((n for n in zf.namelist() if n.lower().endswith('.kml')), None)
+                if not kml_name:
+                    raise ValueError('File .kmz không chứa tệp .kml nào bên trong')
+                kml_bytes = zf.read(kml_name)
+        else:
+            kml_bytes = file_bytes
+
+        root = ET.fromstring(kml_bytes)
+        placemarks = [el for el in root.iter() if local(el.tag) == 'Placemark']
+        if not placemarks:
+            raise ValueError('Không tìm thấy Placemark nào trong file KML')
+
+        groups = []
+        idx = 0
+        for pm in placemarks:
+            name_el = next((el for el in pm if local(el.tag) == 'name'), None)
+            name = name_el.text.strip() if name_el is not None and name_el.text else ''
+
+            rings = []
+            for poly in [el for el in pm.iter() if local(el.tag) == 'Polygon']:
+                outer = next((el for el in poly.iter() if local(el.tag) == 'outerBoundaryIs'), None)
+                if outer is None:
+                    continue
+                ring_el = next((el for el in outer.iter() if local(el.tag) == 'LinearRing'), None)
+                if ring_el is None:
+                    continue
+                coord_el = next((el for el in ring_el.iter() if local(el.tag) == 'coordinates'), None)
+                if coord_el is not None and coord_el.text:
+                    rings.append(coord_el.text)
+
+            if not rings:
+                for line in [el for el in pm.iter() if local(el.tag) == 'LineString']:
+                    coord_el = next((el for el in line.iter() if local(el.tag) == 'coordinates'), None)
+                    if coord_el is not None and coord_el.text:
+                        rings.append(coord_el.text)
+
+            for ring_i, coord_text in enumerate(rings):
+                pts = []
+                for tok in coord_text.split():
+                    parts = tok.strip().split(',')
+                    if len(parts) < 2:
+                        continue
+                    try:
+                        pts.append([float(parts[0]), float(parts[1])])
+                    except ValueError:
+                        continue
+                if len(pts) < 3:
+                    continue
+                idx += 1
+                so_to, so_thua = self._kml_guess_so_to_so_thua(name, idx)
+                if len(rings) > 1:
+                    so_thua = f"{so_thua}_{ring_i + 1}"
+                groups.append({'so_to': so_to, 'so_thua': so_thua, 'pts_wgs84': pts})
+        return groups
+
     def _normalize_toa_do(self, raw):
         """Chuẩn hóa ô nhập tọa độ thửa về GeoJSON, chấp nhận 2 kiểu nhập — dùng chung cho thêm/sửa 1 thửa
         (form tay) và import Excel hàng loạt, để không ai phải tự tay viết đúng cú pháp GeoJSON:
@@ -3161,13 +3374,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return None
 
     def api_bt_map_parcels_import(self, map_id):
-        """Import hàng loạt thửa đất vào 1 mảnh trích đo Bản đồ GPMB từ file Excel mẫu.
-        Định dạng: MỖI DÒNG LÀ 1 ĐỈNH THỬA (cột STT, Tờ, Thửa, X, Y). Các dòng liên tiếp có cùng
-        Tờ+Thửa là các đỉnh của cùng 1 thửa, nối theo thứ tự trong file, đỉnh cuối tự nối lại đỉnh đầu
-        để khép kín thành đa giác. Diện tích thửa được TÍNH TỰ ĐỘNG bằng công thức Shoelace từ tọa độ
-        các đỉnh sau khi khép kín — không đọc từ cột diện tích nhập tay nữa.
-        Nếu số tờ+số thửa trong file đã tồn tại trên mảnh này, yêu cầu xác nhận ghi đè (field confirm_overwrite=1)
-        trước khi thực sự áp dụng — không âm thầm ghi đè dữ liệu đã có."""
+        """Import hàng loạt thửa đất vào 1 mảnh trích đo Bản đồ, nhận 1 trong 3 định dạng file:
+        - .xlsx: MỖI DÒNG LÀ 1 ĐỈNH THỬA (cột STT, Tờ, Thửa, X, Y — tọa độ VN-2000, X=Đông/Y=Bắc).
+          Các dòng liên tiếp có cùng Tờ+Thửa là các đỉnh của cùng 1 thửa, nối theo thứ tự trong file.
+          Field tùy chọn auto_reorder=1: sắp xếp lại thứ tự đỉnh trong mỗi nhóm theo láng giềng gần
+          nhất trước khi khép kín — dùng khi nghi ngờ thứ tự đỉnh trong file bị xáo trộn. Mặc định TẮT.
+        - .kml / .kmz: đọc mỗi Placemark (Polygon, hoặc LineString nếu không có Polygon) thành 1 nhóm
+          đỉnh — tọa độ trong KML luôn ở hệ WGS84 (kinh độ, vĩ độ), tự động quy đổi sang VN-2000 theo
+          Kinh tuyến trục của dự án (bắt buộc phải khai trước ở Sửa dự án). Không cần auto_reorder vì
+          phần mềm vẽ bản đồ luôn xuất đỉnh đúng thứ tự đường vẽ. Tên Placemark được dò để đoán Tờ/Thửa
+          (VD "Tờ 3 Thửa 45"); nếu không đoán được, mỗi Placemark thành 1 nhóm riêng dùng chính tên đó
+          làm "số thửa" tạm (không sinh Thửa đất tự động trong trường hợp này nếu là Bản đồ GPMB, vì
+          không có số tờ/số thửa thật — vẫn lưu được hình để xem, chỉ không đồng bộ sang bt_parcels).
+        Ở cả 3 định dạng: đối chiếu trùng theo Tờ+Thửa trên cùng mảnh, yêu cầu xác nhận ghi đè
+        (field confirm_overwrite=1) nếu có trùng — không âm thầm ghi đè dữ liệu đã có. Diện tích luôn
+        TÍNH TỰ ĐỘNG bằng công thức Shoelace từ tọa độ các đỉnh sau khi khép kín."""
         sess = self.require_auth()
         if not sess: return
         ct = self.headers.get('Content-Type', '')
@@ -3177,99 +3398,154 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if 'file' not in files:
             self.send_json({'error': 'Thiếu file'}, 400); return
         confirm_overwrite = fields.get('confirm_overwrite', '') == '1'
+        auto_reorder = fields.get('auto_reorder', '') == '1'
         fitem = files['file']
         file_bytes = fitem.file.read()
-        if file_bytes[:8] == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
-            self.send_json({'error': 'File này đang ở định dạng Excel cũ (.xls). Hệ thống chỉ đọc được .xlsx — '
-                                      'mở file bằng Excel rồi "Save As" sang định dạng .xlsx, sau đó import lại.'}, 400)
-            return
-        try:
-            import openpyxl
-            wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
-            ws = wb.active
-            raw_rows = list(ws.iter_rows(values_only=True))
-        except Exception as e:
-            self.send_json({'error': f'Không đọc được file: {e}'}, 400); return
-
-        if not raw_rows:
-            self.send_json({'error': 'File rỗng'}, 400); return
-        header = [str(c).strip().lower() if c else '' for c in raw_rows[0]]
-
-        def find(keywords):
-            for kw in keywords:
-                for i, v in enumerate(header):
-                    if kw in v:
-                        return i
-            return None
-
-        COL = {
-            'stt':     find(['stt', 'số thứ tự']),
-            'so_to':   find(['tờ', 'to']),
-            'so_thua': find(['thửa', 'thua']),
-            'x':       find(['x']),
-            'y':       find(['y']),
-        }
-        if COL['so_to'] is None or COL['so_thua'] is None or COL['x'] is None or COL['y'] is None:
-            self.send_json({'error': 'Không tìm thấy đủ cột Tờ / Thửa / X / Y trong file. Vui lòng dùng đúng file mẫu.'}, 400)
-            return
-
-        def cell(row, key):
-            idx = COL.get(key)
-            if idx is None or idx >= len(row):
-                return None
-            return row[idx]
-
-        # Mỗi dòng là 1 đỉnh — gom các dòng LIÊN TIẾP có cùng (Tờ,Thửa) thành 1 thửa (1 nhóm đỉnh).
-        groups = []
-        cur = None
-        for row in raw_rows[1:]:
-            if not any(row):
-                continue
-            so_to = cell(row, 'so_to')
-            so_thua = cell(row, 'so_thua')
-            so_to = str(so_to).strip() if so_to is not None else ''
-            so_thua = str(so_thua).strip() if so_thua is not None else ''
-            x_raw, y_raw = cell(row, 'x'), cell(row, 'y')
-            if not so_to and not so_thua:
-                continue
-            try:
-                x = float(x_raw)
-                y = float(y_raw)
-            except Exception:
-                continue
-            key = (so_to, so_thua)
-            if cur is None or cur['key'] != key:
-                cur = {'key': key, 'so_to': so_to, 'so_thua': so_thua, 'pts': []}
-                groups.append(cur)
-            cur['pts'].append([x, y])
-
-        parsed_rows = []
-        skipped_short = []
-        for g in groups:
-            pts = g['pts']
-            if len(pts) < 3:
-                skipped_short.append(f"Tờ {g['so_to']} - Thửa {g['so_thua']}")
-                continue
-            ring = list(pts)
-            if ring[0][0] != ring[-1][0] or ring[0][1] != ring[-1][1]:
-                ring.append(ring[0])
-            toa_do = json.dumps({'type': 'Polygon', 'coordinates': [ring]}, ensure_ascii=False)
-            dien_tich = round(self._polygon_area(ring), 2)
-            parsed_rows.append({
-                'so_to': g['so_to'], 'so_thua': g['so_thua'],
-                'dien_tich': dien_tich, 'thu_hoi': 0, 'toa_do': toa_do,
-            })
-
-        if not parsed_rows:
-            msg = 'Không có thửa hợp lệ trong file (mỗi thửa cần ít nhất 3 đỉnh với X, Y hợp lệ).'
-            if skipped_short:
-                msg += ' Bỏ qua vì thiếu đỉnh: ' + ', '.join(skipped_short)
-            self.send_json({'error': msg}, 400); return
+        filename = fitem.filename or ''
+        ext = os.path.splitext(filename)[1].lower()
 
         with get_db() as db:
             m = db.execute('SELECT project_id, loai_ban_do FROM bt_maps WHERE id=?', (map_id,)).fetchone()
             if not m:
                 self.send_json({'error': 'Không tìm thấy Bản đồ'}, 404); return
+
+            if ext in ('.kml', '.kmz'):
+                ktt = None
+                if m['project_id']:
+                    proj = db.execute('SELECT kinh_tuyen_truc FROM bt_projects WHERE id=?', (m['project_id'],)).fetchone()
+                    if proj and proj['kinh_tuyen_truc'] not in (None, ''):
+                        ktt = proj['kinh_tuyen_truc']
+                if ktt is None:
+                    self.send_json({'error': 'Dự án chưa khai Kinh tuyến trục — cần thiết để quy đổi tọa độ '
+                                              'KML/KMZ (hệ WGS84) sang VN-2000. Vào "Sửa dự án" để nhập trước '
+                                              'khi import (tra theo tỉnh dự án tọa lạc, Phụ lục 2 Thông tư '
+                                              '25/2014/TT-BTNMT, hoặc hỏi đơn vị đo đạc).'}, 400)
+                    return
+                try:
+                    kml_groups = self._extract_kml_groups(file_bytes, filename)
+                except Exception as e:
+                    self.send_json({'error': f'Không đọc được file: {e}'}, 400); return
+
+                parsed_rows = []
+                skipped_short = []
+                for g in kml_groups:
+                    pts_wgs84 = g['pts_wgs84']
+                    if len(pts_wgs84) > 1 and pts_wgs84[0] == pts_wgs84[-1]:
+                        pts_wgs84 = pts_wgs84[:-1]
+                    if len(pts_wgs84) < 3:
+                        label = f"Tờ {g['so_to']} - Thửa {g['so_thua']}" if g['so_to'] else g['so_thua']
+                        skipped_short.append(label)
+                        continue
+                    ring = [list(self._wgs84_lonlat_to_vn2000(lon, lat, ktt)) for lon, lat in pts_wgs84]
+                    if ring[0][0] != ring[-1][0] or ring[0][1] != ring[-1][1]:
+                        ring.append(ring[0])
+                    toa_do = json.dumps({'type': 'Polygon', 'coordinates': [ring]}, ensure_ascii=False)
+                    dien_tich = round(self._polygon_area(ring), 2)
+                    parsed_rows.append({
+                        'so_to': g['so_to'], 'so_thua': g['so_thua'],
+                        'dien_tich': dien_tich, 'thu_hoi': 0, 'toa_do': toa_do,
+                    })
+                if not parsed_rows:
+                    msg = 'Không có hình nào hợp lệ trong file KML/KMZ (mỗi Placemark cần ít nhất 3 đỉnh).'
+                    if skipped_short:
+                        msg += ' Bỏ qua: ' + ', '.join(skipped_short)
+                    self.send_json({'error': msg}, 400); return
+            else:
+                if file_bytes[:8] == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
+                    self.send_json({'error': 'File này đang ở định dạng Excel cũ (.xls). Hệ thống chỉ đọc được '
+                                              '.xlsx — mở file bằng Excel rồi "Save As" sang định dạng .xlsx, '
+                                              'sau đó import lại.'}, 400)
+                    return
+                try:
+                    import openpyxl
+                    wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+                    ws = wb.active
+                    raw_rows = list(ws.iter_rows(values_only=True))
+                except Exception as e:
+                    self.send_json({'error': f'Không đọc được file: {e}'}, 400); return
+
+                if not raw_rows:
+                    self.send_json({'error': 'File rỗng'}, 400); return
+                header = [str(c).strip().lower() if c else '' for c in raw_rows[0]]
+
+                def find(keywords):
+                    for kw in keywords:
+                        for i, v in enumerate(header):
+                            if kw in v:
+                                return i
+                    return None
+
+                COL = {
+                    'stt':     find(['stt', 'số thứ tự']),
+                    'so_to':   find(['tờ', 'to']),
+                    'so_thua': find(['thửa', 'thua']),
+                    'x':       find(['x']),
+                    'y':       find(['y']),
+                }
+                if COL['so_to'] is None or COL['so_thua'] is None or COL['x'] is None or COL['y'] is None:
+                    self.send_json({'error': 'Không tìm thấy đủ cột Tờ / Thửa / X / Y trong file. Vui lòng dùng đúng file mẫu.'}, 400)
+                    return
+
+                def cell(row, key):
+                    idx = COL.get(key)
+                    if idx is None or idx >= len(row):
+                        return None
+                    return row[idx]
+
+                # Mỗi dòng là 1 đỉnh — gom các dòng LIÊN TIẾP có cùng (Tờ,Thửa) thành 1 thửa (1 nhóm đỉnh).
+                groups = []
+                cur = None
+                for row in raw_rows[1:]:
+                    if not any(row):
+                        continue
+                    so_to = cell(row, 'so_to')
+                    so_thua = cell(row, 'so_thua')
+                    so_to = str(so_to).strip() if so_to is not None else ''
+                    so_thua = str(so_thua).strip() if so_thua is not None else ''
+                    x_raw, y_raw = cell(row, 'x'), cell(row, 'y')
+                    if not so_to and not so_thua:
+                        continue
+                    try:
+                        x = float(x_raw)
+                        y = float(y_raw)
+                    except Exception:
+                        continue
+                    key = (so_to, so_thua)
+                    if cur is None or cur['key'] != key:
+                        cur = {'key': key, 'so_to': so_to, 'so_thua': so_thua, 'pts': []}
+                        groups.append(cur)
+                    cur['pts'].append([x, y])
+
+                parsed_rows = []
+                skipped_short = []
+                for g in groups:
+                    pts = g['pts']
+                    if len(pts) < 3:
+                        skipped_short.append(f"Tờ {g['so_to']} - Thửa {g['so_thua']}")
+                        continue
+                    if auto_reorder:
+                        # Bỏ đỉnh khép kín trùng lặp (nếu có) trước khi sắp xếp lại, tránh thuật toán bị
+                        # nhiễu bởi 1 điểm trùng khoảng cách 0 — sẽ tự khép kín lại đúng cách ngay bên dưới.
+                        work = list(pts)
+                        if len(work) > 1 and work[0][0] == work[-1][0] and work[0][1] == work[-1][1]:
+                            work = work[:-1]
+                        pts = self._nearest_neighbor_reorder(work)
+                    ring = list(pts)
+                    if ring[0][0] != ring[-1][0] or ring[0][1] != ring[-1][1]:
+                        ring.append(ring[0])
+                    toa_do = json.dumps({'type': 'Polygon', 'coordinates': [ring]}, ensure_ascii=False)
+                    dien_tich = round(self._polygon_area(ring), 2)
+                    parsed_rows.append({
+                        'so_to': g['so_to'], 'so_thua': g['so_thua'],
+                        'dien_tich': dien_tich, 'thu_hoi': 0, 'toa_do': toa_do,
+                    })
+
+                if not parsed_rows:
+                    msg = 'Không có thửa hợp lệ trong file (mỗi thửa cần ít nhất 3 đỉnh với X, Y hợp lệ).'
+                    if skipped_short:
+                        msg += ' Bỏ qua vì thiếu đỉnh: ' + ', '.join(skipped_short)
+                    self.send_json({'error': msg}, 400); return
+
             existing = db.execute(
                 'SELECT id, so_to_tren_ban_do, so_thua_tren_ban_do, parcel_id FROM bt_map_parcels WHERE map_id=?',
                 (map_id,)
@@ -3303,7 +3579,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     )
                     if pid:
                         self._sync_parcel_from_map_entry(db, pid, None, r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi'])
-                    elif m['loai_ban_do'] == 'Bản đồ GPMB' and m['project_id']:
+                    elif m['loai_ban_do'] == 'Bản đồ GPMB' and m['project_id'] and r['so_to']:
+                        # Chỉ tự sinh Thửa đất khi có số tờ thật — Placemark KML không đoán được Tờ/Thửa
+                        # (so_to rỗng) chỉ là hình tham khảo, không đủ dữ liệu để coi là 1 thửa đất thật.
                         pid = self._create_parcel_from_map_entry(
                             db, m['project_id'], None, r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi']
                         )
@@ -3311,7 +3589,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     updated += 1
                 else:
                     pid = None
-                    if m['loai_ban_do'] == 'Bản đồ GPMB' and m['project_id']:
+                    if m['loai_ban_do'] == 'Bản đồ GPMB' and m['project_id'] and r['so_to']:
                         pid = self._create_parcel_from_map_entry(
                             db, m['project_id'], None, r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi']
                         )

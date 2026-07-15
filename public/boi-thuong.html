@@ -871,13 +871,21 @@ td.td-ctr{text-align:center}
         </div>
         <div id="gpmb-parcel-dup-area" style="display:none;font-size:12px;color:var(--muted);margin-top:4px"></div>
 
-        <div class="form-section" style="margin-top:16px">📥 Nhập nhiều thửa cùng lúc từ Excel</div>
-        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">Tải file mẫu (cột STT, Tờ, Thửa, X, Y) — mỗi dòng là 1 đỉnh thửa, các dòng liên tiếp cùng Tờ+Thửa tạo thành 1 thửa khép kín. Diện tích tự tính từ tọa độ. Nếu thửa trong file đã có sẵn trên mảnh này, hệ thống sẽ hỏi trước khi ghi đè.</div>
-        <input type="file" id="gpmb-import-file-input" style="display:none" accept=".xlsx" onchange="importGpmbExcel(this.files[0])">
-        <div style="display:flex;gap:8px">
-          <button class="btn btn-ghost" onclick="document.getElementById('gpmb-import-file-input').click()">📥 Import Excel nhiều thửa</button>
-          <button class="btn btn-ghost" onclick="downloadGpmbTemplate()">📄 Tải file mẫu</button>
+        <div class="form-section" style="margin-top:16px">📥 Nhập nhiều thửa/hình cùng lúc từ Excel, KML hoặc KMZ</div>
+        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">
+          <b>Excel (.xlsx):</b> tải file mẫu (cột STT, Tờ, Thửa, X, Y) — mỗi dòng là 1 đỉnh thửa, các dòng liên tiếp cùng Tờ+Thửa tạo thành 1 thửa khép kín, tọa độ theo hệ VN-2000.<br>
+          <b>KML/KMZ (.kml, .kmz):</b> xuất trực tiếp từ Google Earth/Google My Maps/QGIS — mỗi hình vẽ (Placemark) thành 1 thửa/hình, hệ thống tự nhận diện Tờ/Thửa từ tên hình nếu có (VD "Tờ 3 Thửa 45"), tự quy đổi tọa độ WGS84 sang VN-2000 theo Kinh tuyến trục của dự án (dự án phải khai trước ở "Sửa dự án"). Không cần lo thứ tự đỉnh bị xáo trộn như Excel — KML luôn giữ đúng thứ tự đường vẽ.<br>
+          Nếu thửa/hình trong file đã có sẵn trên mảnh này (trùng Tờ+Thửa), hệ thống sẽ hỏi trước khi ghi đè.
         </div>
+        <input type="file" id="gpmb-import-file-input" style="display:none" accept=".xlsx,.kml,.kmz" onchange="importGpmbExcel(this.files[0])">
+        <div style="display:flex;gap:8px">
+          <button class="btn btn-ghost" onclick="document.getElementById('gpmb-import-file-input').click()">📥 Import Excel / KML / KMZ</button>
+          <button class="btn btn-ghost" onclick="downloadGpmbTemplate()">📄 Tải file mẫu Excel</button>
+        </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);margin-top:8px;cursor:pointer">
+          <input type="checkbox" id="gpmb-import-auto-reorder">
+          Tự động sắp xếp lại thứ tự đỉnh theo khoảng cách gần nhất — chỉ áp dụng cho file Excel, dùng khi nghi thứ tự đỉnh trong file bị xáo trộn (VD ranh giới GPMB nối lung tung trên bản đồ). Không đảm bảo đúng tuyệt đối, chỉ nên bật khi hình vẽ ra bị sai. Không cần thiết cho KML/KMZ vì các file này luôn giữ đúng thứ tự vẽ gốc.
+        </label>
 
         <div class="form-section" style="margin-top:16px">📎 Tệp đính kèm</div>
         <div id="gpmb-files-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:10px"></div>
@@ -2440,6 +2448,7 @@ function resetGpmbParcelForm() {
   document.getElementById('gpmb-shape-preview').style.display = 'none';
   document.getElementById('gpmb-parcel-submit-btn').textContent = '＋ Thêm thửa';
   document.getElementById('gpmb-parcel-cancel-btn').style.display = 'none';
+  document.getElementById('gpmb-import-auto-reorder').checked = false;
   selectedGpmbParcelMasterId = null;
 }
 
@@ -2684,6 +2693,8 @@ function downloadGpmbTemplate() {
 
 let pendingGpmbImportFile = null;
 
+// Tên hàm giữ nguyên "importGpmbExcel" vì lý do lịch sử, nhưng thực tế nhận cả 3 định dạng
+// (.xlsx / .kml / .kmz) — backend tự nhận diện qua đuôi file, không cần phân biệt ở đây.
 function importGpmbExcel(file) {
   if (!file || !editGpmbMapId) { toast('Vui lòng lưu thông tin mảnh trích đo trước', true); return; }
   pendingGpmbImportFile = file;
@@ -2695,6 +2706,7 @@ async function sendGpmbImport(confirmOverwrite) {
   const fd = new FormData();
   fd.append('file', pendingGpmbImportFile);
   if (confirmOverwrite) fd.append('confirm_overwrite', '1');
+  if (document.getElementById('gpmb-import-auto-reorder').checked) fd.append('auto_reorder', '1');
   const res = await fetch(`/api/bt/maps/${editGpmbMapId}/parcels/import`, { method: 'POST', body: fd });
   if (res.status === 409) {
     const data = await res.json();
