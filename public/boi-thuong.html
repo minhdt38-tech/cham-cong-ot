@@ -56,6 +56,8 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .gpmb-split-right{flex:1;overflow:auto;display:flex;flex-direction:column;padding:14px;min-width:200px}
 .gpmb-map-row{cursor:pointer}
 .gpmb-map-row.selected{background:rgba(52,152,219,.14)}
+.gpmb-parcel-label{background:rgba(20,28,48,.82);color:#fff;font-size:11px;font-weight:600;padding:1px 5px;
+  border-radius:4px;white-space:nowrap;transform:translate(-50%,-50%);pointer-events:none;border:1px solid rgba(93,173,226,.6)}
 
 /* ── DASHBOARD ─────────────────────────────────────────────── */
 #tab-dashboard{flex:1;overflow-y:auto;padding:20px;display:none}
@@ -219,7 +221,7 @@ td.td-ctr{text-align:center}
       <button class="btn btn-primary" onclick="openGpmbModal()">＋ Thêm mảnh trích đo Bản đồ GPMB</button>
     </div>
     <div class="form-group form-full" style="font-size:12px;color:var(--muted);padding:0 16px 10px">
-      Bản đồ GPMB là bước đầu tiên của quy trình GPMB. Một dự án thường trải nhiều xã — mỗi xã lập 1 <strong>mảnh trích đo</strong> riêng; mỗi mảnh có nhiều tờ, mỗi tờ có nhiều thửa. Số tờ, số thửa, diện tích khai báo tại đây sẽ tự động sinh/cập nhật bản ghi Thửa đất tương ứng; thửa đất được gộp từ tất cả các mảnh. Bấm vào 1 dòng bên trái để xem bản đồ của mảnh đó bên phải. Nếu dự án đã khai <strong>Kinh tuyến trục</strong> (Sửa dự án), tọa độ nhập theo thứ tự X (Bắc), Y (Đông) — bản đồ bên phải sẽ là bản đồ thực (OpenStreetMap); nếu chưa, chỉ hiện sơ đồ minh họa.
+      Bản đồ GPMB là bước đầu tiên của quy trình GPMB. Một dự án thường trải nhiều xã — mỗi xã lập 1 <strong>mảnh trích đo</strong> riêng; mỗi mảnh có nhiều tờ, mỗi tờ có nhiều thửa. Số tờ, số thửa, diện tích khai báo tại đây sẽ tự động sinh/cập nhật bản ghi Thửa đất tương ứng; thửa đất được gộp từ tất cả các mảnh. Bấm vào 1 dòng bên trái để xem bản đồ của mảnh đó bên phải. Nếu dự án đã khai <strong>Kinh tuyến trục</strong> (Sửa dự án), tọa độ nhập theo thứ tự X (Đông), Y (Bắc) — đúng theo cột trong hồ sơ đo đạc/CAD thông thường — bản đồ bên phải sẽ là bản đồ thực (OpenStreetMap); nếu chưa, chỉ hiện sơ đồ minh họa.
     </div>
     <div class="gpmb-split" id="gpmb-split">
       <div class="gpmb-split-left" id="gpmb-split-left" style="width:40%">
@@ -831,7 +833,7 @@ td.td-ctr{text-align:center}
         <div style="display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap">
           <div class="form-group" style="flex:1"><label>Số tờ</label><input id="gpf-so-to" type="text" oninput="debouncedGpmbDupCheck()"></div>
           <div class="form-group" style="flex:1"><label>Số thửa</label><input id="gpf-so-thua" type="text" oninput="debouncedGpmbDupCheck()"></div>
-          <div class="form-group" style="flex:1"><label>Diện tích thửa (m²)</label><input id="gpf-dien-tich" type="number" step="0.1"></div>
+          <div class="form-group" style="flex:1"><label>Diện tích thửa (m²)</label><input id="gpf-dien-tich" type="number" step="0.1" title="Nếu có nhập tọa độ các đỉnh bên dưới, hệ thống sẽ tự tính lại diện tích theo hình học và ghi đè số ở đây"></div>
           <div class="form-group" style="flex:1"><label>Diện tích thu hồi (m²)</label><input id="gpf-dt-thu-hoi" type="number" step="0.1"></div>
         </div>
         <div class="form-group form-full">
@@ -846,8 +848,8 @@ td.td-ctr{text-align:center}
         <div id="gpmb-parcel-dup-area" style="display:none;font-size:12px;color:var(--muted);margin-top:4px"></div>
 
         <div class="form-section" style="margin-top:16px">📥 Nhập nhiều thửa cùng lúc từ Excel</div>
-        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">Tải file mẫu, điền theo cột hướng dẫn (số tờ, số thửa, diện tích, tọa độ tùy chọn) rồi import lại. Nếu thửa trong file đã có sẵn trên mảnh này, hệ thống sẽ hỏi trước khi ghi đè.</div>
-        <input type="file" id="gpmb-import-file-input" style="display:none" accept=".xlsx,.xls" onchange="importGpmbExcel(this.files[0])">
+        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">Tải file mẫu (cột STT, Tờ, Thửa, X, Y) — mỗi dòng là 1 đỉnh thửa, các dòng liên tiếp cùng Tờ+Thửa tạo thành 1 thửa khép kín. Diện tích tự tính từ tọa độ. Nếu thửa trong file đã có sẵn trên mảnh này, hệ thống sẽ hỏi trước khi ghi đè.</div>
+        <input type="file" id="gpmb-import-file-input" style="display:none" accept=".xlsx" onchange="importGpmbExcel(this.files[0])">
         <div style="display:flex;gap:8px">
           <button class="btn btn-ghost" onclick="document.getElementById('gpmb-import-file-input').click()">📥 Import Excel nhiều thửa</button>
           <button class="btn btn-ghost" onclick="downloadGpmbTemplate()">📄 Tải file mẫu</button>
@@ -1893,13 +1895,39 @@ function vn2000Proj4Def(kinhTuyenTruc) {
     `+towgs84=-191.90441429,-39.30318279,-111.45032835,-0.00928836,0.01975479,-0.00427372,0.252906278 +units=m +no_defs`;
 }
 
-function vn2000ToLonLat(xBac, yDong, kinhTuyenTruc) {
+function vn2000ToLonLat(xDong, yBac, kinhTuyenTruc) {
+  // Theo đúng cột X, Y trong hồ sơ đo đạc/CAD của dự án: X = Đông (Easting), Y = Bắc (Northing).
   try {
     const def = vn2000Proj4Def(kinhTuyenTruc);
-    const out = proj4(def, 'WGS84', [yDong, xBac]); // proj4 nhận [Đông(easting), Bắc(northing)]
+    const out = proj4(def, 'WGS84', [xDong, yBac]); // proj4 nhận [Đông(easting), Bắc(northing)]
     if (!out || Number.isNaN(out[0]) || Number.isNaN(out[1])) return null;
     return out; // [lon, lat]
   } catch (e) { return null; }
+}
+
+function polygonCentroid(ring) {
+  // Tâm hình học (centroid) của đa giác — chính xác hơn tâm bbox với hình lõm/không đều.
+  const pts = ring.filter(p => Array.isArray(p) && p.length >= 2);
+  if (!pts.length) return null;
+  if (pts.length < 3) return pts[0];
+  const closed = (pts[0][0] === pts[pts.length-1][0] && pts[0][1] === pts[pts.length-1][1]) ? pts : pts.concat([pts[0]]);
+  let a = 0, cx = 0, cy = 0;
+  for (let i = 0; i < closed.length - 1; i++) {
+    const [x1,y1] = closed[i], [x2,y2] = closed[i+1];
+    const cross = x1*y2 - x2*y1;
+    a += cross; cx += (x1+x2)*cross; cy += (y1+y2)*cross;
+  }
+  a /= 2;
+  if (Math.abs(a) < 1e-9) {
+    const xs = pts.map(p=>p[0]), ys = pts.map(p=>p[1]);
+    return [xs.reduce((s,v)=>s+v,0)/xs.length, ys.reduce((s,v)=>s+v,0)/ys.length];
+  }
+  return [cx/(6*a), cy/(6*a)];
+}
+
+function gpmbParcelLabel(p) {
+  const dt = (p.dien_tich_tren_ban_do != null && p.dien_tich_tren_ban_do !== '') ? fmt1(p.dien_tich_tren_ban_do) : '?';
+  return `${esc(p.so_thua_tren_ban_do)}.${esc(p.so_to_tren_ban_do)}.${dt}m2`;
 }
 
 function renderGpmbMapCanvas(parcels) {
@@ -1951,11 +1979,12 @@ function renderGpmbSvgCanvas(withGeo) {
         .map(toXY).map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
       parts += `<polygon points="${ptsStr}" fill="none" stroke="#5dade2" stroke-width="2"/>`;
     });
-    const pts = rings.flat().filter(pt => Array.isArray(pt) && pt.length >= 2);
-    const px = pts.map(p=>p[0]), py = pts.map(p=>p[1]);
-    const cx = (Math.min(...px)+Math.max(...px))/2, cy = (Math.min(...py)+Math.max(...py))/2;
-    const [lx, ly] = toXY([cx, cy]);
-    parts += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="12" fill="#dfe6f0" text-anchor="middle" dominant-baseline="middle">T${esc(p.so_to_tren_ban_do)}-${esc(p.so_thua_tren_ban_do)}</text>`;
+    const outer = rings[0] && rings[0].filter(pt => Array.isArray(pt) && pt.length >= 2);
+    const centroid = outer && outer.length >= 3 ? polygonCentroid(outer) : null;
+    if (centroid) {
+      const [lx, ly] = toXY(centroid);
+      parts += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="11" fill="#dfe6f0" text-anchor="middle" dominant-baseline="middle">${gpmbParcelLabel(p)}</text>`;
+    }
   });
   svg.setAttribute('viewBox', `0 0 ${w} ${h}`);
   svg.innerHTML = parts;
@@ -1973,21 +2002,32 @@ function renderGpmbLeafletMap(withGeo, ktt) {
   if (gpmbLeafletLayer) { gpmbLeafletMap.removeLayer(gpmbLeafletLayer); gpmbLeafletLayer = null; }
   const layers = [];
   withGeo.forEach(({ p, rings }) => {
-    rings.forEach(ring => {
-      const latlngs = ring
-        .filter(pt => Array.isArray(pt) && pt.length >= 2)
+    let outerRing = null;
+    rings.forEach((ring, idx) => {
+      const rawPts = ring.filter(pt => Array.isArray(pt) && pt.length >= 2);
+      if (idx === 0) outerRing = rawPts;
+      const latlngs = rawPts
         .map(pt => vn2000ToLonLat(pt[0], pt[1], ktt))
         .filter(ll => ll)
         .map(([lon, lat]) => [lat, lon]);
       if (latlngs.length < 3) return;
       const poly = L.polygon(latlngs, { color: '#5dade2', weight: 2, fill: false });
-      poly.bindTooltip(`Tờ ${esc(p.so_to_tren_ban_do)} - Thửa ${esc(p.so_thua_tren_ban_do)}`);
       layers.push(poly);
     });
+    if (outerRing && outerRing.length >= 3) {
+      const centroid = polygonCentroid(outerRing);
+      const ll = centroid && vn2000ToLonLat(centroid[0], centroid[1], ktt);
+      if (ll) {
+        const label = L.marker([ll[1], ll[0]], {
+          icon: L.divIcon({ className: 'gpmb-parcel-label', html: gpmbParcelLabel(p), iconSize: null })
+        });
+        layers.push(label);
+      }
+    }
   });
   if (!layers.length) {
     document.getElementById('gpmb-map-empty').textContent =
-      'Không quy đổi được tọa độ sang bản đồ thực — kiểm tra lại Kinh tuyến trục hoặc định dạng tọa độ (X-Bắc, Y-Đông).';
+      'Không quy đổi được tọa độ sang bản đồ thực — kiểm tra lại Kinh tuyến trục hoặc định dạng tọa độ (X-Đông, Y-Bắc).';
     document.getElementById('gpmb-map-empty').style.display = 'block';
     document.getElementById('gpmb-map-leaflet').style.display = 'none';
     return;
@@ -2272,7 +2312,7 @@ function renderGpmbCombinedPreview() {
     const pts = rings.flat().filter(pt => Array.isArray(pt) && pt.length >= 2);
     if (!pts.length) return;
     parsed.push({
-      label: `T${esc(p.so_to_tren_ban_do)}-${esc(p.so_thua_tren_ban_do)}`,
+      label: gpmbParcelLabel(p),
       rings, pts, color: palette[idx % palette.length]
     });
   });
@@ -2291,10 +2331,12 @@ function renderGpmbCombinedPreview() {
         .map(toXY).map(([x,y]) => `${x.toFixed(1)},${y.toFixed(1)}`).join(' ');
       svgParts += `<polygon points="${ptsStr}" fill="${pp.color}66" stroke="${pp.color}" stroke-width="1.5"/>`;
     });
-    const px = pp.pts.map(p=>p[0]), py = pp.pts.map(p=>p[1]);
-    const cx = (Math.min(...px)+Math.max(...px))/2, cy = (Math.min(...py)+Math.max(...py))/2;
-    const [lx, ly] = toXY([cx, cy]);
-    svgParts += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="10" font-weight="600" fill="#fff" text-anchor="middle" dominant-baseline="middle">${pp.label}</text>`;
+    const outer = pp.rings[0] && pp.rings[0].filter(pt => Array.isArray(pt) && pt.length >= 2);
+    const centroid = outer && outer.length >= 3 ? polygonCentroid(outer) : null;
+    if (centroid) {
+      const [lx, ly] = toXY(centroid);
+      svgParts += `<text x="${lx.toFixed(1)}" y="${ly.toFixed(1)}" font-size="9" font-weight="600" fill="#fff" text-anchor="middle" dominant-baseline="middle">${pp.label}</text>`;
+    }
   });
   box.style.display = 'block';
   box.innerHTML = `<div style="font-size:11px;color:var(--muted);margin-bottom:4px">🗺️ Xem trước tổng thể ${parsed.length} thửa đã có tọa độ trên mảnh này (đơn giản, chưa theo tỉ lệ bản đồ thực)</div>

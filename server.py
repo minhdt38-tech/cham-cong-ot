@@ -2999,6 +2999,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         thu_hoi = body.get('dien_tich_thu_hoi_tren_ban_do') or 0
         master_id = body.get('parcel_master_id') or None
         toa_do = self._normalize_toa_do(body.get('toa_do'))
+        ring = self._ring_from_toa_do(toa_do)
+        if ring:
+            dien_tich = round(self._polygon_area(ring), 2)
         with get_db() as db:
             m = db.execute('SELECT project_id, loai_ban_do FROM bt_maps WHERE id=?', (map_id,)).fetchone()
             parcel_id = None
@@ -3025,6 +3028,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         thu_hoi = body.get('dien_tich_thu_hoi_tren_ban_do') or 0
         master_id = body.get('parcel_master_id') or None
         toa_do = self._normalize_toa_do(body.get('toa_do'))
+        ring = self._ring_from_toa_do(toa_do)
+        if ring:
+            dien_tich = round(self._polygon_area(ring), 2)
         with get_db() as db:
             row = db.execute('SELECT map_id, parcel_id FROM bt_map_parcels WHERE id=?', (link_id,)).fetchone()
             if not row:
@@ -3065,6 +3071,59 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.commit()
         self.send_json({'ok': True})
 
+    def _ring_from_toa_do(self, toa_do_json):
+        """Lấy vành ngoài (outer ring) [[x,y],...] từ chuỗi GeoJSON đã chuẩn hóa lưu trong toa_do.
+        Trả về None nếu không đọc được hoặc chưa đủ 3 đỉnh."""
+        if not toa_do_json:
+            return None
+        try:
+            geo = json.loads(toa_do_json)
+            if geo.get('type') == 'Polygon':
+                ring = geo['coordinates'][0]
+            elif geo.get('type') == 'MultiPolygon':
+                ring = geo['coordinates'][0][0]
+            else:
+                return None
+            ring = [p for p in ring if isinstance(p, (list, tuple)) and len(p) >= 2]
+            if len(ring) < 3:
+                return None
+            return ring
+        except Exception:
+            return None
+
+    def _polygon_area(self, ring):
+        """Diện tích đa giác theo công thức Shoelace (Gauss). ring: [[x,y],...], không cần tự khép kín trước."""
+        pts = list(ring)
+        if pts[0][0] != pts[-1][0] or pts[0][1] != pts[-1][1]:
+            pts = pts + [pts[0]]
+        s = 0.0
+        for i in range(len(pts) - 1):
+            x1, y1 = pts[i][0], pts[i][1]
+            x2, y2 = pts[i + 1][0], pts[i + 1][1]
+            s += x1 * y2 - x2 * y1
+        return abs(s) / 2.0
+
+    def _polygon_centroid(self, ring):
+        """Tâm hình học (centroid) của đa giác — dùng để đặt nhãn thửa đúng vị trí tâm thực,
+        khác với tâm hình chữ nhật bao quanh (bbox center) vốn có thể lệch ra ngoài với hình lõm."""
+        pts = list(ring)
+        if pts[0][0] != pts[-1][0] or pts[0][1] != pts[-1][1]:
+            pts = pts + [pts[0]]
+        a = cx = cy = 0.0
+        for i in range(len(pts) - 1):
+            x1, y1 = pts[i][0], pts[i][1]
+            x2, y2 = pts[i + 1][0], pts[i + 1][1]
+            cross = x1 * y2 - x2 * y1
+            a += cross
+            cx += (x1 + x2) * cross
+            cy += (y1 + y2) * cross
+        a = a / 2.0
+        if abs(a) < 1e-9:
+            xs = [p[0] for p in pts[:-1]]
+            ys = [p[1] for p in pts[:-1]]
+            return sum(xs) / len(xs), sum(ys) / len(ys)
+        return cx / (6 * a), cy / (6 * a)
+
     def _normalize_toa_do(self, raw):
         """Chuẩn hóa ô nhập tọa độ thửa về GeoJSON, chấp nhận 2 kiểu nhập — dùng chung cho thêm/sửa 1 thửa
         (form tay) và import Excel hàng loạt, để không ai phải tự tay viết đúng cú pháp GeoJSON:
@@ -3096,8 +3155,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return None
 
     def api_bt_map_parcels_import(self, map_id):
-        """Import hàng loạt thửa đất vào 1 đợt Bản đồ GPMB từ file Excel mẫu.
-        Nếu số tờ+số thửa trong file đã tồn tại trên đợt này, yêu cầu xác nhận ghi đè (field confirm_overwrite=1)
+        """Import hàng loạt thửa đất vào 1 mảnh trích đo Bản đồ GPMB từ file Excel mẫu.
+        Định dạng: MỖI DÒNG LÀ 1 ĐỈNH THỬA (cột STT, Tờ, Thửa, X, Y). Các dòng liên tiếp có cùng
+        Tờ+Thửa là các đỉnh của cùng 1 thửa, nối theo thứ tự trong file, đỉnh cuối tự nối lại đỉnh đầu
+        để khép kín thành đa giác. Diện tích thửa được TÍNH TỰ ĐỘNG bằng công thức Shoelace từ tọa độ
+        các đỉnh sau khi khép kín — không đọc từ cột diện tích nhập tay nữa.
+        Nếu số tờ+số thửa trong file đã tồn tại trên mảnh này, yêu cầu xác nhận ghi đè (field confirm_overwrite=1)
         trước khi thực sự áp dụng — không âm thầm ghi đè dữ liệu đã có."""
         sess = self.require_auth()
         if not sess: return
@@ -3110,6 +3173,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         confirm_overwrite = fields.get('confirm_overwrite', '') == '1'
         fitem = files['file']
         file_bytes = fitem.file.read()
+        if file_bytes[:8] == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
+            self.send_json({'error': 'File này đang ở định dạng Excel cũ (.xls). Hệ thống chỉ đọc được .xlsx — '
+                                      'mở file bằng Excel rồi "Save As" sang định dạng .xlsx, sau đó import lại.'}, 400)
+            return
         try:
             import openpyxl
             wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
@@ -3130,14 +3197,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return None
 
         COL = {
-            'so_to':     find(['số tờ', 'so to']),
-            'so_thua':   find(['số thửa', 'so thua']),
-            'dien_tich': find(['diện tích thửa', 'dien tich thua', 'diện tích (', 'dien tich (']),
-            'thu_hoi':   find(['thu hồi', 'thu hoi']),
-            'toa_do':    find(['tọa độ', 'toa do']),
+            'stt':     find(['stt', 'số thứ tự']),
+            'so_to':   find(['tờ', 'to']),
+            'so_thua': find(['thửa', 'thua']),
+            'x':       find(['x']),
+            'y':       find(['y']),
         }
-        if COL['so_to'] is None and COL['so_thua'] is None:
-            self.send_json({'error': 'Không tìm thấy cột Số tờ / Số thửa trong file. Vui lòng dùng đúng file mẫu.'}, 400)
+        if COL['so_to'] is None or COL['so_thua'] is None or COL['x'] is None or COL['y'] is None:
+            self.send_json({'error': 'Không tìm thấy đủ cột Tờ / Thửa / X / Y trong file. Vui lòng dùng đúng file mẫu.'}, 400)
             return
 
         def cell(row, key):
@@ -3146,7 +3213,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return None
             return row[idx]
 
-        parsed_rows = []
+        # Mỗi dòng là 1 đỉnh — gom các dòng LIÊN TIẾP có cùng (Tờ,Thửa) thành 1 thửa (1 nhóm đỉnh).
+        groups = []
+        cur = None
         for row in raw_rows[1:]:
             if not any(row):
                 continue
@@ -3154,21 +3223,42 @@ class Handler(http.server.BaseHTTPRequestHandler):
             so_thua = cell(row, 'so_thua')
             so_to = str(so_to).strip() if so_to is not None else ''
             so_thua = str(so_thua).strip() if so_thua is not None else ''
+            x_raw, y_raw = cell(row, 'x'), cell(row, 'y')
             if not so_to and not so_thua:
                 continue
             try:
-                dien_tich = float(cell(row, 'dien_tich') or 0)
+                x = float(x_raw)
+                y = float(y_raw)
             except Exception:
-                dien_tich = 0
-            try:
-                thu_hoi = float(cell(row, 'thu_hoi') or 0)
-            except Exception:
-                thu_hoi = 0
-            toa_do = self._normalize_toa_do(cell(row, 'toa_do'))
-            parsed_rows.append({'so_to': so_to, 'so_thua': so_thua, 'dien_tich': dien_tich, 'thu_hoi': thu_hoi, 'toa_do': toa_do})
+                continue
+            key = (so_to, so_thua)
+            if cur is None or cur['key'] != key:
+                cur = {'key': key, 'so_to': so_to, 'so_thua': so_thua, 'pts': []}
+                groups.append(cur)
+            cur['pts'].append([x, y])
+
+        parsed_rows = []
+        skipped_short = []
+        for g in groups:
+            pts = g['pts']
+            if len(pts) < 3:
+                skipped_short.append(f"Tờ {g['so_to']} - Thửa {g['so_thua']}")
+                continue
+            ring = list(pts)
+            if ring[0][0] != ring[-1][0] or ring[0][1] != ring[-1][1]:
+                ring.append(ring[0])
+            toa_do = json.dumps({'type': 'Polygon', 'coordinates': [ring]}, ensure_ascii=False)
+            dien_tich = round(self._polygon_area(ring), 2)
+            parsed_rows.append({
+                'so_to': g['so_to'], 'so_thua': g['so_thua'],
+                'dien_tich': dien_tich, 'thu_hoi': 0, 'toa_do': toa_do,
+            })
 
         if not parsed_rows:
-            self.send_json({'error': 'Không có dòng dữ liệu hợp lệ trong file'}, 400); return
+            msg = 'Không có thửa hợp lệ trong file (mỗi thửa cần ít nhất 3 đỉnh với X, Y hợp lệ).'
+            if skipped_short:
+                msg += ' Bỏ qua vì thiếu đỉnh: ' + ', '.join(skipped_short)
+            self.send_json({'error': msg}, 400); return
 
         with get_db() as db:
             m = db.execute('SELECT project_id, loai_ban_do FROM bt_maps WHERE id=?', (map_id,)).fetchone()
@@ -3240,7 +3330,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         wb = openpyxl.Workbook()
         ws = wb.active
         ws.title = 'Dữ liệu'
-        headers = ['Số tờ', 'Số thửa', 'Diện tích thửa (m²)', 'Diện tích thu hồi (m²)', 'Tọa độ các đỉnh (tùy chọn)']
+        headers = ['STT', 'Tờ', 'Thửa', 'X', 'Y']
         hdr_fill = PatternFill('solid', start_color='1B2A4A')
         hdr_font = Font(bold=True, color='FFFFFF', name='Arial', size=10)
         for ci, h in enumerate(headers, 1):
@@ -3248,32 +3338,53 @@ class Handler(http.server.BaseHTTPRequestHandler):
             c.fill = hdr_fill
             c.font = hdr_font
             c.alignment = Alignment(horizontal='center', wrap_text=True)
-        ws.cell(row=2, column=1, value='12')
-        ws.cell(row=2, column=2, value='45')
-        ws.cell(row=2, column=3, value=300)
-        ws.cell(row=2, column=4, value=120)
-        ws.cell(row=2, column=5, value='0,0; 20,0; 20,15; 0,15')
-        for ci, w in enumerate([10, 10, 20, 22, 40], 1):
+        # Ví dụ 2 thửa liền kề, mỗi dòng là 1 đỉnh — đỉnh cuối lặp lại đỉnh đầu để khép kín (không bắt buộc,
+        # hệ thống tự khép kín nếu thiếu), minh họa đúng cấu trúc dữ liệu đo đạc thực tế.
+        sample = [
+            (1, '1', '4', 590943.981, 2313150.975),
+            (2, '1', '4', 591014.629, 2313128.736),
+            (3, '1', '4', 591009.393, 2313109.651),
+            (4, '1', '4', 590938.240, 2313132.048),
+            (5, '1', '4', 590943.981, 2313150.975),
+            (6, '1', '5', 590938.240, 2313132.048),
+            (7, '1', '5', 591009.393, 2313109.651),
+            (8, '1', '5', 591003.867, 2313089.506),
+            (9, '1', '5', 590932.179, 2313112.071),
+            (10, '1', '5', 590938.240, 2313132.048),
+        ]
+        for ri, row in enumerate(sample, 2):
+            for ci, v in enumerate(row, 1):
+                ws.cell(row=ri, column=ci, value=v)
+        for ci, w in enumerate([8, 8, 8, 16, 16], 1):
             ws.column_dimensions[chr(64+ci)].width = w
 
         ws2 = wb.create_sheet('Hướng dẫn')
         guide = [
             ('Cột', 'Ý nghĩa'),
-            ('Số tờ / Số thửa', 'Bắt buộc — theo hồ sơ địa chính. Mỗi dòng là 1 thửa đất.'),
-            ('Diện tích thửa (m²)', 'Tổng diện tích thửa đất, để trống hoặc 0 nếu chưa có.'),
-            ('Diện tích thu hồi (m²)', 'Phần diện tích thu hồi trong dự án, để trống hoặc 0 nếu chưa có.'),
-            ('Tọa độ các đỉnh (tùy chọn)',
-             'Danh sách tọa độ các đỉnh thửa theo thứ tự, mỗi đỉnh 1 cặp "X,Y", các đỉnh cách nhau bởi dấu ";". '
-             'Ví dụ: 0,0; 20,0; 20,15; 0,15 — không cần lặp lại đỉnh đầu tiên ở cuối, hệ thống tự khép kín. '
-             'Nếu chưa có tọa độ thực tế, có thể để trống — chỉ ảnh hưởng phần xem trước hình dạng, không ảnh hưởng dữ liệu khác.'),
-            ('Nếu thửa đã tồn tại', 'Hệ thống nhận diện trùng theo Số tờ + Số thửa trong cùng đợt Bản đồ GPMB, '
+            ('STT', 'Số thứ tự đỉnh, chỉ để tham chiếu — hệ thống đọc theo đúng thứ tự các dòng trong file, không theo số này.'),
+            ('Tờ / Thửa', 'Bắt buộc — theo hồ sơ địa chính.'),
+            ('X, Y', 'Tọa độ VN-2000 của đỉnh thửa (mét), lấy đúng theo hồ sơ đo đạc/bản vẽ CAD. '
+             'Thường X là tọa độ Đông (Easting), Y là tọa độ Bắc (Northing) — theo đúng thứ tự cột trong hồ sơ của anh, '
+             'không cần đảo chỗ.'),
+            ('Mỗi dòng là 1 đỉnh thửa',
+             'KHÔNG phải mỗi dòng 1 thửa. Các dòng liên tiếp có cùng Tờ+Thửa là các đỉnh của cùng 1 thửa, '
+             'nối theo đúng thứ tự trong file (dòng dưới nối dòng trên) để tạo thành các cạnh. '
+             'Đỉnh cuối cùng của 1 thửa tự động nối lại đỉnh đầu tiên để khép kín thành đa giác — '
+             'có thể lặp lại đỉnh đầu ở dòng cuối (như ví dụ) hoặc không, hệ thống đều tự xử lý đúng.'),
+            ('Ví dụ trong file mẫu', 'Thửa 4 - Tờ 1 gồm 4 đỉnh (STT 1-4), dòng STT 5 lặp lại đỉnh đầu để khép kín. '
+             'Thửa 5 - Tờ 1 bắt đầu từ dòng STT 6 (Tờ/Thửa đổi sang 1/5), gồm 4 đỉnh khép kín ở dòng STT 10.'),
+            ('Diện tích thửa', 'KHÔNG cần nhập — hệ thống tự tính bằng công thức Shoelace từ tọa độ các đỉnh sau khi khép kín, '
+             'đơn vị m². Nhãn thửa trên bản đồ sẽ hiện dạng "Thửa.Tờ.Diện tíchm2" tại đúng tâm hình học của thửa.'),
+            ('Diện tích thu hồi', 'Không có trong file import (không tính được từ hình học) — nhập/sửa riêng sau khi import, '
+             'bằng nút ✏️ sửa từng thửa.'),
+            ('Nếu thửa đã tồn tại', 'Hệ thống nhận diện trùng theo Tờ + Thửa trong cùng mảnh trích đo Bản đồ GPMB, '
              'và sẽ hỏi xác nhận trước khi ghi đè — không tự động ghi đè.'),
         ]
         for ri, (a, b) in enumerate(guide, 1):
             ws2.cell(row=ri, column=1, value=a).font = Font(bold=(ri == 1))
             ws2.cell(row=ri, column=2, value=b).alignment = Alignment(wrap_text=True, vertical='top')
         ws2.column_dimensions['A'].width = 26
-        ws2.column_dimensions['B'].width = 80
+        ws2.column_dimensions['B'].width = 90
 
         buf = io.BytesIO()
         wb.save(buf)
