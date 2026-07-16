@@ -2226,7 +2226,7 @@ async function loadGpmbMaps() {
   [...hiddenLabelMapIds].forEach(id => { if (!stillExist.has(id)) hiddenLabelMapIds.delete(id); });
   await Promise.all([...visibleMapIds].map(id => ensureMapDetail(id)));
   renderGpmbMapsPanel();
-  renderGpmbMapCanvas();
+  renderGpmbMapCanvas(true); // fitView=true: tải dự án lần đầu, cần tự động fit khít dữ liệu
 }
 
 async function ensureMapDetail(id) {
@@ -2432,7 +2432,13 @@ function gpmbParcelLabelHtml(p, isGpmb = true, idx) {
   `;
 }
 
-function renderGpmbMapCanvas() {
+// fitView: có nên tự động fitBounds (zoom/pan để vừa khít dữ liệu đang hiển thị) hay KHÔNG. Mặc định
+// false — chỉ true khi gọi từ loadGpmbMaps() (tải dự án lần đầu). Các thao tác bật/tắt hiển thị bản
+// đồ (👁) hoặc nhãn thửa (🏷️) gọi hàm này KHÔNG truyền fitView (giữ false) để tỷ lệ thu phóng người
+// dùng đang xem không bị nhảy về mức fit-vừa-khít mỗi lần bấm — đúng theo phản hồi của Minh (trước
+// đây fitBounds chạy vô điều kiện mỗi lần vẽ lại lớp dữ liệu, kể cả khi chỉ đổi nhãn, khiến % zoom bị
+// "tự quay về" 1 mức cố định gây khó chịu khi đang phóng to xem chi tiết 1 thửa).
+function renderGpmbMapCanvas(fitView) {
   const emptyEl = document.getElementById('gpmb-map-empty');
   const svg = document.getElementById('gpmb-map-svg');
   const leafletEl = document.getElementById('gpmb-map-leaflet');
@@ -2468,7 +2474,7 @@ function renderGpmbMapCanvas() {
     emptyEl.style.display = 'none';
     svg.style.display = 'none';
     leafletEl.style.display = 'block';
-    renderGpmbLeafletMap(withGeo, kttOk ? ktt : null);
+    renderGpmbLeafletMap(withGeo, kttOk ? ktt : null, fitView);
     return;
   }
 
@@ -2789,9 +2795,14 @@ function renderBasemapProviderList() {
   `).join('');
 }
 
-function renderGpmbLeafletMap(withGeo, ktt) {
+function renderGpmbLeafletMap(withGeo, ktt, fitView) {
   const container = document.getElementById('gpmb-map-leaflet');
   const isFirstInit = !gpmbLeafletMap;
+  // Ghi nhớ TRƯỚC KHI xoá lớp cũ: đang có lớp dữ liệu hiển thị hay chưa. Dùng để quyết định có cần tự
+  // fitBounds hay không khi fitView không được truyền true (VD: chuyển từ "chưa bật mảnh nào" sang "vừa
+  // bật 1 mảnh" vẫn nên tự fit, tránh khung nhìn trống không thấy gì; còn khi đã có dữ liệu hiển thị rồi
+  // mà chỉ bật/tắt nhãn hoặc thêm/bớt mảnh khác thì giữ nguyên khung nhìn hiện tại, theo yêu cầu của Minh).
+  const hadLayerBefore = !!gpmbLeafletLayer;
   if (isFirstInit) {
     gpmbLeafletMap = L.map(container, { zoomControl: true, minZoom: GPMB_ZOOM_MIN, maxZoom: GPMB_ZOOM_MAX });
     gpmbBasemapLayersMain = createGpmbBasemapLayers();
@@ -2865,7 +2876,12 @@ function renderGpmbLeafletMap(withGeo, ktt) {
   }
   gpmbLeafletLayer = L.layerGroup(layers).addTo(gpmbLeafletMap);
   const group = L.featureGroup(layers);
-  gpmbLeafletMap.fitBounds(group.getBounds(), { padding: [20, 20] });
+  // Chỉ tự động fitBounds (nhảy zoom/pan để vừa khít dữ liệu) khi fitView=true (tải dự án lần đầu) HOẶC
+  // khi trước đó chưa có lớp dữ liệu nào hiển thị (tránh khung nhìn trống). Các thao tác bật/tắt nhãn/
+  // bản đồ khi ĐÃ có dữ liệu hiển thị sẽ KHÔNG fit lại — giữ nguyên tỷ lệ thu phóng người dùng đang xem.
+  if (fitView || !hadLayerBefore) {
+    gpmbLeafletMap.fitBounds(group.getBounds(), { padding: [20, 20] });
+  }
   // fitBounds không phải lúc nào cũng bắn 'zoomend' (VD khi mức zoom mới trùng mức hiện tại) —
   // gọi trực tiếp để đảm bảo hiển thị % zoom + kích thước nhãn thửa luôn đúng ngay sau khi vẽ lại lớp dữ liệu.
   updateGpmbZoomPercentDisplay();
