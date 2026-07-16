@@ -544,6 +544,14 @@ def init_db():
             # Kinh tuyến trục VN-2000 (độ) của tỉnh nơi dự án tọa lạc — dùng để quy đổi tọa độ VN-2000
             # (X-Bắc, Y-Đông) sang kinh độ/vĩ độ WGS84 khi hiển thị trên bản đồ nền thực (OpenStreetMap).
             db.execute("ALTER TABLE bt_projects ADD COLUMN kinh_tuyen_truc REAL DEFAULT NULL")
+        if 'basemap_provider' not in proj_cols:
+            # Nguồn bản đồ nền mặc định của dự án (khớp key trong GPMB_BASEMAP_PROVIDERS ở frontend) —
+            # lưu theo dự án (không phải trình duyệt/localStorage) để mở lại ở máy khác vẫn giữ đúng lựa
+            # chọn. Bản đồ nền LUÔN hiển thị được ngay cả khi dự án chưa khai Kinh tuyến trục — việc quy
+            # đổi tọa độ VN-2000 (cần kinh_tuyen_truc) chỉ ảnh hưởng lớp ranh giới thửa vẽ đè lên trên.
+            db.execute("ALTER TABLE bt_projects ADD COLUMN basemap_provider TEXT DEFAULT 'osm'")
+        if 'basemap_visible' not in proj_cols:
+            db.execute("ALTER TABLE bt_projects ADD COLUMN basemap_visible INTEGER DEFAULT 1")
 
         # Bồi thường v2: mở rộng bt_parcels (Thửa đất theo dự án -> tham chiếu thửa gốc)
         parcel_cols = [r[1] for r in db.execute("PRAGMA table_info(bt_parcels)").fetchall()]
@@ -1223,6 +1231,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/projects/(\d+)$', path)
         if m:
             self.api_bt_projects_update(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/basemap$', path)
+        if m:
+            self.api_bt_project_basemap_update(int(m.group(1))); return
         m = re.match(r'^/api/bt/records/(\d+)$', path)
         if m:
             self.api_bt_records_update(int(m.group(1))); return
@@ -4668,6 +4679,26 @@ class Handler(http.server.BaseHTTPRequestHandler):
                  body.get('kinh_tuyen_truc') if body.get('kinh_tuyen_truc') not in ('', None) else None,
                  json.dumps(danh_sach_xa, ensure_ascii=False), pid)
             )
+            db.commit()
+        self.send_json({'ok': True})
+
+    def api_bt_project_basemap_update(self, pid):
+        """Cập nhật nhanh riêng 2 trường bản đồ nền (provider + bật/tắt) từ tab 🛰️ Bản đồ nền — tách
+        khỏi api_bt_projects_update để tab này lưu ngay khi người dùng đổi lựa chọn, không cần mở form
+        Sửa dự án đầy đủ."""
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        sets, params = [], []
+        if 'basemap_provider' in body:
+            sets.append('basemap_provider=?'); params.append(str(body.get('basemap_provider') or 'osm'))
+        if 'basemap_visible' in body:
+            sets.append('basemap_visible=?'); params.append(1 if body.get('basemap_visible') else 0)
+        if not sets:
+            self.send_json({'error': 'Không có gì để cập nhật'}, 400); return
+        params.append(pid)
+        with get_db() as db:
+            db.execute(f'UPDATE bt_projects SET {", ".join(sets)} WHERE id=?', params)
             db.commit()
         self.send_json({'ok': True})
 

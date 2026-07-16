@@ -84,6 +84,13 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .gpmb-zoom-num{width:44px;background:transparent;border:none;color:#dfe6f0;font-size:12px;text-align:right;outline:none}
 .gpmb-zoom-pct span{font-size:12px;color:var(--muted)}
 .gpmb-zoom-num::-webkit-inner-spin-button,.gpmb-zoom-num::-webkit-outer-spin-button{opacity:.6}
+.leaflet-bar a,.leaflet-bar a:hover{background:#162d45;color:#dfe6f0;border-bottom:1px solid var(--border)}
+.leaflet-bar a:last-child{border-bottom:none}
+.gpmb-locate-ctrl a{font-size:15px;line-height:26px}
+.gpmb-locate-ctrl a.active{background:var(--accent);color:#fff}
+.bm-provider-item{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:6px;cursor:pointer;font-size:13px}
+.bm-provider-item:hover{background:rgba(255,255,255,.06)}
+.bm-provider-item.active{background:rgba(41,128,185,.18)}
 
 /* ── DASHBOARD ─────────────────────────────────────────────── */
 #tab-dashboard{flex:1;overflow-y:auto;padding:20px;display:none}
@@ -233,6 +240,7 @@ th.filterable{position:relative}
     <div class="tab-bar" id="tab-bar" style="display:none">
       <button class="tab-btn active" onclick="switchTab('dashboard')">📊 Tổng quan</button>
       <button class="tab-btn" onclick="switchTab('gpmb')">🗂️ Bản đồ</button>
+      <button class="tab-btn" onclick="switchTab('basemap')">🛰️ Bản đồ nền</button>
       <button class="tab-btn" id="tabbtn-parcels" onclick="switchTab('parcels')">🗺️ Thửa đất</button>
       <button class="tab-btn" id="tabbtn-assets" onclick="switchTab('assets')">🌳 Tài sản</button>
       <button class="tab-btn" id="tabbtn-dossiers" onclick="switchTab('dossiers')">💰 Hồ sơ Hộ</button>
@@ -295,6 +303,33 @@ th.filterable{position:relative}
     <div style="font-size:48px">🔒</div>
     <p style="font-size:14px;max-width:440px;text-align:center">Mục này chỉ mở khi dự án đã có Bản đồ GPMB với ít nhất 1 thửa đất. Vui lòng tạo Bản đồ GPMB trước (tab 🗂️ Bản đồ).</p>
     <button class="btn btn-primary" onclick="switchTab('gpmb')">🗂️ Đi tới Bản đồ</button>
+  </div>
+
+  <!-- BASEMAP TAB (Bản đồ nền — cấu hình nguồn bản đồ nền dùng chung cho tab 🗂️ Bản đồ) -->
+  <div id="tab-basemap" style="flex:1;display:none;flex-direction:column;overflow:hidden">
+    <div class="toolbar">
+      <div style="font-size:13px;color:var(--muted)">Cấu hình áp dụng ngay cho bản đồ ở tab 🗂️ Bản đồ của dự án này — lưu tự động, không cần bấm Lưu.</div>
+    </div>
+    <div class="gpmb-split" id="basemap-split">
+      <div class="gpmb-split-left" id="basemap-split-left" style="width:26%;padding:14px;overflow-y:auto">
+        <label style="display:flex;align-items:center;gap:8px;font-size:13px;font-weight:600;margin-bottom:16px;cursor:pointer">
+          <input type="checkbox" id="bm-toggle-visible" onchange="setBasemapVisible(this.checked)">
+          Hiển thị bản đồ nền
+        </label>
+        <div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);margin-bottom:8px">Chọn nguồn bản đồ nền</div>
+        <div id="bm-provider-list" style="display:flex;flex-direction:column;gap:2px"></div>
+        <div style="font-size:11px;color:var(--muted);margin-top:18px;line-height:1.5;padding-top:12px;border-top:1px solid var(--border)">
+          ℹ️ Google Maps chính thức yêu cầu API key trả phí theo điều khoản của Google nên chưa tích hợp trực tiếp — 2 lựa chọn "giống Google Maps" ở trên dùng nguồn miễn phí có giao diện tương tự. Nếu bạn có sẵn API key Google Maps, cho tôi biết để tích hợp thêm.
+        </div>
+      </div>
+      <div class="gpmb-split-resizer" id="basemap-split-resizer" title="Kéo để thay đổi kích thước"></div>
+      <div class="gpmb-split-right" id="basemap-split-right">
+        <div style="font-size:13px;font-weight:600;color:var(--muted);margin-bottom:8px">Xem trước</div>
+        <div style="flex:1;min-height:0;background:var(--card);border-radius:8px;overflow:hidden;position:relative">
+          <div id="basemap-preview-map" style="width:100%;height:100%"></div>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- PARCELS TAB (Thửa đất) -->
@@ -1223,6 +1258,11 @@ async function selectProject(id, name) {
   parcelColumnFilters = {};
   currentProjId = id;
   currentProjName = name;
+  const proj = projectsList.find(p => p.id === id);
+  currentBasemapProvider = (proj && proj.basemap_provider) || GPMB_BASEMAP_DEFAULT;
+  currentBasemapVisible = !proj || proj.basemap_visible === undefined || proj.basemap_visible === null
+    ? true : !!proj.basemap_visible;
+  applyBasemapToAllMaps(); // an toàn nếu map chưa khởi tạo — có guard null bên trong
   document.getElementById('proj-title').textContent = name;
   document.getElementById('no-project').style.display = 'none';
   document.getElementById('tab-bar').style.display = 'flex';
@@ -2262,6 +2302,16 @@ function renderGpmbMapsPanel() {
 let gpmbLeafletMap = null;
 let gpmbLeafletLayer = null;
 
+// ── Bản đồ nền (basemap) — trạng thái dùng chung cho map chính (tab Bản đồ) + map xem trước (tab Bản
+// đồ nền); nạp từ project.basemap_provider/basemap_visible khi selectProject(), lưu lại qua API riêng
+// mỗi khi người dùng đổi (xem persistBasemapSettings) — KHÔNG phụ thuộc localStorage của trình duyệt.
+let currentBasemapProvider = 'osm'; // trùng GPMB_BASEMAP_DEFAULT khai báo phía dưới — không tham chiếu
+                                     // trực tiếp ở đây vì const đó khai báo sau, đụng temporal dead zone.
+let currentBasemapVisible = true;
+let gpmbBasemapLayersMain = null;
+let gpmbBasemapLayersPreview = null;
+let basemapPreviewMap = null;
+
 function vn2000Proj4Def(kinhTuyenTruc) {
   // Xấp xỉ mức mét (vài mét), đủ dùng để xem trên bản đồ nền — KHÔNG dùng để chứng thực ranh giới pháp lý.
   return `+proj=tmerc +lat_0=0 +lon_0=${kinhTuyenTruc} +k=0.9999 +x_0=500000 +y_0=0 +ellps=WGS84 ` +
@@ -2310,11 +2360,15 @@ function renderGpmbMapCanvas() {
   const titleEl = document.getElementById('gpmb-map-title');
   const proj = projectsList.find(pr => pr.id === currentProjId);
   const ktt = proj && proj.kinh_tuyen_truc != null && proj.kinh_tuyen_truc !== '' ? parseFloat(proj.kinh_tuyen_truc) : null;
+  const kttOk = ktt !== null && !Number.isNaN(ktt) && typeof proj4 === 'function';
 
   const visibleMaps = [...visibleMapIds].map(id => mapDetailCache[id]).filter(Boolean);
-  titleEl.textContent = visibleMaps.length
+  const baseTitle = visibleMaps.length
     ? `Đang hiển thị ${visibleMaps.length} bản đồ: ${visibleMaps.map(m => m.ten_ban_do || '(chưa đặt tên)').join(', ')}`
     : '';
+  titleEl.textContent = kttOk || !visibleMaps.length
+    ? baseTitle
+    : `${baseTitle} — ⚠️ chưa khai Kinh tuyến trục nên chưa vẽ được ranh giới thửa lên bản đồ nền (Sửa dự án để khai).`;
 
   const withGeo = visibleMaps.flatMap(m => {
     const style = gpmbTypeStyle(m.loai_ban_do);
@@ -2323,20 +2377,20 @@ function renderGpmbMapCanvas() {
       .filter(x => x.rings && x.rings.flat().some(pt => Array.isArray(pt) && pt.length >= 2));
   });
 
-  const canUseLeaflet = ktt !== null && !Number.isNaN(ktt) && typeof proj4 === 'function' && typeof L === 'object';
-
-  if (canUseLeaflet) {
-    // Bản đồ nền (Leaflet) luôn hiển thị để có ngữ cảnh địa lý — KHÔNG phụ thuộc việc có mảnh nào
-    // đang bật 👁 hay không. Chỉ các lớp ranh giới thửa mới bật/tắt theo lựa chọn của người dùng.
+  // Bản đồ nền (Leaflet) LUÔN hiển thị được ngay khi thư viện đã tải xong — KHÔNG còn phụ thuộc việc
+  // dự án đã khai Kinh tuyến trục hay chưa (trước đây gộp chung điều kiện này khiến bản đồ nền "biến
+  // mất" hoàn toàn ở dự án mới chưa kịp khai). Kinh tuyến trục giờ chỉ còn quyết định việc CÓ vẽ được
+  // ranh giới thửa (lớp dữ liệu) đè lên bản đồ nền hay không — bản đồ nền tự nó luôn có sẵn.
+  if (typeof L === 'object') {
     emptyEl.style.display = 'none';
     svg.style.display = 'none';
     leafletEl.style.display = 'block';
-    renderGpmbLeafletMap(withGeo, ktt);
+    renderGpmbLeafletMap(withGeo, kttOk ? ktt : null);
     return;
   }
 
-  // Chưa khai Kinh tuyến trục -> không quy đổi được toạ độ thực -> chỉ vẽ được sơ đồ minh hoạ,
-  // và sơ đồ minh hoạ thì cần có ít nhất 1 mảnh đang bật có toạ độ mới vẽ được gì.
+  // Fallback cuối cùng — chỉ xảy ra khi thư viện Leaflet không tải được (VD mất mạng khi mở trang lần
+  // đầu) — khi đó không có bản đồ nền nào để hiển thị, chỉ còn vẽ được sơ đồ minh hoạ nếu có toạ độ.
   if (!withGeo.length) {
     emptyEl.textContent = visibleMaps.length
       ? 'Các bản đồ đang bật chưa có thửa/điểm nào có tọa độ — bấm ✏️ để thêm tọa độ, hoặc import Excel.'
@@ -2381,25 +2435,74 @@ function renderGpmbSvgCanvas(withGeo) {
   svg.innerHTML = parts;
 }
 
-function buildGpmbBasemaps() {
-  // Các nguồn bản đồ nền miễn phí, không cần API key — chỉ đổi hình nền, không ảnh hưởng dữ liệu đã lưu.
-  // maxNativeZoom = mức zoom thật có ảnh nét của từng nguồn; maxZoom = trần zoom cho phép của bản đồ
-  // (GPMB_ZOOM_MAX, ứng với 200%) — vượt quá maxNativeZoom, Leaflet tự phóng to ảnh mức sâu nhất thay vì bỏ trống.
-  const common = { maxZoom: GPMB_ZOOM_MAX };
-  return {
-    'OpenStreetMap (mặc định)': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+// Danh sách bản đồ nền dùng CHUNG cho mọi bản đồ Leaflet trong module (tab 🗂️ Bản đồ + tab 🛰️ Bản đồ
+// nền) — miễn phí, không cần API key. Google Maps chính thức yêu cầu API key trả phí theo điều khoản
+// của Google nên KHÔNG nhúng trực tiếp; 'esri_street' và 'voyager' là 2 nguồn miễn phí có giao diện
+// gần giống Google Maps để thay thế. maxNativeZoom = mức zoom thật có ảnh nét của từng nguồn; maxZoom =
+// trần zoom cho phép (GPMB_ZOOM_MAX, ứng với 200%) — vượt quá maxNativeZoom, Leaflet tự phóng to ảnh
+// mức sâu nhất thay vì bỏ trống.
+const GPMB_BASEMAP_PROVIDERS = {
+  osm: {
+    label: 'OpenStreetMap (mặc định)',
+    build: (common) => L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
       ...common, maxNativeZoom: 19, attribution: '&copy; OpenStreetMap'
     }),
-    'Vệ tinh (Esri)': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+  },
+  esri_sat: {
+    label: 'Vệ tinh (Esri)',
+    build: (common) => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
       ...common, maxNativeZoom: 19, attribution: 'Tiles &copy; Esri'
     }),
-    'Địa hình (OpenTopoMap)': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
-      ...common, maxNativeZoom: 17, attribution: 'Map data: &copy; OpenStreetMap, SRTM | Style: &copy; OpenTopoMap (CC-BY-SA)'
+  },
+  esri_street: {
+    label: 'Đường phố màu (Esri — giống Google Maps)',
+    build: (common) => L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}', {
+      ...common, maxNativeZoom: 19, attribution: 'Tiles &copy; Esri'
     }),
-    'Nền tối (CartoDB)': L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+  },
+  voyager: {
+    label: 'Voyager (CartoDB — giống Google Maps)',
+    build: (common) => L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
       ...common, maxNativeZoom: 20, attribution: '&copy; OpenStreetMap, &copy; CARTO'
     }),
-  };
+  },
+  opentopo: {
+    label: 'Địa hình (OpenTopoMap)',
+    build: (common) => L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+      ...common, maxNativeZoom: 17, attribution: 'Map data: &copy; OpenStreetMap, SRTM | Style: &copy; OpenTopoMap (CC-BY-SA)'
+    }),
+  },
+  dark: {
+    label: 'Nền tối (CartoDB)',
+    build: (common) => L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+      ...common, maxNativeZoom: 20, attribution: '&copy; OpenStreetMap, &copy; CARTO'
+    }),
+  },
+};
+const GPMB_BASEMAP_DEFAULT = 'osm';
+
+function createGpmbBasemapLayers() {
+  const common = { maxZoom: GPMB_ZOOM_MAX };
+  const layers = {};
+  Object.entries(GPMB_BASEMAP_PROVIDERS).forEach(([key, def]) => { layers[key] = def.build(common); });
+  return layers;
+}
+
+// Gắn/gỡ đúng 1 layer nền tại 1 thời điểm lên 1 map Leaflet cụ thể, theo lựa chọn provider + bật/tắt
+// hiện tại. Dùng chung cho map chính (tab Bản đồ) và map xem trước (tab Bản đồ nền) để 2 nơi luôn nhất quán.
+function setGpmbMapBasemap(map, layersByKey, providerKey, visible) {
+  if (!map || !layersByKey) return;
+  if (map._gpmbActiveBasemapLayer && map.hasLayer(map._gpmbActiveBasemapLayer)) {
+    map.removeLayer(map._gpmbActiveBasemapLayer);
+  }
+  map._gpmbActiveBasemapLayer = null;
+  const key = layersByKey[providerKey] ? providerKey : GPMB_BASEMAP_DEFAULT;
+  if (visible) {
+    const layer = layersByKey[key];
+    layer.addTo(map);
+    if (typeof layer.bringToBack === 'function') layer.bringToBack();
+    map._gpmbActiveBasemapLayer = layer;
+  }
 }
 
 // Quy đổi zoom Leaflet (số nguyên/thập phân, mỗi mức tăng = nhân đôi độ phân giải) sang % thu phóng
@@ -2446,6 +2549,70 @@ const GpmbZoomPercentControl = L.Control.extend({
 // khỏi layer, vì cả layer polygon lẫn nhãn đang gộp chung 1 mảng `layers`/`gpmbLeafletLayer`.
 const GPMB_LABEL_MIN_PCT = 178;
 
+// Nút định vị vị trí thực của người dùng — bấm 1 lần: lấy vị trí ngay + theo dõi liên tục (GPS di
+// chuyển thì chấm xanh cập nhật theo), bấm lại lần 2: dừng theo dõi + xoá chấm. Dùng thẳng Geolocation
+// API của trình duyệt (navigator.geolocation), không cần thư viện ngoài. LƯU Ý: trình duyệt chỉ cho
+// phép định vị trên kết nối HTTPS hoặc localhost — nếu server chạy HTTP thường trên mạng LAN, tính
+// năng này có thể bị trình duyệt chặn im lặng hoặc báo lỗi "không an toàn".
+const GpmbLocateControl = L.Control.extend({
+  options: { position: 'topleft' },
+  onAdd: function(map) {
+    const div = L.DomUtil.create('div', 'leaflet-control leaflet-bar gpmb-locate-ctrl');
+    const btn = L.DomUtil.create('a', '', div);
+    btn.href = '#';
+    btn.title = 'Định vị vị trí của tôi';
+    btn.innerHTML = '📍';
+    L.DomEvent.disableClickPropagation(div);
+    L.DomEvent.disableScrollPropagation(div);
+    let watchId = null;
+    let marker = null;
+    let circle = null;
+    const clearLocation = () => {
+      if (watchId !== null && navigator.geolocation) { navigator.geolocation.clearWatch(watchId); }
+      watchId = null;
+      if (marker) { map.removeLayer(marker); marker = null; }
+      if (circle) { map.removeLayer(circle); circle = null; }
+      btn.classList.remove('active');
+    };
+    const onPosition = (pos, recenter) => {
+      const { latitude, longitude, accuracy } = pos.coords;
+      const latlng = [latitude, longitude];
+      if (!marker) {
+        marker = L.circleMarker(latlng, { radius: 7, color: '#fff', weight: 2, fillColor: '#2980b9', fillOpacity: 1 }).addTo(map);
+      } else {
+        marker.setLatLng(latlng);
+      }
+      if (!circle) {
+        circle = L.circle(latlng, { radius: accuracy, color: '#2980b9', weight: 1, fillOpacity: .12 }).addTo(map);
+      } else {
+        circle.setLatLng(latlng);
+        circle.setRadius(accuracy);
+      }
+      if (recenter) map.setView(latlng, Math.max(map.getZoom(), 16));
+    };
+    btn.addEventListener('click', (e) => {
+      e.preventDefault();
+      if (watchId !== null) { clearLocation(); return; }
+      if (!navigator.geolocation) { toast('Trình duyệt không hỗ trợ định vị vị trí.', true); return; }
+      btn.classList.add('active');
+      navigator.geolocation.getCurrentPosition(
+        (pos) => onPosition(pos, true),
+        (err) => {
+          toast('Không lấy được vị trí của bạn: ' + (err.message || 'lỗi không xác định') + ' — kiểm tra quyền truy cập vị trí của trình duyệt.', true);
+          clearLocation();
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+      watchId = navigator.geolocation.watchPosition(
+        (pos) => onPosition(pos, false),
+        () => { /* lỗi giữa chừng khi đang theo dõi — giữ nguyên chấm cũ, không báo lặp lại toast */ },
+        { enableHighAccuracy: true, maximumAge: 5000 }
+      );
+    });
+    return div;
+  }
+});
+
 function updateGpmbZoomPercentDisplay() {
   if (!gpmbLeafletMap || !gpmbLeafletMap._gpmbZoomNumInput) return;
   const pct = Math.max(0, Math.min(GPMB_PCT_MAX, gpmbZoomToPercent(gpmbLeafletMap.getZoom())));
@@ -2455,15 +2622,92 @@ function updateGpmbZoomPercentDisplay() {
   if (container) container.classList.toggle('hide-parcel-labels', pct <= GPMB_LABEL_MIN_PCT);
 }
 
+// ══════════════════════════════════════════════════════════════
+// BẢN ĐỒ NỀN — tab cài đặt riêng (bật/tắt + chọn nguồn), áp dụng cho map chính (tab Bản đồ) và map
+// xem trước (tab Bản đồ nền) cùng lúc. Cài đặt lưu theo dự án (bt_projects.basemap_provider/
+// basemap_visible) qua PUT /api/bt/projects/:id/basemap — KHÔNG dùng localStorage, để mở đúng ở máy
+// khác vẫn thấy đúng lựa chọn đã lưu.
+// ══════════════════════════════════════════════════════════════
+function applyBasemapToAllMaps() {
+  if (gpmbLeafletMap && gpmbBasemapLayersMain) {
+    setGpmbMapBasemap(gpmbLeafletMap, gpmbBasemapLayersMain, currentBasemapProvider, currentBasemapVisible);
+  }
+  if (basemapPreviewMap && gpmbBasemapLayersPreview) {
+    setGpmbMapBasemap(basemapPreviewMap, gpmbBasemapLayersPreview, currentBasemapProvider, currentBasemapVisible);
+  }
+  renderBasemapProviderList();
+}
+
+async function persistBasemapSettings() {
+  if (!currentProjId) return;
+  try {
+    await fetch(`/api/bt/projects/${currentProjId}/basemap`, {
+      method: 'PUT', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ basemap_provider: currentBasemapProvider, basemap_visible: currentBasemapVisible })
+    });
+    const proj = projectsList.find(p => p.id === currentProjId);
+    if (proj) {
+      proj.basemap_provider = currentBasemapProvider;
+      proj.basemap_visible = currentBasemapVisible ? 1 : 0;
+    }
+  } catch (e) {
+    // Lưu thất bại (VD mất mạng) — vẫn giữ nguyên lựa chọn đang hiển thị cho người dùng, không chặn
+    // thao tác; lần load lại tiếp theo có thể mất lựa chọn này nếu mạng vẫn chưa có, chấp nhận được.
+  }
+}
+
+function setBasemapProvider(key) {
+  currentBasemapProvider = GPMB_BASEMAP_PROVIDERS[key] ? key : GPMB_BASEMAP_DEFAULT;
+  applyBasemapToAllMaps();
+  persistBasemapSettings();
+}
+
+function setBasemapVisible(v) {
+  currentBasemapVisible = !!v;
+  applyBasemapToAllMaps();
+  persistBasemapSettings();
+}
+
+function renderBasemapProviderList() {
+  const box = document.getElementById('bm-provider-list');
+  const toggle = document.getElementById('bm-toggle-visible');
+  if (toggle) toggle.checked = !!currentBasemapVisible;
+  if (!box) return;
+  box.innerHTML = Object.entries(GPMB_BASEMAP_PROVIDERS).map(([key, def]) => `
+    <label class="bm-provider-item${key === currentBasemapProvider ? ' active' : ''}">
+      <input type="radio" name="bm-provider" value="${key}" ${key === currentBasemapProvider ? 'checked' : ''} onchange="setBasemapProvider('${key}')">
+      ${esc(def.label)}
+    </label>
+  `).join('');
+}
+
+function initBasemapPreviewMap() {
+  const container = document.getElementById('basemap-preview-map');
+  if (!container || basemapPreviewMap) return;
+  basemapPreviewMap = L.map(container, { zoomControl: true, minZoom: GPMB_ZOOM_MIN, maxZoom: GPMB_ZOOM_MAX });
+  gpmbBasemapLayersPreview = createGpmbBasemapLayers();
+  setGpmbMapBasemap(basemapPreviewMap, gpmbBasemapLayersPreview, currentBasemapProvider, currentBasemapVisible);
+  new GpmbZoomPercentControl().addTo(basemapPreviewMap);
+  new GpmbLocateControl().addTo(basemapPreviewMap);
+  basemapPreviewMap.setView([16.0, 106.0], 6);
+  setTimeout(() => basemapPreviewMap && basemapPreviewMap.invalidateSize(), 50);
+}
+
+function loadBasemapTab() {
+  renderBasemapProviderList();
+  initBasemapPreviewMap();
+  if (basemapPreviewMap) setTimeout(() => basemapPreviewMap.invalidateSize(), 50);
+}
+
 function renderGpmbLeafletMap(withGeo, ktt) {
   const container = document.getElementById('gpmb-map-leaflet');
   const isFirstInit = !gpmbLeafletMap;
   if (isFirstInit) {
     gpmbLeafletMap = L.map(container, { zoomControl: true, minZoom: GPMB_ZOOM_MIN, maxZoom: GPMB_ZOOM_MAX });
-    const basemaps = buildGpmbBasemaps();
-    basemaps['OpenStreetMap (mặc định)'].addTo(gpmbLeafletMap);
-    L.control.layers(basemaps, null, { position: 'topright', collapsed: true }).addTo(gpmbLeafletMap);
+    gpmbBasemapLayersMain = createGpmbBasemapLayers();
+    setGpmbMapBasemap(gpmbLeafletMap, gpmbBasemapLayersMain, currentBasemapProvider, currentBasemapVisible);
     new GpmbZoomPercentControl().addTo(gpmbLeafletMap);
+    new GpmbLocateControl().addTo(gpmbLeafletMap);
     gpmbLeafletMap.on('zoomend', updateGpmbZoomPercentDisplay);
     // Khung nhìn mặc định (trước khi có dữ liệu để fitBounds) — trung tâm Việt Nam, để bản đồ nền
     // luôn có gì đó để hiển thị/điều hướng được ngay cả khi chưa bật mảnh nào.
@@ -2473,9 +2717,11 @@ function renderGpmbLeafletMap(withGeo, ktt) {
   }
   if (gpmbLeafletLayer) { gpmbLeafletMap.removeLayer(gpmbLeafletLayer); gpmbLeafletLayer = null; }
 
-  // Bản đồ nền (basemap) đã được gắn cố định vào gpmbLeafletMap ở lần khởi tạo và KHÔNG bị đụng tới
-  // ở đây — chỉ lớp ranh giới thửa (gpmbLeafletLayer) mới bật/tắt/vẽ lại theo dữ liệu đang hiển thị.
+  // Bản đồ nền (basemap) đã được gắn cố định vào gpmbLeafletMap ở lần khởi tạo (theo cài đặt của tab
+  // 🛰️ Bản đồ nền) và KHÔNG bị đụng tới ở đây — chỉ lớp ranh giới thửa (gpmbLeafletLayer) mới bật/tắt/
+  // vẽ lại theo dữ liệu đang hiển thị.
   if (!withGeo.length) return; // không có mảnh nào đang bật — giữ nguyên bản đồ nền, không vẽ gì thêm
+  if (ktt === null) return; // chưa khai Kinh tuyến trục — không quy đổi được toạ độ, giữ nguyên bản đồ nền (đã báo ở tiêu đề)
 
   const layers = [];
   withGeo.forEach(({ p, rings, color }) => {
@@ -2517,10 +2763,10 @@ function renderGpmbLeafletMap(withGeo, ktt) {
   setTimeout(() => gpmbLeafletMap && gpmbLeafletMap.invalidateSize(), 50);
 }
 
-(function initGpmbSplitResizer() {
-  const resizer = document.getElementById('gpmb-split-resizer');
-  const left = document.getElementById('gpmb-split-left');
-  const split = document.getElementById('gpmb-split');
+function initSplitResizer(resizerId, leftId, splitId, onResizeEnd) {
+  const resizer = document.getElementById(resizerId);
+  const left = document.getElementById(leftId);
+  const split = document.getElementById(splitId);
   if (!resizer || !left || !split) return;
   let dragging = false;
   resizer.addEventListener('mousedown', (e) => {
@@ -2541,9 +2787,11 @@ function renderGpmbLeafletMap(withGeo, ktt) {
     dragging = false;
     resizer.classList.remove('dragging');
     document.body.style.userSelect = '';
-    if (gpmbLeafletMap) setTimeout(() => gpmbLeafletMap.invalidateSize(), 0);
+    if (onResizeEnd) setTimeout(onResizeEnd, 0);
   });
-})();
+}
+initSplitResizer('gpmb-split-resizer', 'gpmb-split-left', 'gpmb-split', () => gpmbLeafletMap && gpmbLeafletMap.invalidateSize());
+initSplitResizer('basemap-split-resizer', 'basemap-split-left', 'basemap-split', () => basemapPreviewMap && basemapPreviewMap.invalidateSize());
 
 const GPMB_LOAI_HINTS = {
   'Bản đồ GPMB': 'Là kết quả đo đạc hiện trạng sử dụng đất tại thời điểm đo — số tờ/số thửa/diện tích khai báo ở đây sẽ TỰ ĐỘNG sinh/cập nhật Thửa đất, dùng chung cho mọi CSDL khác trong dự án.',
@@ -3593,10 +3841,11 @@ function switchTab(tab) {
   const gated = ['parcels','assets','dossiers'];
   const isLocked = gated.includes(tab) && !currentProjGpmbOk;
   currentTab = tab;
-  const tabOrder = ['dashboard','gpmb','parcels','assets','dossiers','records'];
+  const tabOrder = ['dashboard','gpmb','basemap','parcels','assets','dossiers','records'];
   document.querySelectorAll('.tab-btn').forEach((b,i) => b.classList.toggle('active', tabOrder[i] === tab));
   document.getElementById('tab-dashboard').classList.toggle('show', tab==='dashboard');
   document.getElementById('tab-gpmb').style.display = (tab==='gpmb') ? 'flex' : 'none';
+  document.getElementById('tab-basemap').style.display = (tab==='basemap') ? 'flex' : 'none';
   document.getElementById('tab-parcels').style.display = (tab==='parcels' && !isLocked) ? 'flex' : 'none';
   document.getElementById('tab-maps').style.display = (tab==='maps' && !isLocked) ? 'flex' : 'none';
   document.getElementById('tab-assets').style.display = (tab==='assets' && !isLocked) ? 'flex' : 'none';
@@ -3606,6 +3855,7 @@ function switchTab(tab) {
   if (isLocked) return;
   if (tab==='dashboard') loadDashboard();
   else if (tab==='gpmb') { loadGpmbMaps(); if (gpmbLeafletMap) setTimeout(() => gpmbLeafletMap.invalidateSize(), 50); }
+  else if (tab==='basemap') loadBasemapTab();
   else if (tab==='parcels') loadParcels();
   else if (tab==='maps') loadMaps();
   else if (tab==='assets') loadAssets();
