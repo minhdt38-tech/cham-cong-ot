@@ -1185,6 +1185,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_bt_mocgioi_apply_recompute(int(m.group(1))); return
         if path == '/api/bt/mocgioi/apply-recompute-for-manh':
             self.api_bt_mocgioi_apply_recompute_for_manh(); return
+        if path == '/api/bt/xa/apply-recompute':
+            self.api_bt_xa_apply_recompute(); return
         m = re.match(r'^/api/bt/maps/(\d+)/files$', path)
         if m:
             self.api_bt_map_files_upload(int(m.group(1))); return
@@ -2862,7 +2864,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sql = (
             'SELECT pl.*, pm.so_to_hien_hanh, pm.so_thua_hien_hanh, '
             "(SELECT GROUP_CONCAT(pt.ho_ten, ', ') FROM bt_parcel_owners po "
-            ' JOIN bt_parties pt ON pt.id=po.chu_the_id WHERE po.parcel_id=pl.id) as chu_so_huu '
+            ' JOIN bt_parties pt ON pt.id=po.chu_the_id WHERE po.parcel_id=pl.id) as chu_so_huu, '
+            "EXISTS(SELECT 1 FROM bt_map_parcels mp JOIN bt_maps mm ON mm.id=mp.map_id "
+            "  WHERE mp.parcel_id=pl.id AND mm.loai_ban_do='Bản đồ GPMB') as has_gpmb_map "
             'FROM bt_parcels pl LEFT JOIN bt_parcel_master pm ON pm.id=pl.parcel_master_id '
             'WHERE pl.project_id=? '
         )
@@ -2880,7 +2884,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sess = self.require_auth()
         if not sess: return
         with get_db() as db:
-            row = db.execute('SELECT * FROM bt_parcels WHERE id=?', (parcel_id,)).fetchone()
+            row = db.execute(
+                "SELECT pl.*, EXISTS(SELECT 1 FROM bt_map_parcels mp JOIN bt_maps mm ON mm.id=mp.map_id "
+                "  WHERE mp.parcel_id=pl.id AND mm.loai_ban_do='Bản đồ GPMB') as has_gpmb_map "
+                'FROM bt_parcels pl WHERE pl.id=?', (parcel_id,)
+            ).fetchone()
             if not row:
                 self.send_json({'error': 'Không tìm thấy'}, 404); return
             owners = db.execute(
@@ -3007,8 +3015,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not row:
                 self.send_json({'error': 'Không tìm thấy'}, 404); return
             parcels = db.execute(
-                'SELECT mp.*, pm.so_to_hien_hanh, pm.so_thua_hien_hanh '
+                'SELECT mp.*, pm.so_to_hien_hanh, pm.so_thua_hien_hanh, '
+                'pl.loai_dat as thua_loai_dat, '
+                "(SELECT GROUP_CONCAT(pt.ho_ten, ', ') FROM bt_parcel_owners po "
+                ' JOIN bt_parties pt ON pt.id=po.chu_the_id WHERE po.parcel_id=mp.parcel_id) as thua_chu_so_huu '
                 'FROM bt_map_parcels mp LEFT JOIN bt_parcel_master pm ON pm.id=mp.parcel_master_id '
+                'LEFT JOIN bt_parcels pl ON pl.id=mp.parcel_id '
                 'WHERE mp.map_id=? ORDER BY mp.id', (map_id,)
             ).fetchall()
             files = db.execute('SELECT * FROM bt_map_files WHERE map_id=? ORDER BY id', (map_id,)).fetchall()
@@ -3059,6 +3071,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         nhom_ban_do = body.get('nhom_ban_do', '') or xa
         mocgioi_manh_ids = json.dumps(body.get('mocgioi_manh_ids') or [], ensure_ascii=False)
         with get_db() as db:
+            # Ghi lại trạng thái CŨ trước khi ghi đè — nếu bản đồ đổi xã (hoặc đổi loại), cần quét lại
+            # CẢ xã cũ lẫn xã mới (thửa ở xã cũ có thể đã lỡ tính theo bản đồ này, giờ không còn nữa).
+            old_row = db.execute('SELECT project_id, loai_ban_do, xa FROM bt_maps WHERE id=?', (map_id,)).fetchone()
             db.execute(
                 'UPDATE bt_maps SET project_id=?, loai_ban_do=?, ten_ban_do=?, nhom_ban_do=?, xa=?, ngay_lap=?, don_vi_lap=?, ghi_chu=?, '
                 'custom_fields=?, mocgioi_manh_ids=?, mocgioi_trong_la=? WHERE id=?',
@@ -3068,22 +3083,38 @@ class Handler(http.server.BaseHTTPRequestHandler):
                  mocgioi_manh_ids, body.get('mocgioi_trong_la', ''), map_id)
             )
             db.commit()
-        self.send_json({'ok': True})
+
+            # Cập nhật (Bản đồ GPMB hoặc Bản đồ mốc giới GPMB) xong — quét lại TOÀN BỘ xã bị ảnh hưởng
+            # để cập nhật diện tích thu hồi (theo yêu cầu của Minh: bất kỳ sửa nào ở 1 trong 2 loại bản
+            # đồ này đều phải quét lại cả xã, không chỉ riêng mảnh/mốc giới vừa sửa). Chỉ TRẢ VỀ danh
+            # sách chênh lệch để frontend hỏi xác nhận qua popup — không tự ghi đè CSDL ở bước này,
+            # theo đúng nguyên tắc an toàn đã áp dụng cho mọi thao tác ảnh hưởng dien_tich_thu_hoi.
+            xa_targets = []
+            project_id = body.get('project_id') or None
+            if loai_ban_do in self._MAP_TYPES_REQUIRE_XA and xa and project_id:
+                xa_targets.append({'project_id': project_id, 'xa': xa})
+            if old_row and old_row['loai_ban_do'] in self._MAP_TYPES_REQUIRE_XA and old_row['xa'] and old_row['project_id']:
+                if not any(t['project_id'] == old_row['project_id'] and t['xa'] == old_row['xa'] for t in xa_targets):
+                    xa_targets.append({'project_id': old_row['project_id'], 'xa': old_row['xa']})
+            xa_diffs = []
+            if xa_targets:
+                try:
+                    seen_links = set()
+                    for t in xa_targets:
+                        for d in self._compute_xa_recompute(db, t['project_id'], t['xa']):
+                            if d['link_id'] not in seen_links:
+                                seen_links.add(d['link_id'])
+                                xa_diffs.append(d)
+                except RuntimeError:
+                    xa_diffs = []  # thiếu shapely — bỏ qua bước rà soát phụ này, không chặn việc lưu bản đồ
+        self.send_json({'ok': True, 'xa_diffs': xa_diffs, 'xa_targets': xa_targets})
 
     def api_bt_maps_delete(self, map_id):
         sess = self.require_auth()
         if not sess: return
         with get_db() as db:
-            row = db.execute('SELECT loai_ban_do, mocgioi_manh_ids FROM bt_maps WHERE id=?', (map_id,)).fetchone()
-            affected_manh_ids = []
-            if row and row['loai_ban_do'] == 'Bản đồ mốc giới GPMB':
-                # Bản đồ sắp xóa là Mốc giới GPMB — ghi lại các Mảnh trích đo GPMB nó từng liên kết
-                # TRƯỚC KHI xóa, để sau khi xóa xong có thể rà soát lại diện tích thu hồi của các
-                # thửa từng bị nó ảnh hưởng (theo yêu cầu của Minh: xóa Mốc giới GPMB phải tính lại).
-                try:
-                    affected_manh_ids = json.loads(row['mocgioi_manh_ids'] or '[]')
-                except Exception:
-                    affected_manh_ids = []
+            # Ghi lại xã + loại bản đồ TRƯỚC KHI xóa — dùng để quét lại cả xã sau khi xóa xong (bên dưới).
+            row = db.execute('SELECT project_id, loai_ban_do, xa FROM bt_maps WHERE id=?', (map_id,)).fetchone()
 
             # Xoá thủ công bảng con + file vật lý vì foreign_keys pragma đang tắt (xem ghi chú get_db()).
             frows = db.execute('SELECT file_path FROM bt_map_files WHERE map_id=?', (map_id,)).fetchall()
@@ -3103,15 +3134,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.execute('DELETE FROM bt_maps WHERE id=?', (map_id,))
             db.commit()
 
-            mocgioi_diffs = []
-            if affected_manh_ids:
+            # Xóa xong (Bản đồ GPMB hoặc Bản đồ mốc giới GPMB) — quét lại TOÀN BỘ xã của bản đồ vừa xóa
+            # để cập nhật diện tích thu hồi (theo yêu cầu của Minh, mở rộng từ chỗ trước đây chỉ tính lại
+            # đúng các mảnh mà Mốc giới GPMB vừa xóa từng khai liên kết — giờ quét cả xã, và áp dụng luôn
+            # cho cả trường hợp xóa 1 Bản đồ GPMB — mảnh, trước đây hoàn toàn không kích hoạt rà soát).
+            xa_diffs = []
+            xa_targets = []
+            if row and row['loai_ban_do'] in self._MAP_TYPES_REQUIRE_XA and row['xa'] and row['project_id']:
+                xa_targets = [{'project_id': row['project_id'], 'xa': row['xa']}]
                 try:
-                    mocgioi_diffs = self._compute_mocgioi_recompute_for_manh_ids(db, affected_manh_ids)
+                    xa_diffs = self._compute_xa_recompute(db, row['project_id'], row['xa'])
                 except RuntimeError:
                     # Thiếu shapely — việc xóa vẫn đã thành công, chỉ là không rà soát tự động được.
                     # Không chặn/lỗi hóa toàn bộ thao tác xóa chỉ vì bước rà soát phụ này thất bại.
-                    mocgioi_diffs = []
-        self.send_json({'ok': True, 'mocgioi_diffs': mocgioi_diffs, 'mocgioi_manh_ids': affected_manh_ids})
+                    xa_diffs = []
+        self.send_json({'ok': True, 'xa_diffs': xa_diffs, 'xa_targets': xa_targets})
 
     def _create_parcel_from_map_entry(self, db, project_id, parcel_master_id, so_to, so_thua, tong_dt, thu_hoi_dt, xa=''):
         """Bản đồ GPMB là nguồn gốc của Thửa đất: mỗi thửa thêm trên Bản đồ GPMB tự sinh 1 bản ghi bt_parcels.
@@ -3308,6 +3345,65 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         'tong_dien_tich': r['dien_tich_tren_ban_do'] or 0,
                     })
         return all_diffs
+
+    def _compute_xa_recompute(self, db, project_id, xa):
+        """Quét lại diện tích thu hồi cho TOÀN BỘ Mảnh trích đo GPMB (Bản đồ GPMB) trong 1 xã của 1 dự
+        án — dùng khi 1 Bản đồ GPMB hoặc Bản đồ mốc giới GPMB trong xã đó vừa được CẬP NHẬT hoặc XÓA
+        (theo yêu cầu của Minh: bất kỳ thay đổi nào ở 1 trong 2 loại bản đồ này đều phải quét lại CẢ XÃ,
+        không chỉ riêng mảnh/mốc giới vừa sửa — vì 1 Bản đồ mốc giới GPMB có thể chồng lấn nhiều mảnh,
+        và ranh giới 1 mảnh thay đổi có thể làm sai diện tích giao đã tính cho các mốc giới khác cùng
+        xã). Tái sử dụng _compute_mocgioi_recompute_for_manh_ids — chỉ khác ở chỗ danh sách mảnh đưa vào
+        là TOÀN BỘ Bản đồ GPMB đang có trong xã, không phải chỉ những mảnh 1 bản đồ mốc giới cụ thể khai
+        liên kết. Không tự ghi CSDL — trả về để người dùng xác nhận qua popup rà soát."""
+        if not project_id or not xa:
+            return []
+        manh_rows = db.execute(
+            "SELECT id FROM bt_maps WHERE project_id=? AND xa=? AND loai_ban_do='Bản đồ GPMB'",
+            (project_id, xa)
+        ).fetchall()
+        manh_ids = [r['id'] for r in manh_rows]
+        if not manh_ids:
+            return []
+        return self._compute_mocgioi_recompute_for_manh_ids(db, manh_ids)
+
+    def api_bt_xa_apply_recompute(self):
+        """Áp dụng rà soát diện tích thu hồi TOÀN XÃ đã được người dùng xác nhận qua popup — nhận
+        {targets: [{project_id, xa}, ...]} (frontend gửi lại đúng danh sách xã server đã trả về lúc lưu/
+        xóa bản đồ). TỰ TÍNH LẠI từ đầu cho từng xã (không tin số cũ) rồi áp dụng, cùng nguyên tắc an
+        toàn như các hàm rà soát khác — diện tích thu hồi ảnh hưởng trực tiếp tiền bồi thường nên luôn
+        ưu tiên tính lại tại thời điểm áp dụng thay vì tin dữ liệu diffs cũ phía client đã giữ."""
+        sess = self.require_auth()
+        if not sess: return
+        body = self.read_json()
+        targets = body.get('targets') or []
+        with get_db() as db:
+            seen_links = set()
+            updated = 0
+            for t in targets:
+                pid = t.get('project_id')
+                xa = (t.get('xa') or '').strip()
+                if not pid or not xa:
+                    continue
+                try:
+                    diffs = self._compute_xa_recompute(db, pid, xa)
+                except RuntimeError as e:
+                    self.send_json({'error': str(e)}, 500); return
+                for d in diffs:
+                    if d['link_id'] in seen_links:
+                        continue
+                    seen_links.add(d['link_id'])
+                    db.execute(
+                        'UPDATE bt_map_parcels SET dien_tich_thu_hoi_tren_ban_do=? WHERE id=?',
+                        (d['dien_tich_thu_hoi_moi'], d['link_id'])
+                    )
+                    if d['parcel_id']:
+                        self._sync_parcel_from_map_entry(
+                            db, d['parcel_id'], d['parcel_master_id'], d['so_to'], d['so_thua'],
+                            d['tong_dien_tich'], d['dien_tich_thu_hoi_moi']
+                        )
+                    updated += 1
+            db.commit()
+        self.send_json({'ok': True, 'updated': updated})
 
     def api_bt_mocgioi_apply_recompute_for_manh(self):
         """Áp dụng rà soát diện tích thu hồi sau khi 1 Bản đồ mốc giới GPMB đã bị xóa — nhận
