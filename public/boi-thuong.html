@@ -142,6 +142,27 @@ td.td-ctr{text-align:center}
 .pg-btn:hover:not(:disabled){background:rgba(255,255,255,.1)}
 .pg-btn:disabled{opacity:.4;cursor:default}
 
+/* ── COLUMN FILTER (Excel-style) ─────────────────────────────── */
+th.filterable{position:relative}
+.col-filter-btn{background:none;border:none;color:var(--muted);cursor:pointer;font-size:11px;padding:2px 4px;border-radius:4px;margin-left:3px;vertical-align:middle}
+.col-filter-btn:hover{color:#fff;background:rgba(255,255,255,.12)}
+.col-filter-btn.active{color:var(--accent)}
+.col-filter-popup{position:fixed;z-index:1200;width:230px;background:#1a2b3c;border:1px solid var(--border);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.4);padding:8px;display:flex;flex-direction:column;gap:6px}
+.col-filter-search{width:100%;padding:6px 8px;background:var(--card);border:1px solid var(--border);border-radius:6px;color:var(--text);font-size:12px;font-family:var(--font)}
+.col-filter-search:focus{outline:none;border-color:var(--accent)}
+.col-filter-actions{display:flex;gap:12px;font-size:11px}
+.col-filter-actions a{color:var(--accent);text-decoration:none;cursor:pointer}
+.col-filter-actions a:hover{text-decoration:underline}
+.col-filter-options{max-height:220px;overflow-y:auto;display:flex;flex-direction:column;gap:1px;border-top:1px solid var(--border);border-bottom:1px solid var(--border);padding:4px 0}
+.col-filter-opt{display:flex;align-items:center;gap:7px;padding:4px 4px;border-radius:4px;font-size:12px;cursor:pointer}
+.col-filter-opt:hover{background:rgba(255,255,255,.06)}
+.col-filter-opt input{flex-shrink:0}
+.col-filter-opt span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.col-filter-footer{display:flex;justify-content:flex-end;gap:6px}
+.filter-status-bar{display:flex;align-items:center;gap:10px;padding:0 16px 10px;font-size:12px;color:var(--muted)}
+.filter-status-bar a{color:var(--accent);text-decoration:none;cursor:pointer}
+.filter-status-bar a:hover{text-decoration:underline}
+
 /* ── MODALS ───────────────────────────────────────────────── */
 .modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.65);z-index:1000;align-items:center;justify-content:center}
 .modal-overlay.open{display:flex}
@@ -284,19 +305,24 @@ td.td-ctr{text-align:center}
       </div>
     </div>
     <div class="form-group form-full" style="font-size:12px;color:var(--muted);padding:0 16px 10px">
-      Thửa đất được tạo tự động từ Bản đồ GPMB. Để thêm/sửa/xóa thửa hoặc thay đổi số tờ, số thửa, diện tích — vào tab 🗂️ Bản đồ (loại Bản đồ GPMB).
+      Thửa đất được tạo tự động từ Bản đồ GPMB. Để thêm/sửa/xóa thửa hoặc thay đổi số tờ, số thửa, diện tích, xã — vào tab 🗂️ Bản đồ (loại Bản đồ GPMB).
+    </div>
+    <div class="filter-status-bar" id="parcel-filter-status" style="display:none">
+      <span id="parcel-filter-status-text"></span>
+      <a onclick="clearAllParcelFilters()">✕ Xóa tất cả bộ lọc</a>
     </div>
     <div class="tbl-wrap">
       <table>
         <thead>
           <tr>
             <th>#</th>
-            <th>Số tờ</th>
-            <th>Số thửa</th>
-            <th>Loại đất</th>
-            <th style="text-align:right">Tổng DT (m²)</th>
-            <th style="text-align:right">DT thu hồi (m²)</th>
-            <th>Chủ sở hữu</th>
+            <th class="filterable">Số tờ<button type="button" class="col-filter-btn" data-col="so_to" onclick="toggleColFilter(event,'so_to')">▾</button></th>
+            <th class="filterable">Số thửa<button type="button" class="col-filter-btn" data-col="so_thua" onclick="toggleColFilter(event,'so_thua')">▾</button></th>
+            <th class="filterable">Xã<button type="button" class="col-filter-btn" data-col="xa" onclick="toggleColFilter(event,'xa')">▾</button></th>
+            <th class="filterable">Loại đất<button type="button" class="col-filter-btn" data-col="loai_dat" onclick="toggleColFilter(event,'loai_dat')">▾</button></th>
+            <th class="filterable" style="text-align:right">Tổng DT (m²)<button type="button" class="col-filter-btn" data-col="tong_dien_tich" onclick="toggleColFilter(event,'tong_dien_tich')">▾</button></th>
+            <th class="filterable" style="text-align:right">DT thu hồi (m²)<button type="button" class="col-filter-btn" data-col="dien_tich_thu_hoi" onclick="toggleColFilter(event,'dien_tich_thu_hoi')">▾</button></th>
+            <th class="filterable">Chủ sở hữu<button type="button" class="col-filter-btn" data-col="chu_so_huu" onclick="toggleColFilter(event,'chu_so_huu')">▾</button></th>
             <th></th>
           </tr>
         </thead>
@@ -739,9 +765,10 @@ td.td-ctr{text-align:center}
     <div class="modal-body">
       <div class="form-grid">
         <div class="form-section">🗺️ Thông tin thửa đất</div>
-        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">🗂️ Số tờ, số thửa, diện tích chỉ đọc tại đây — sửa tại tab Bản đồ (loại Bản đồ GPMB)</div>
+        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">🗂️ Số tờ, số thửa, xã, diện tích chỉ đọc tại đây — sửa tại tab Bản đồ (loại Bản đồ GPMB)</div>
         <div class="form-group"><label>Số tờ</label><input id="plf-so-to" type="text" disabled></div>
         <div class="form-group"><label>Số thửa</label><input id="plf-so-thua" type="text" disabled></div>
+        <div class="form-group"><label>Xã</label><input id="plf-xa" type="text" disabled></div>
         <div class="form-group"><label>Loại đất</label>
           <select id="plf-loai-dat">
             <option value="">-- chọn --</option>
@@ -1193,6 +1220,7 @@ async function loadProjects() {
 
 async function selectProject(id, name) {
   hidePartiesView();
+  parcelColumnFilters = {};
   currentProjId = id;
   currentProjName = name;
   document.getElementById('proj-title').textContent = name;
@@ -1538,16 +1566,181 @@ async function loadParcels() {
   renderParcelsTable();
 }
 
+// ── Excel-style column filters ──────────────────────────────────
+const PARCEL_FILTER_COLS = [
+  { key: 'so_to', label: 'Số tờ' },
+  { key: 'so_thua', label: 'Số thửa' },
+  { key: 'xa', label: 'Xã' },
+  { key: 'loai_dat', label: 'Loại đất' },
+  { key: 'tong_dien_tich', label: 'Tổng DT (m²)', numeric: true },
+  { key: 'dien_tich_thu_hoi', label: 'DT thu hồi (m²)', numeric: true },
+  { key: 'chu_so_huu', label: 'Chủ sở hữu' },
+];
+let parcelColumnFilters = {}; // colKey -> Set of allowed display-values ; absent/empty = no filter on that column
+
+function parcelFilterValue(p, col) {
+  if (col.numeric) return fmt1(p[col.key]);
+  const v = (p[col.key] || '').toString().trim();
+  return v || '(Trống)';
+}
+
+function parcelPassesFilters(p, exceptCol) {
+  return PARCEL_FILTER_COLS.every(col => {
+    if (col.key === exceptCol) return true;
+    const sel = parcelColumnFilters[col.key];
+    if (!sel || !sel.size) return true;
+    return sel.has(parcelFilterValue(p, col));
+  });
+}
+
+function getFilteredParcels() {
+  return parcelsList.filter(p => parcelPassesFilters(p, null));
+}
+
+function distinctValuesExcludingCol(colKey) {
+  const col = PARCEL_FILTER_COLS.find(c => c.key === colKey);
+  const rows = parcelsList.filter(p => parcelPassesFilters(p, colKey));
+  const vals = new Set();
+  rows.forEach(p => vals.add(parcelFilterValue(p, col)));
+  return Array.from(vals).sort((a, b) => a.localeCompare(b, 'vi'));
+}
+
+function activeParcelFilterCount() {
+  return Object.values(parcelColumnFilters).filter(sel => sel && sel.size).length;
+}
+
+function updateParcelFilterStatus(totalCount, filteredCount) {
+  const bar = document.getElementById('parcel-filter-status');
+  const txt = document.getElementById('parcel-filter-status-text');
+  const n = activeParcelFilterCount();
+  if (n > 0) {
+    bar.style.display = 'flex';
+    txt.textContent = `Đang lọc theo ${n} cột — hiển thị ${filteredCount}/${totalCount} thửa`;
+  } else {
+    bar.style.display = 'none';
+  }
+  document.querySelectorAll('.col-filter-btn').forEach(btn => {
+    const key = btn.getAttribute('data-col');
+    const sel = parcelColumnFilters[key];
+    btn.classList.toggle('active', !!(sel && sel.size));
+  });
+}
+
+function clearAllParcelFilters() {
+  parcelColumnFilters = {};
+  closeColFilter();
+  renderParcelsTable();
+}
+
+function closeColFilter() {
+  const existing = document.getElementById('col-filter-popup');
+  if (existing) existing.remove();
+}
+
+document.addEventListener('click', (e) => {
+  const popup = document.getElementById('col-filter-popup');
+  if (popup && !popup.contains(e.target) && !e.target.classList.contains('col-filter-btn')) {
+    closeColFilter();
+  }
+});
+
+function toggleColFilter(evt, colKey) {
+  evt.stopPropagation();
+  const existing = document.getElementById('col-filter-popup');
+  if (existing && existing.dataset.col === colKey) { closeColFilter(); return; }
+  renderColFilterPopup(evt.currentTarget, colKey);
+}
+
+function renderColFilterPopup(btnEl, colKey) {
+  closeColFilter();
+  const values = distinctValuesExcludingCol(colKey);
+  const sel = parcelColumnFilters[colKey];
+  const activeSet = sel && sel.size ? sel : new Set(values);
+  const rect = btnEl.getBoundingClientRect();
+  const popup = document.createElement('div');
+  popup.id = 'col-filter-popup';
+  popup.className = 'col-filter-popup';
+  popup.dataset.col = colKey;
+  popup.style.top = (rect.bottom + 4) + 'px';
+  popup.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - 246)) + 'px';
+  popup.innerHTML = `
+    <input type="text" class="col-filter-search" placeholder="Tìm giá trị..." oninput="filterColFilterOptions(this)">
+    <div class="col-filter-actions">
+      <a onclick="colFilterSelectAll(event)">Chọn tất cả</a>
+      <a onclick="colFilterClearAll(event)">Bỏ chọn</a>
+    </div>
+    <div class="col-filter-options">
+      ${values.length ? values.map(v => `
+        <label class="col-filter-opt">
+          <input type="checkbox" value="${esc(v)}" ${activeSet.has(v) ? 'checked' : ''}>
+          <span>${esc(v)}</span>
+        </label>
+      `).join('') : '<div style="font-size:12px;color:var(--muted);padding:6px 4px">Không có giá trị</div>'}
+    </div>
+    <div class="col-filter-footer">
+      <button class="btn btn-ghost btn-sm" onclick="closeColFilter()">Hủy</button>
+      <button class="btn btn-primary btn-sm" onclick="applyColFilter('${colKey}')">Áp dụng</button>
+    </div>
+  `;
+  document.body.appendChild(popup);
+}
+
+function filterColFilterOptions(inputEl) {
+  const q = inputEl.value.trim().toLowerCase();
+  document.querySelectorAll('#col-filter-popup .col-filter-opt').forEach(lbl => {
+    lbl.style.display = lbl.textContent.trim().toLowerCase().includes(q) ? '' : 'none';
+  });
+}
+
+function colFilterSelectAll(evt) {
+  evt.preventDefault();
+  document.querySelectorAll('#col-filter-popup .col-filter-opt').forEach(lbl => {
+    if (lbl.style.display !== 'none') lbl.querySelector('input').checked = true;
+  });
+}
+
+function colFilterClearAll(evt) {
+  evt.preventDefault();
+  document.querySelectorAll('#col-filter-popup .col-filter-opt').forEach(lbl => {
+    if (lbl.style.display !== 'none') lbl.querySelector('input').checked = false;
+  });
+}
+
+function applyColFilter(colKey) {
+  const popup = document.getElementById('col-filter-popup');
+  const checked = Array.from(popup.querySelectorAll('.col-filter-opt input[type=checkbox]:checked')).map(cb => cb.value);
+  const allValues = distinctValuesExcludingCol(colKey);
+  if (checked.length === 0) {
+    parcelColumnFilters[colKey] = new Set(['__NONE_SELECTED__']); // chọn 0 giá trị = không hiển thị dòng nào khớp cột này (sentinel không trùng giá trị thật)
+  } else if (checked.length === allValues.length) {
+    delete parcelColumnFilters[colKey];
+  } else {
+    parcelColumnFilters[colKey] = new Set(checked);
+  }
+  closeColFilter();
+  renderParcelsTable();
+}
+
 function renderParcelsTable() {
   const body = document.getElementById('parcel-tbl-body');
   const empty = document.getElementById('parcel-tbl-empty');
-  if (!parcelsList.length) { body.innerHTML = ''; empty.style.display = 'flex'; return; }
+  const filtered = getFilteredParcels();
+  updateParcelFilterStatus(parcelsList.length, filtered.length);
+  if (!filtered.length) {
+    body.innerHTML = '';
+    empty.style.display = 'flex';
+    empty.querySelector('p').textContent = parcelsList.length
+      ? 'Không có thửa đất nào khớp với bộ lọc hiện tại'
+      : 'Chưa có thửa đất nào trong dự án này';
+    return;
+  }
   empty.style.display = 'none';
-  body.innerHTML = parcelsList.map((p, i) => `
+  body.innerHTML = filtered.map((p, i) => `
     <tr>
       <td>${i+1}</td>
       <td>${esc(p.so_to)}</td>
       <td>${esc(p.so_thua)}</td>
+      <td>${esc(p.xa || '')}</td>
       <td>${esc(p.loai_dat)}</td>
       <td class="td-num">${fmt1(p.tong_dien_tich)}</td>
       <td class="td-num">${fmt1(p.dien_tich_thu_hoi)}</td>
@@ -1571,7 +1764,7 @@ async function openParcelModal(id) {
   document.getElementById('plf-owner-select').innerHTML =
     ownerPickerParties.map(p => `<option value="${p.id}">${esc(p.ho_ten)}</option>`).join('');
 
-  const fields = ['so-to','so-thua','loai-dat','nguon-goc','tong-dt','dt-thu-hoi','dt-con-lai','so-gcn','ngay-cap-gcn','ghi-chu'];
+  const fields = ['so-to','so-thua','xa','loai-dat','nguon-goc','tong-dt','dt-thu-hoi','dt-con-lai','so-gcn','ngay-cap-gcn','ghi-chu'];
   fields.forEach(f => document.getElementById('plf-'+f).value = '');
 
   if (id) {
@@ -1580,6 +1773,7 @@ async function openParcelModal(id) {
       const p = await res.json();
       document.getElementById('plf-so-to').value = p.so_to || '';
       document.getElementById('plf-so-thua').value = p.so_thua || '';
+      document.getElementById('plf-xa').value = p.xa || '';
       document.getElementById('plf-loai-dat').value = p.loai_dat || '';
       document.getElementById('plf-nguon-goc').value = p.nguon_goc_su_dung || '';
       document.getElementById('plf-tong-dt').value = p.tong_dien_tich || '';
