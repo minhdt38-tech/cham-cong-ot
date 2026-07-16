@@ -577,6 +577,63 @@ def init_db():
         if 'mocgioi_trong_la' not in map_cols:
             db.execute("ALTER TABLE bt_maps ADD COLUMN mocgioi_trong_la TEXT DEFAULT ''")
 
+        # Bồi thường v2.4: Xã/Phường là trường THẬT (không phải chữ tự do như nhom_ban_do) — vì Số tờ/
+        # Số thửa chỉ duy nhất TRONG PHẠM VI 1 xã, không phải toàn CSDL (Xã A và Xã B có thể cùng có
+        # Tờ 1 - Thửa 1 là 2 thửa khác nhau hoàn toàn). Dự án khai trước danh sách các xã nằm trong dự
+        # án (dien_sach_xa, JSON mảng tên xã); mỗi Bản đồ (mọi loại) bắt buộc chọn đúng 1 xã trong danh
+        # sách đó; Thửa đất (bt_parcels) và Thửa đất gốc (bt_parcel_master) đều lưu lại xã tương ứng để
+        # mọi chỗ đối chiếu trùng Tờ/Thửa (đặc biệt api_bt_parcel_master_search — "gợi ý trùng thửa gốc")
+        # có thể lọc đúng theo xã, tránh gợi ý nhầm 2 thửa cùng số hiệu nhưng khác xã là cùng 1 thửa.
+        if 'danh_sach_xa' not in proj_cols:
+            db.execute("ALTER TABLE bt_projects ADD COLUMN danh_sach_xa TEXT DEFAULT '[]'")
+        if 'xa' not in map_cols:
+            db.execute("ALTER TABLE bt_maps ADD COLUMN xa TEXT DEFAULT ''")
+        parcel_master_cols = [r[1] for r in db.execute("PRAGMA table_info(bt_parcel_master)").fetchall()]
+        if 'xa' not in parcel_master_cols:
+            db.execute("ALTER TABLE bt_parcel_master ADD COLUMN xa TEXT DEFAULT ''")
+        if 'xa' not in parcel_cols:
+            db.execute("ALTER TABLE bt_parcels ADD COLUMN xa TEXT DEFAULT ''")
+
+        # Backfill dữ liệu cũ: Bản đồ GPMB/mốc giới GPMB trước đây đã dùng nhom_ban_do đúng như tên xã
+        # (VD "Xã Chương Dương") — copy sang cột xa mới để không mất nhóm đã có, và gộp lại thành danh
+        # sách xã mặc định cho từng dự án nếu dự án đó chưa khai danh_sach_xa. Chỉ chạy 1 lần cho các
+        # dòng đang có xa rỗng nhưng nhom_ban_do có giá trị — an toàn khi chạy lại nhiều lần (idempotent).
+        db.execute("UPDATE bt_maps SET xa = nhom_ban_do WHERE (xa IS NULL OR xa = '') AND nhom_ban_do IS NOT NULL AND nhom_ban_do != ''")
+        for proj in db.execute("SELECT id, danh_sach_xa FROM bt_projects").fetchall():
+            try:
+                existing_xa = json.loads(proj['danh_sach_xa'] or '[]')
+            except Exception:
+                existing_xa = []
+            if existing_xa:
+                continue
+            used = [r[0] for r in db.execute(
+                "SELECT DISTINCT xa FROM bt_maps WHERE project_id=? AND xa IS NOT NULL AND xa != '' ORDER BY xa",
+                (proj['id'],)
+            ).fetchall()]
+            if used:
+                db.execute("UPDATE bt_projects SET danh_sach_xa=? WHERE id=?", (json.dumps(used, ensure_ascii=False), proj['id']))
+        # Backfill bt_parcels.xa / bt_parcel_master.xa từ Bản đồ đã liên kết (nếu có), best-effort —
+        # thửa nào chưa từng gắn với bản đồ nào (dữ liệu cũ nhập tay ở tab Thửa đất) sẽ vẫn để trống,
+        # không thể tự suy luận đúng xã cho trường hợp này.
+        db.execute(
+            "UPDATE bt_parcels SET xa = ("
+            " SELECT bm.xa FROM bt_map_parcels bmp JOIN bt_maps bm ON bm.id=bmp.map_id"
+            " WHERE bmp.parcel_id = bt_parcels.id AND bm.xa IS NOT NULL AND bm.xa != '' LIMIT 1"
+            ") WHERE (xa IS NULL OR xa = '') AND EXISTS ("
+            " SELECT 1 FROM bt_map_parcels bmp JOIN bt_maps bm ON bm.id=bmp.map_id"
+            " WHERE bmp.parcel_id = bt_parcels.id AND bm.xa IS NOT NULL AND bm.xa != ''"
+            ")"
+        )
+        db.execute(
+            "UPDATE bt_parcel_master SET xa = ("
+            " SELECT p.xa FROM bt_parcels p WHERE p.parcel_master_id = bt_parcel_master.id"
+            " AND p.xa IS NOT NULL AND p.xa != '' LIMIT 1"
+            ") WHERE (xa IS NULL OR xa = '') AND EXISTS ("
+            " SELECT 1 FROM bt_parcels p WHERE p.parcel_master_id = bt_parcel_master.id"
+            " AND p.xa IS NOT NULL AND p.xa != ''"
+            ")"
+        )
+
         row = db.execute("SELECT id FROM users WHERE username='admin'").fetchone()
         if not row:
             pwd = hash_password('admin123')
@@ -2764,11 +2821,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
     # ── BT v2: THỬA ĐẤT (gốc + theo dự án + đồng sở hữu) ────────────
     def api_bt_parcel_master_search(self, qs):
+        """Gợi ý Thửa đất gốc trùng — LỌC THEO XÃ khi có truyền xa: Số tờ/Số thửa chỉ duy nhất trong
+        phạm vi 1 xã, 2 xã khác nhau hoàn toàn có thể cùng có "Tờ 1 - Thửa 1" mà là 2 thửa khác nhau —
+        không lọc theo xã sẽ gợi ý nhầm 2 thửa không liên quan là "trùng nhau". Vẫn cho tìm không kèm
+        xa (VD tìm theo địa chỉ ở ô tìm kiếm thửa gốc chung) nhưng khi gọi từ luồng thêm thửa trên Bản
+        đồ GPMB (đã biết chắc xã của mảnh đang thao tác), luôn truyền xa để đảm bảo an toàn."""
         sess = self.require_auth()
         if not sess: return
         q = qs.get('q', [''])[0].strip()
+        xa = qs.get('xa', [''])[0].strip()
         sql = 'SELECT * FROM bt_parcel_master WHERE 1=1 '
         params = []
+        if xa:
+            sql += 'AND (xa = ? OR xa IS NULL OR xa = \'\') '
+            params.append(xa)
         if q:
             like = f'%{q}%'
             sql += 'AND (so_to_hien_hanh LIKE ? OR so_thua_hien_hanh LIKE ? OR dia_chi_vi_tri LIKE ?) '
@@ -2940,17 +3006,28 @@ class Handler(http.server.BaseHTTPRequestHandler):
         d['files'] = [dict(f) for f in files]
         self.send_json(d)
 
+    # Loại bản đồ mà Tờ/Thửa của nó tham gia vào chuỗi sinh/đồng bộ Thửa đất (bt_parcels/bt_parcel_master)
+    # — nơi thật sự xảy ra rủi ro trùng Tờ/Thửa giữa 2 xã khác nhau — nên bắt buộc phải khai Xã.
+    _MAP_TYPES_REQUIRE_XA = ('Bản đồ GPMB', 'Bản đồ mốc giới GPMB')
+
     def api_bt_maps_create(self):
         sess = self.require_auth()
         if not sess: return
         body = self.read_json()
+        loai_ban_do = body.get('loai_ban_do', '')
+        xa = (body.get('xa') or '').strip()
+        if loai_ban_do in self._MAP_TYPES_REQUIRE_XA and not xa:
+            self.send_json({'error': f'"{loai_ban_do}" bắt buộc chọn Xã/Phường (Tờ/Thửa chỉ duy nhất '
+                                      'trong phạm vi 1 xã — cần biết đúng xã để tránh nhầm với xã khác).'}, 400)
+            return
+        nhom_ban_do = body.get('nhom_ban_do', '') or xa
         mocgioi_manh_ids = json.dumps(body.get('mocgioi_manh_ids') or [], ensure_ascii=False)
         with get_db() as db:
             cur = db.execute(
-                'INSERT INTO bt_maps (project_id, loai_ban_do, ten_ban_do, nhom_ban_do, ngay_lap, don_vi_lap, ghi_chu, '
-                'custom_fields, mocgioi_manh_ids, mocgioi_trong_la) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                (body.get('project_id') or None, body.get('loai_ban_do', ''), body.get('ten_ban_do', ''),
-                 body.get('nhom_ban_do', ''), body.get('ngay_lap') or None, body.get('don_vi_lap', ''),
+                'INSERT INTO bt_maps (project_id, loai_ban_do, ten_ban_do, nhom_ban_do, xa, ngay_lap, don_vi_lap, ghi_chu, '
+                'custom_fields, mocgioi_manh_ids, mocgioi_trong_la) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                (body.get('project_id') or None, loai_ban_do, body.get('ten_ban_do', ''),
+                 nhom_ban_do, xa, body.get('ngay_lap') or None, body.get('don_vi_lap', ''),
                  body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False),
                  mocgioi_manh_ids, body.get('mocgioi_trong_la', ''))
             )
@@ -2962,13 +3039,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         sess = self.require_auth()
         if not sess: return
         body = self.read_json()
+        loai_ban_do = body.get('loai_ban_do', '')
+        xa = (body.get('xa') or '').strip()
+        if loai_ban_do in self._MAP_TYPES_REQUIRE_XA and not xa:
+            self.send_json({'error': f'"{loai_ban_do}" bắt buộc chọn Xã/Phường (Tờ/Thửa chỉ duy nhất '
+                                      'trong phạm vi 1 xã — cần biết đúng xã để tránh nhầm với xã khác).'}, 400)
+            return
+        nhom_ban_do = body.get('nhom_ban_do', '') or xa
         mocgioi_manh_ids = json.dumps(body.get('mocgioi_manh_ids') or [], ensure_ascii=False)
         with get_db() as db:
             db.execute(
-                'UPDATE bt_maps SET project_id=?, loai_ban_do=?, ten_ban_do=?, nhom_ban_do=?, ngay_lap=?, don_vi_lap=?, ghi_chu=?, '
+                'UPDATE bt_maps SET project_id=?, loai_ban_do=?, ten_ban_do=?, nhom_ban_do=?, xa=?, ngay_lap=?, don_vi_lap=?, ghi_chu=?, '
                 'custom_fields=?, mocgioi_manh_ids=?, mocgioi_trong_la=? WHERE id=?',
-                (body.get('project_id') or None, body.get('loai_ban_do', ''), body.get('ten_ban_do', ''),
-                 body.get('nhom_ban_do', ''), body.get('ngay_lap') or None, body.get('don_vi_lap', ''),
+                (body.get('project_id') or None, loai_ban_do, body.get('ten_ban_do', ''),
+                 nhom_ban_do, xa, body.get('ngay_lap') or None, body.get('don_vi_lap', ''),
                  body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False),
                  mocgioi_manh_ids, body.get('mocgioi_trong_la', ''), map_id)
             )
@@ -3018,26 +3102,43 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     mocgioi_diffs = []
         self.send_json({'ok': True, 'mocgioi_diffs': mocgioi_diffs, 'mocgioi_manh_ids': affected_manh_ids})
 
-    def _create_parcel_from_map_entry(self, db, project_id, parcel_master_id, so_to, so_thua, tong_dt, thu_hoi_dt):
-        """Bản đồ GPMB là nguồn gốc của Thửa đất: mỗi thửa thêm trên Bản đồ GPMB tự sinh 1 bản ghi bt_parcels."""
+    def _create_parcel_from_map_entry(self, db, project_id, parcel_master_id, so_to, so_thua, tong_dt, thu_hoi_dt, xa=''):
+        """Bản đồ GPMB là nguồn gốc của Thửa đất: mỗi thửa thêm trên Bản đồ GPMB tự sinh 1 bản ghi bt_parcels.
+        xa lấy từ Bản đồ GPMB cha (bt_maps.xa) — lưu lại trên chính bt_parcels để mọi nơi đối chiếu Tờ/
+        Thửa (đặc biệt gợi ý trùng thửa gốc) có thể lọc đúng theo xã mà không cần join lại qua bản đồ."""
         con_lai = max((tong_dt or 0) - (thu_hoi_dt or 0), 0)
         cur = db.execute(
             'INSERT INTO bt_parcels (project_id, parcel_master_id, so_to, so_thua, tong_dien_tich, '
-            'dien_tich_thu_hoi, dien_tich_con_lai) VALUES (?,?,?,?,?,?,?)',
-            (project_id, parcel_master_id, so_to, so_thua, tong_dt or 0, thu_hoi_dt or 0, con_lai)
+            'dien_tich_thu_hoi, dien_tich_con_lai, xa) VALUES (?,?,?,?,?,?,?,?)',
+            (project_id, parcel_master_id, so_to, so_thua, tong_dt or 0, thu_hoi_dt or 0, con_lai, xa or '')
         )
-        return cur.lastrowid
+        pid = cur.lastrowid
+        if parcel_master_id and xa:
+            # Thửa gốc được liên kết ngay lúc tạo (VD người dùng đã chọn "gợi ý trùng" trước khi lưu) —
+            # tranh thủ điền luôn xa cho thửa gốc nếu nó đang trống, không ghi đè nếu đã có giá trị khác.
+            db.execute("UPDATE bt_parcel_master SET xa=? WHERE id=? AND (xa IS NULL OR xa='')", (xa, parcel_master_id))
+        return pid
 
-    def _sync_parcel_from_map_entry(self, db, parcel_id, parcel_master_id, so_to, so_thua, tong_dt, thu_hoi_dt):
+    def _sync_parcel_from_map_entry(self, db, parcel_id, parcel_master_id, so_to, so_thua, tong_dt, thu_hoi_dt, xa=''):
         """Cập nhật lại các trường không gian của Thửa đất khi Bản đồ GPMB thay đổi.
-        Chỉ đồng bộ số tờ/số thửa/diện tích — các trường do người dùng nhập ở tab Thửa đất
-        (loại đất, GCN, chủ sử dụng...) được giữ nguyên."""
+        Chỉ đồng bộ số tờ/số thửa/diện tích/xã — các trường do người dùng nhập ở tab Thửa đất
+        (loại đất, GCN, chủ sử dụng...) được giữ nguyên. Nếu xa='' (không truyền, VD gọi từ chỗ chưa
+        có thông tin bản đồ cha) thì KHÔNG ghi đè xa hiện có — tránh vô tình xoá mất xã đã biết."""
         con_lai = max((tong_dt or 0) - (thu_hoi_dt or 0), 0)
-        db.execute(
-            'UPDATE bt_parcels SET parcel_master_id=?, so_to=?, so_thua=?, tong_dien_tich=?, '
-            'dien_tich_thu_hoi=?, dien_tich_con_lai=? WHERE id=?',
-            (parcel_master_id, so_to, so_thua, tong_dt or 0, thu_hoi_dt or 0, con_lai, parcel_id)
-        )
+        if xa:
+            db.execute(
+                'UPDATE bt_parcels SET parcel_master_id=?, so_to=?, so_thua=?, tong_dien_tich=?, '
+                'dien_tich_thu_hoi=?, dien_tich_con_lai=?, xa=? WHERE id=?',
+                (parcel_master_id, so_to, so_thua, tong_dt or 0, thu_hoi_dt or 0, con_lai, xa, parcel_id)
+            )
+            if parcel_master_id:
+                db.execute("UPDATE bt_parcel_master SET xa=? WHERE id=? AND (xa IS NULL OR xa='')", (xa, parcel_master_id))
+        else:
+            db.execute(
+                'UPDATE bt_parcels SET parcel_master_id=?, so_to=?, so_thua=?, tong_dien_tich=?, '
+                'dien_tich_thu_hoi=?, dien_tich_con_lai=? WHERE id=?',
+                (parcel_master_id, so_to, so_thua, tong_dt or 0, thu_hoi_dt or 0, con_lai, parcel_id)
+            )
 
     def _shapely_repair(self, geom):
         """Sửa hình không hợp lệ (tự cắt chéo nhẹ ở đỉnh, đỉnh trùng/gần trùng...) bằng kỹ thuật
@@ -3277,11 +3378,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if ring:
             dien_tich = round(self._polygon_area(ring), 2)
         with get_db() as db:
-            m = db.execute('SELECT project_id, loai_ban_do FROM bt_maps WHERE id=?', (map_id,)).fetchone()
+            m = db.execute('SELECT project_id, loai_ban_do, xa FROM bt_maps WHERE id=?', (map_id,)).fetchone()
             parcel_id = None
             if m and m['loai_ban_do'] == 'Bản đồ GPMB' and m['project_id']:
                 parcel_id = self._create_parcel_from_map_entry(
-                    db, m['project_id'], master_id, so_to, so_thua, dien_tich, thu_hoi
+                    db, m['project_id'], master_id, so_to, so_thua, dien_tich, thu_hoi, xa=m['xa']
                 )
             cur = db.execute(
                 'INSERT INTO bt_map_parcels (map_id, parcel_master_id, so_to_tren_ban_do, so_thua_tren_ban_do, '
@@ -3314,15 +3415,16 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 'dien_tich_tren_ban_do=?, dien_tich_thu_hoi_tren_ban_do=?, toa_do=? WHERE id=?',
                 (master_id, so_to, so_thua, dien_tich, thu_hoi, toa_do, link_id)
             )
+            m = db.execute('SELECT project_id, loai_ban_do, xa FROM bt_maps WHERE id=?', (row['map_id'],)).fetchone()
+            map_xa = m['xa'] if m else ''
             parcel_id = row['parcel_id']
             if parcel_id:
-                self._sync_parcel_from_map_entry(db, parcel_id, master_id, so_to, so_thua, dien_tich, thu_hoi)
+                self._sync_parcel_from_map_entry(db, parcel_id, master_id, so_to, so_thua, dien_tich, thu_hoi, xa=map_xa)
             else:
                 # Thửa này chưa từng được sinh (vd. dữ liệu cũ) — sinh mới nếu bản đồ là GPMB thuộc 1 dự án.
-                m = db.execute('SELECT project_id, loai_ban_do FROM bt_maps WHERE id=?', (row['map_id'],)).fetchone()
                 if m and m['loai_ban_do'] == 'Bản đồ GPMB' and m['project_id']:
                     parcel_id = self._create_parcel_from_map_entry(
-                        db, m['project_id'], master_id, so_to, so_thua, dien_tich, thu_hoi
+                        db, m['project_id'], master_id, so_to, so_thua, dien_tich, thu_hoi, xa=map_xa
                     )
                     db.execute('UPDATE bt_map_parcels SET parcel_id=? WHERE id=?', (parcel_id, link_id))
             db.commit()
@@ -3794,7 +3896,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ext = os.path.splitext(filename)[1].lower()
 
         with get_db() as db:
-            m = db.execute('SELECT project_id, loai_ban_do FROM bt_maps WHERE id=?', (map_id,)).fetchone()
+            m = db.execute('SELECT project_id, loai_ban_do, xa FROM bt_maps WHERE id=?', (map_id,)).fetchone()
             if not m:
                 self.send_json({'error': 'Không tìm thấy Bản đồ'}, 404); return
 
@@ -4015,12 +4117,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                         (r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi'], r['toa_do'], link_id)
                     )
                     if pid:
-                        self._sync_parcel_from_map_entry(db, pid, None, r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi'])
+                        self._sync_parcel_from_map_entry(db, pid, None, r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi'], xa=m['xa'])
                     elif m['loai_ban_do'] == 'Bản đồ GPMB' and m['project_id'] and r['so_to']:
                         # Chỉ tự sinh Thửa đất khi có số tờ thật — Placemark KML không đoán được Tờ/Thửa
                         # (so_to rỗng) chỉ là hình tham khảo, không đủ dữ liệu để coi là 1 thửa đất thật.
                         pid = self._create_parcel_from_map_entry(
-                            db, m['project_id'], None, r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi']
+                            db, m['project_id'], None, r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi'], xa=m['xa']
                         )
                         db.execute('UPDATE bt_map_parcels SET parcel_id=? WHERE id=?', (pid, link_id))
                     updated += 1
@@ -4028,7 +4130,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     pid = None
                     if m['loai_ban_do'] == 'Bản đồ GPMB' and m['project_id'] and r['so_to']:
                         pid = self._create_parcel_from_map_entry(
-                            db, m['project_id'], None, r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi']
+                            db, m['project_id'], None, r['so_to'], r['so_thua'], r['dien_tich'], r['thu_hoi'], xa=m['xa']
                         )
                     db.execute(
                         'INSERT INTO bt_map_parcels (map_id, parcel_master_id, so_to_tren_ban_do, so_thua_tren_ban_do, '
@@ -4519,36 +4621,52 @@ class Handler(http.server.BaseHTTPRequestHandler):
         name = body.get('name', '').strip()
         if not name:
             self.send_json({'error': 'Tên dự án không được để trống'}, 400); return
+        danh_sach_xa = self._normalize_danh_sach_xa(body.get('danh_sach_xa'))
         with get_db() as db:
             cur = db.execute(
                 'INSERT INTO bt_projects (name, mo_ta, dia_diem, chu_dau_tu, dien_tich_du_an, ranh_gioi_du_an, '
-                'ngay_thong_bao_thu_hoi, ngay_bat_dau, ngay_ket_thuc_du_kien, custom_fields, kinh_tuyen_truc) '
-                'VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+                'ngay_thong_bao_thu_hoi, ngay_bat_dau, ngay_ket_thuc_du_kien, custom_fields, kinh_tuyen_truc, danh_sach_xa) '
+                'VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
                 (name, body.get('mo_ta',''), body.get('dia_diem',''), body.get('chu_dau_tu',''),
                  body.get('dien_tich_du_an') or 0, body.get('ranh_gioi_du_an') or None,
                  body.get('ngay_thong_bao_thu_hoi') or None, body.get('ngay_bat_dau') or None,
                  body.get('ngay_ket_thuc_du_kien') or None,
                  json.dumps(body.get('custom_fields', {}), ensure_ascii=False),
-                 body.get('kinh_tuyen_truc') if body.get('kinh_tuyen_truc') not in ('', None) else None)
+                 body.get('kinh_tuyen_truc') if body.get('kinh_tuyen_truc') not in ('', None) else None,
+                 json.dumps(danh_sach_xa, ensure_ascii=False))
             )
             db.commit()
         self.send_json({'ok': True, 'id': cur.lastrowid})
+
+    def _normalize_danh_sach_xa(self, raw):
+        """Chuẩn hoá danh sách xã của dự án — nhận list (từ JS) hoặc chuỗi mỗi dòng 1 xã, bỏ dòng
+        rỗng, cắt khoảng trắng thừa, bỏ trùng nhưng giữ thứ tự nhập (dict.fromkeys)."""
+        if raw is None:
+            items = []
+        elif isinstance(raw, list):
+            items = raw
+        else:
+            items = str(raw).replace(',', '\n').split('\n')
+        cleaned = [str(x).strip() for x in items if str(x).strip()]
+        return list(dict.fromkeys(cleaned))
 
     def api_bt_projects_update(self, pid):
         sess = self.require_manager()
         if not sess: return
         body = self.read_json()
+        danh_sach_xa = self._normalize_danh_sach_xa(body.get('danh_sach_xa'))
         with get_db() as db:
             db.execute(
                 'UPDATE bt_projects SET name=?, mo_ta=?, dia_diem=?, chu_dau_tu=?, dien_tich_du_an=?, '
                 'ranh_gioi_du_an=?, ngay_thong_bao_thu_hoi=?, ngay_bat_dau=?, ngay_ket_thuc_du_kien=?, '
-                'custom_fields=?, kinh_tuyen_truc=? WHERE id=?',
+                'custom_fields=?, kinh_tuyen_truc=?, danh_sach_xa=? WHERE id=?',
                 (body.get('name',''), body.get('mo_ta',''), body.get('dia_diem',''), body.get('chu_dau_tu',''),
                  body.get('dien_tich_du_an') or 0, body.get('ranh_gioi_du_an') or None,
                  body.get('ngay_thong_bao_thu_hoi') or None, body.get('ngay_bat_dau') or None,
                  body.get('ngay_ket_thuc_du_kien') or None,
                  json.dumps(body.get('custom_fields', {}), ensure_ascii=False),
-                 body.get('kinh_tuyen_truc') if body.get('kinh_tuyen_truc') not in ('', None) else None, pid)
+                 body.get('kinh_tuyen_truc') if body.get('kinh_tuyen_truc') not in ('', None) else None,
+                 json.dumps(danh_sach_xa, ensure_ascii=False), pid)
             )
             db.commit()
         self.send_json({'ok': True})

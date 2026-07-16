@@ -507,6 +507,15 @@ td.td-ctr{text-align:center}
         <div class="form-group"><label>Chủ đầu tư</label><input id="pf-chu-dau-tu" type="text"></div>
         <div class="form-group form-full"><label>Mô tả</label><textarea id="pf-mo-ta" placeholder="Thông tin thêm về dự án..."></textarea></div>
 
+        <div class="form-section">📍 Địa bàn hành chính</div>
+        <div class="form-group form-full">
+          <label>Danh sách Xã/Phường dự án đi qua *</label>
+          <textarea id="pf-danh-sach-xa" placeholder="Mỗi dòng 1 xã/phường, VD:&#10;Xã Chương Dương&#10;Xã Xuân Phú&#10;Phường Tứ Dương" style="font-family:monospace;font-size:12px"></textarea>
+        </div>
+        <div class="form-group form-full" style="font-size:12px;color:var(--muted)">
+          Bắt buộc khai trước — Số tờ/Số thửa chỉ duy nhất TRONG PHẠM VI 1 xã, không phải toàn hệ thống (2 xã khác nhau có thể cùng có "Tờ 1 - Thửa 1" nhưng là 2 thửa hoàn toàn khác nhau). Mỗi Bản đồ GPMB tạo sau này sẽ phải chọn đúng 1 xã trong danh sách này, giúp hệ thống không gợi ý nhầm/gộp nhầm thửa của 2 xã khác nhau.
+        </div>
+
         <div class="form-section">📐 Quy mô & Mốc thời gian</div>
         <div class="form-group"><label>Diện tích dự án (m²)</label><input id="pf-dien-tich" type="number" step="0.1" placeholder="Theo pháp lý phê duyệt"></div>
         <div class="form-group"><label>Ngày thông báo thu hồi đất</label><input id="pf-ngay-thong-bao-thu-hoi" type="date"></div>
@@ -839,9 +848,16 @@ td.td-ctr{text-align:center}
             <option value="Bản đồ khác">Bản đồ khác</option>
           </select>
         </div>
+        <div class="form-group" id="gf-xa-group">
+          <label>Xã/Phường *</label>
+          <select id="gf-xa">
+            <option value="">— chọn xã —</option>
+          </select>
+          <div style="font-size:11px;color:var(--muted);margin-top:2px">Bắt buộc với Bản đồ GPMB/Mốc giới GPMB — Số tờ/Số thửa chỉ duy nhất trong 1 xã. Chưa thấy xã cần dùng? Vào "Sửa dự án" để thêm.</div>
+        </div>
         <div class="form-group">
-          <label>Nhóm bản đồ (đầu mục)</label>
-          <input id="gf-nhom-ban-do" type="text" list="gpmb-nhom-options" placeholder="VD: Xã Chương Dương">
+          <label>Nhóm bản đồ (đầu mục, tùy chọn)</label>
+          <input id="gf-nhom-ban-do" type="text" list="gpmb-nhom-options" placeholder="Để trống sẽ tự lấy theo Xã đã chọn">
           <datalist id="gpmb-nhom-options"></datalist>
         </div>
         <div class="form-group"><label>Tên bản đồ</label><input id="gf-ten-ban-do" type="text" placeholder="VD: Tờ 1, 2 - xã Xuân Phú"></div>
@@ -1218,6 +1234,9 @@ function openProjModal(id) {
   document.getElementById('pf-ngay-ket-thuc').value = p ? (p.ngay_ket_thuc_du_kien || '') : '';
   document.getElementById('pf-ranh-gioi').value = p ? (p.ranh_gioi_du_an || '') : '';
   document.getElementById('pf-kinh-tuyen-truc').value = p && p.kinh_tuyen_truc != null ? p.kinh_tuyen_truc : '';
+  let danhSachXa = [];
+  if (p && p.danh_sach_xa) { try { danhSachXa = JSON.parse(p.danh_sach_xa) || []; } catch(e) {} }
+  document.getElementById('pf-danh-sach-xa').value = danhSachXa.join('\n');
   document.getElementById('modal-proj').classList.add('open');
   setTimeout(() => document.getElementById('pf-name').focus(), 50);
 }
@@ -1230,6 +1249,7 @@ async function saveProject() {
   if (ranhGioi) {
     try { JSON.parse(ranhGioi); } catch(e) { toast('Ranh giới dự án phải là GeoJSON hợp lệ (hoặc để trống)', true); return; }
   }
+  const danhSachXa = document.getElementById('pf-danh-sach-xa').value.split('\n').map(s => s.trim()).filter(Boolean);
   const body = {
     name,
     dia_diem: document.getElementById('pf-dia-diem').value,
@@ -1241,6 +1261,7 @@ async function saveProject() {
     ngay_ket_thuc_du_kien: document.getElementById('pf-ngay-ket-thuc').value || null,
     ranh_gioi_du_an: ranhGioi || null,
     kinh_tuyen_truc: document.getElementById('pf-kinh-tuyen-truc').value !== '' ? parseFloat(document.getElementById('pf-kinh-tuyen-truc').value) : null,
+    danh_sach_xa: danhSachXa,
   };
   const wasEditing = !!editProjId;
   const url  = editProjId ? `/api/bt/projects/${editProjId}` : '/api/bt/projects';
@@ -1995,8 +2016,6 @@ function toggleGroupCollapsed(groupKey) {
 function renderGpmbMapsPanel() {
   const body = document.getElementById('gpmb-tbl-body');
   const empty = document.getElementById('gpmb-tbl-empty');
-  if (!gpmbMapsList.length) { body.innerHTML = ''; empty.style.display = 'flex'; return; }
-  empty.style.display = 'none';
 
   const groups = new Map();
   gpmbMapsList.forEach(m => {
@@ -2004,19 +2023,30 @@ function renderGpmbMapsPanel() {
     if (!groups.has(k)) groups.set(k, []);
     groups.get(k).push(m);
   });
+  // Dự án đã khai danh sách xã (kể cả xã CHƯA có mảnh bản đồ nào) — vẫn hiện sẵn "thư mục" rỗng cho
+  // từng xã, đúng theo mô hình "mỗi xã là 1 đầu mục" đã thống nhất, để Minh biết đủ các xã cần lập.
+  currentProjectDanhSachXa().forEach(x => {
+    if (!groups.has(x)) groups.set(x, []);
+  });
+
+  if (!groups.size) { body.innerHTML = ''; empty.style.display = 'flex'; return; }
+  empty.style.display = 'none';
 
   let html = '';
   [...groups.entries()].forEach(([groupKey, members]) => {
     const collapsed = collapsedGroups.has(groupKey);
-    const allVisible = members.every(m => visibleMapIds.has(m.id));
+    const allVisible = members.length > 0 && members.every(m => visibleMapIds.has(m.id));
     const someVisible = members.some(m => visibleMapIds.has(m.id));
     html += `
       <div class="gpmb-group-header">
         <span class="gpmb-group-chevron" onclick="toggleGroupCollapsed('${esc(groupKey)}')">${collapsed ? '▶' : '▼'}</span>
         <span class="gpmb-group-name" onclick="toggleGroupCollapsed('${esc(groupKey)}')">${esc(groupKey)}<span class="gpmb-group-count">(${members.length})</span></span>
-        <span class="gpmb-eye-btn${allVisible ? ' on' : (someVisible ? ' partial' : '')}" title="Bật/tắt cả nhóm" onclick="toggleGroupVisibility('${esc(groupKey)}')">${allVisible ? '👁' : (someVisible ? '👁' : '🚫')}</span>
+        <span class="gpmb-eye-btn${allVisible ? ' on' : (someVisible ? ' partial' : '')}" title="Bật/tắt cả nhóm" onclick="toggleGroupVisibility('${esc(groupKey)}')">${members.length ? (allVisible ? '👁' : (someVisible ? '👁' : '🚫')) : ''}</span>
       </div>`;
     if (!collapsed) {
+      if (!members.length) {
+        html += `<div class="gpmb-map-row" style="opacity:.6;font-size:12px">(Chưa có mảnh bản đồ nào cho xã này — bấm "+ Thêm bản đồ" rồi chọn xã "${esc(groupKey)}")</div>`;
+      }
       members.forEach(m => {
         const style = gpmbTypeStyle(m.loai_ban_do);
         const on = visibleMapIds.has(m.id);
@@ -2364,6 +2394,32 @@ function populateGpmbNhomOptions() {
   dl.innerHTML = names.map(n => `<option value="${esc(n)}">`).join('');
 }
 
+function currentProjectDanhSachXa() {
+  const p = projectsList.find(pr => pr.id === currentProjId);
+  if (!p || !p.danh_sach_xa) return [];
+  try { return JSON.parse(p.danh_sach_xa) || []; } catch(e) { return []; }
+}
+
+function populateGpmbXaOptions(selected) {
+  const sel = document.getElementById('gf-xa');
+  const xaList = currentProjectDanhSachXa();
+  const opts = ['<option value="">— chọn xã —</option>'];
+  if (!xaList.length) {
+    opts.push('<option value="" disabled>(Dự án chưa khai xã nào — vào "Sửa dự án" để thêm)</option>');
+  } else {
+    xaList.forEach(x => opts.push(`<option value="${esc(x)}">${esc(x)}</option>`));
+  }
+  // Bản đồ cũ có thể đang lưu 1 xã không còn nằm trong danh sách hiện tại của dự án (VD dữ liệu cũ
+  // được tự động điền lại từ nhom_ban_do, hoặc danh sách xã dự án đã sửa sau đó) — vẫn phải hiện đúng
+  // giá trị đang lưu thay vì âm thầm bỏ trống, kèm cảnh báo để Minh biết mà xử lý (thêm xã đó vào dự
+  // án, hoặc đổi sang xã đúng).
+  if (selected && !xaList.includes(selected)) {
+    opts.push(`<option value="${esc(selected)}">${esc(selected)} ⚠️ (chưa có trong danh sách xã dự án)</option>`);
+  }
+  sel.innerHTML = opts.join('');
+  sel.value = selected || '';
+}
+
 async function openGpmbModal(id) {
   editGpmbMapId = id || null;
   selectedGpmbParcelMasterId = null;
@@ -2379,6 +2435,7 @@ async function openGpmbModal(id) {
   gpmbMocgioiCheckedIds = [];
   document.getElementById('gf-mocgioi-trong-la').value = 'thu_hoi';
   populateGpmbNhomOptions();
+  populateGpmbXaOptions('');
   resetGpmbParcelForm();
 
   if (id) {
@@ -2386,6 +2443,7 @@ async function openGpmbModal(id) {
     if (res.ok) {
       const m = await res.json();
       document.getElementById('gf-loai-ban-do').value = m.loai_ban_do || 'Bản đồ GPMB';
+      populateGpmbXaOptions(m.xa || '');
       document.getElementById('gf-nhom-ban-do').value = m.nhom_ban_do || '';
       document.getElementById('gf-ten-ban-do').value = m.ten_ban_do || '';
       document.getElementById('gf-ngay-lap').value = m.ngay_lap || '';
@@ -2425,9 +2483,16 @@ function closeGpmbInfoModal() {
 }
 
 async function saveGpmbMap() {
+  const loaiBanDo = document.getElementById('gf-loai-ban-do').value || 'Bản đồ GPMB';
+  const xa = document.getElementById('gf-xa').value.trim();
+  if (['Bản đồ GPMB', 'Bản đồ mốc giới GPMB'].includes(loaiBanDo) && !xa) {
+    toast('Vui lòng chọn Xã/Phường cho bản đồ này', true);
+    return;
+  }
   const body = {
     project_id: currentProjId,
-    loai_ban_do: document.getElementById('gf-loai-ban-do').value || 'Bản đồ GPMB',
+    loai_ban_do: loaiBanDo,
+    xa,
     nhom_ban_do: document.getElementById('gf-nhom-ban-do').value,
     ten_ban_do: document.getElementById('gf-ten-ban-do').value,
     ngay_lap: document.getElementById('gf-ngay-lap').value || null,
@@ -2455,7 +2520,10 @@ async function saveGpmbMap() {
     // xem diện tích thu hồi có cần cập nhật không (không hỏi khi mới TẠO, vì lúc đó chưa có
     // polygon nào để tính — sẽ tự rà soát khi thêm/sửa/import thửa sau đó, xem reloadGpmbDetail).
     if (wasEditingMocgioi) checkMocgioiRecompute(editGpmbMapId);
-  } else { toast('Lỗi khi lưu bản đồ', true); }
+  } else {
+    const err = await res.json().catch(()=>({}));
+    toast(err.error || 'Lỗi khi lưu bản đồ', true);
+  }
 }
 
 function askDeleteGpmbMap(id) {
@@ -2495,14 +2563,16 @@ async function checkGpmbParcelDup() {
   const area = document.getElementById('gpmb-parcel-dup-area');
   if (!soTo && !soThua) { area.style.display = 'none'; selectedGpmbParcelMasterId = null; return; }
   const q = soTo || soThua;
-  const res = await fetch(`/api/bt/parcel-master/search?q=${encodeURIComponent(q)}`);
+  const xa = (document.getElementById('gf-xa').value || '').trim();
+  const res = await fetch(`/api/bt/parcel-master/search?q=${encodeURIComponent(q)}&xa=${encodeURIComponent(xa)}`);
   if (!res.ok) return;
   const results = await res.json();
   if (!results.length) { area.style.display = 'none'; selectedGpmbParcelMasterId = null; return; }
   area.style.display = 'block';
-  area.innerHTML = 'Có thể trùng với thửa gốc đã có (đối chiếu quá trình sử dụng đất): ' + results.map(m =>
-    `<span class="chip chip-link" style="margin-right:6px" onclick="linkGpmbParcelMaster(${m.id},'${esc(m.so_to_hien_hanh)}','${esc(m.so_thua_hien_hanh)}')">Tờ ${esc(m.so_to_hien_hanh)} - Thửa ${esc(m.so_thua_hien_hanh)}</span>`
-  ).join('') + ' <span style="opacity:.7">(hoặc bỏ qua nếu là thửa mới)</span>';
+  area.innerHTML = 'Có thể trùng với thửa gốc đã có (đối chiếu quá trình sử dụng đất): ' + results.map(m => {
+    const warn = m.xa && xa && m.xa !== xa ? ' ⚠️khác xã' : (!m.xa && xa ? ' ⚠️chưa rõ xã' : '');
+    return `<span class="chip chip-link" style="margin-right:6px" onclick="linkGpmbParcelMaster(${m.id},'${esc(m.so_to_hien_hanh)}','${esc(m.so_thua_hien_hanh)}')">Tờ ${esc(m.so_to_hien_hanh)} - Thửa ${esc(m.so_thua_hien_hanh)}${warn}</span>`;
+  }).join('') + ' <span style="opacity:.7">(hoặc bỏ qua nếu là thửa mới)</span>';
 }
 
 function linkGpmbParcelMaster(id, soTo, soThua) {
