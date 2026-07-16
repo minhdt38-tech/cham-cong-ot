@@ -3751,14 +3751,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return m.group(2), m.group(1)  # quy ước nhãn "Thửa.Tờ" đã dùng trong app
         return '', name if name else f'KML-{fallback_idx}'
 
-    def _extract_kml_groups(self, file_bytes, filename):
+    def _extract_kml_groups(self, file_bytes, filename, is_gpmb=True):
         """Đọc file .kml hoặc .kmz (zip chứa .kml), trả về list các nhóm đỉnh dạng
         {'so_to', 'so_thua', 'pts_wgs84': [[lon,lat], ...]} — 1 Placemark (hoặc 1 hình con trong
         MultiGeometry) = 1 nhóm. Giữ NGUYÊN thứ tự đỉnh trong file — không cần tùy chọn auto-reorder
         như luồng Excel, vì phần mềm vẽ bản đồ (Google Earth, QGIS...) luôn xuất đỉnh theo đúng thứ
         tự đường vẽ trên thực địa/màn hình. Ưu tiên đọc Polygon (outerBoundaryIs, bỏ qua lỗ hổng bên
         trong nếu có); nếu Placemark không có Polygon thì thử LineString (nhiều người vẽ ranh giới
-        bằng công cụ 'Đường' trong Google Earth thay vì 'Đa giác')."""
+        bằng công cụ 'Đường' trong Google Earth thay vì 'Đa giác').
+        `is_gpmb=False` (Bản đồ mốc giới GPMB/địa chính/khác — theo yêu cầu của Minh): KHÔNG đoán Tờ/
+        Thửa từ tên Placemark nữa (những bản đồ này không có khái niệm Tờ/Thửa thật) — chỉ đánh số thứ
+        tự đơn giản theo đúng thứ tự đọc được trong file."""
         local = self._kml_local_tag
         ext = (filename or '').lower()
         if ext.endswith('.kmz'):
@@ -3812,9 +3815,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if len(pts) < 3:
                     continue
                 idx += 1
-                so_to, so_thua = self._kml_guess_so_to_so_thua(name, idx)
-                if len(rings) > 1:
-                    so_thua = f"{so_thua}_{ring_i + 1}"
+                if is_gpmb:
+                    so_to, so_thua = self._kml_guess_so_to_so_thua(name, idx)
+                    if len(rings) > 1:
+                        so_thua = f"{so_thua}_{ring_i + 1}"
+                else:
+                    so_to, so_thua = '', str(idx)  # chỉ đánh số thứ tự, không đoán Tờ/Thửa
                 groups.append({'so_to': so_to, 'so_thua': so_thua, 'pts_wgs84': pts})
 
         # Nhiều Placemark có thể trùng tên hệt nhau (VD phần mềm vẽ bản đồ đặt tên mặc định
@@ -3870,14 +3876,18 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 return v
         return None
 
-    def _extract_geojson_groups(self, file_bytes):
+    def _extract_geojson_groups(self, file_bytes, is_gpmb=True):
         """Đọc file .geojson/.json (chuẩn GeoJSON FeatureCollection) — mỗi Feature có sẵn geometry
         (Polygon/MultiPolygon) VÀ properties (thuộc tính thật do phần mềm CAD/đo đạc gán, KHÔNG cần
         đoán từ tên như KML) — trả về list các nhóm {'so_to','so_thua','pts','is_wgs84'}. Tự nhận
         diện tọa độ đang ở hệ WGS84 (kinh độ/vĩ độ, trị tuyệt đối ≤180/≤90 — quy ước chuẩn GeoJSON
         RFC 7946) hay đã là VN-2000 (trị lớn, hàng trăm nghìn/triệu — nhiều phần mềm CAD Việt Nam
         xuất GeoJSON kèm tọa độ chiếu thẳng thay vì kinh vĩ độ) để quyết định có cần quy đổi hay
-        dùng thẳng, giống cách Excel luôn là VN-2000 còn KML luôn là WGS84."""
+        dùng thẳng, giống cách Excel luôn là VN-2000 còn KML luôn là WGS84.
+        `is_gpmb=False` (Bản đồ mốc giới GPMB/địa chính/khác — theo yêu cầu của Minh): KHÔNG đọc
+        properties để tìm Tờ/Thửa nữa (những bản đồ này không có khái niệm Tờ/Thửa thật, và trước đây
+        khi properties không có gì đoán được sẽ rơi vào nhãn tạm xấu kiểu "GEO-1", "GEO-2"...) — chỉ
+        đánh số thứ tự đơn giản theo đúng thứ tự đọc được trong file."""
         try:
             data = json.loads(file_bytes.decode('utf-8-sig'))
         except Exception as e:
@@ -3893,6 +3903,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             raise ValueError('Không có Feature (thửa) nào trong file')
 
         groups = []
+        obj_idx = 0  # bộ đếm tuần tự dùng chung cho nhánh is_gpmb=False (đánh số theo thứ tự đọc được)
         for fi, feat in enumerate(features):
             geom = (feat or {}).get('geometry') or {}
             gtype = geom.get('type')
@@ -3905,11 +3916,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 rings = [poly[0] for poly in coords if poly and len(poly[0]) >= 3]
             if not rings:
                 continue
-            props = (feat or {}).get('properties') or {}
-            so_to_raw = self._geojson_find_prop(props, self._GEOJSON_SO_TO_KEYS)
-            so_thua_raw = self._geojson_find_prop(props, self._GEOJSON_SO_THUA_KEYS)
-            so_to = str(so_to_raw).strip() if so_to_raw is not None else ''
-            so_thua = str(so_thua_raw).strip() if so_thua_raw is not None else ''
+            if is_gpmb:
+                props = (feat or {}).get('properties') or {}
+                so_to_raw = self._geojson_find_prop(props, self._GEOJSON_SO_TO_KEYS)
+                so_thua_raw = self._geojson_find_prop(props, self._GEOJSON_SO_THUA_KEYS)
+                so_to = str(so_to_raw).strip() if so_to_raw is not None else ''
+                so_thua = str(so_thua_raw).strip() if so_thua_raw is not None else ''
+            else:
+                so_to, so_thua = '', ''  # đánh số bên dưới theo obj_idx, không đọc properties
             for ri, ring in enumerate(rings):
                 pts = []
                 for p in ring:
@@ -3918,9 +3932,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 if len(pts) < 3:
                     continue
                 is_wgs84 = all(abs(p[0]) <= 180 and abs(p[1]) <= 90 for p in pts)
-                label = so_thua if so_thua else f'GEO-{fi + 1}'
-                if len(rings) > 1:
-                    label = f'{label}_{ri + 1}'
+                if is_gpmb:
+                    label = so_thua if so_thua else f'GEO-{fi + 1}'
+                    if len(rings) > 1:
+                        label = f'{label}_{ri + 1}'
+                else:
+                    obj_idx += 1
+                    label = str(obj_idx)
                 groups.append({'so_to': so_to, 'so_thua': label, 'pts': pts, 'is_wgs84': is_wgs84})
 
         # Đánh số hậu tố cho các nhóm bị trùng khoá (so_to, so_thua) trong cùng file — an toàn ngay cả
@@ -3973,20 +3991,30 @@ class Handler(http.server.BaseHTTPRequestHandler):
         - .kml / .kmz: đọc mỗi Placemark (Polygon, hoặc LineString nếu không có Polygon) thành 1 nhóm
           đỉnh — tọa độ trong KML luôn ở hệ WGS84 (kinh độ, vĩ độ), tự động quy đổi sang VN-2000 theo
           Kinh tuyến trục của dự án (bắt buộc phải khai trước ở Sửa dự án). Không cần auto_reorder vì
-          phần mềm vẽ bản đồ luôn xuất đỉnh đúng thứ tự đường vẽ. Tên Placemark được dò để đoán Tờ/Thửa
-          (VD "Tờ 3 Thửa 45"); nếu không đoán được, mỗi Placemark thành 1 nhóm riêng dùng chính tên đó
-          làm "số thửa" tạm (không sinh Thửa đất tự động trong trường hợp này nếu là Bản đồ GPMB, vì
-          không có số tờ/số thửa thật — vẫn lưu được hình để xem, chỉ không đồng bộ sang bt_parcels).
-        - .geojson / .json: đọc mỗi Feature thành 1 nhóm đỉnh — LẤY TỜ/THỬA TRỰC TIẾP TỪ properties
-          (thuộc tính thật do phần mềm CAD/đo đạc gán khi xuất file — khuyến nghị đặt tên thuộc tính
-          "so_to"/"so_thua", vài tên tương đương khác cũng được chấp nhận), KHÔNG đoán từ tên như KML
-          — đây là cách chính xác 100% cho cả hình lẫn Tờ/Thửa trong 1 lần import, dùng khi phần mềm
-          CAD/đo đạc xuất được đa giác khép kín kèm thuộc tính riêng cho từng thửa. Tự nhận diện tọa
-          độ trong file đang ở hệ WGS84 (kinh độ/vĩ độ) hay đã là VN-2000 (theo trị số) để quyết định
-          có quy đổi hay dùng thẳng; nếu là WGS84 thì cũng cần Kinh tuyến trục của dự án như KML.
-        Ở cả 4 định dạng: đối chiếu trùng theo Tờ+Thửa trên cùng mảnh, yêu cầu xác nhận ghi đè
-        (field confirm_overwrite=1) nếu có trùng — không âm thầm ghi đè dữ liệu đã có. Diện tích luôn
-        TÍNH TỰ ĐỘNG bằng công thức Shoelace từ tọa độ các đỉnh sau khi khép kín."""
+          phần mềm vẽ bản đồ luôn xuất đỉnh đúng thứ tự đường vẽ. CHỈ với Bản đồ GPMB: tên Placemark
+          được dò để đoán Tờ/Thửa (VD "Tờ 3 Thửa 45"); nếu không đoán được, mỗi Placemark thành 1 nhóm
+          riêng dùng chính tên đó làm "số thửa" tạm (không sinh Thửa đất tự động trong trường hợp này,
+          vì không có số tờ/số thửa thật — vẫn lưu được hình để xem, chỉ không đồng bộ sang bt_parcels).
+        - .geojson / .json: đọc mỗi Feature thành 1 nhóm đỉnh — CHỈ với Bản đồ GPMB: LẤY TỜ/THỬA TRỰC
+          TIẾP TỪ properties (thuộc tính thật do phần mềm CAD/đo đạc gán khi xuất file — khuyến nghị
+          đặt tên thuộc tính "so_to"/"so_thua", vài tên tương đương khác cũng được chấp nhận), KHÔNG
+          đoán từ tên như KML — đây là cách chính xác 100% cho cả hình lẫn Tờ/Thửa trong 1 lần import,
+          dùng khi phần mềm CAD/đo đạc xuất được đa giác khép kín kèm thuộc tính riêng cho từng thửa.
+          Tự nhận diện tọa độ trong file đang ở hệ WGS84 (kinh độ/vĩ độ) hay đã là VN-2000 (theo trị
+          số) để quyết định có quy đổi hay dùng thẳng; nếu là WGS84 thì cũng cần Kinh tuyến trục của
+          dự án như KML.
+        Với 3 loại bản đồ KHÔNG PHẢI Bản đồ GPMB (mốc giới GPMB/địa chính qua từng thời kỳ/khác) — các
+        bản đồ này không có khái niệm Tờ/Thửa thật (theo yêu cầu của Minh) — nhánh KML và GeoJSON ở
+        trên KHÔNG đoán/đọc Tờ/Thửa nữa, chỉ đánh số thứ tự đơn giản cho từng đối tượng theo đúng thứ
+        tự đọc được trong file (xem `is_gpmb` truyền vào `_extract_kml_groups`/`_extract_geojson_groups`).
+        Nhánh Excel giữ nguyên cơ chế cột Tờ/Thửa làm khóa gom nhóm đỉnh cho cả 4 loại bản đồ (không có
+        cách gom nhóm nào khác trong định dạng mỗi-dòng-1-đỉnh này) — với bản đồ không phải GPMB, các
+        giá trị này chỉ đóng vai trò khóa nhóm nội bộ, KHÔNG được hiển thị ở UI dưới dạng "Tờ/Thửa"
+        (xem `renderGpmbParcelsList`/`gpmbParcelLabel*` ở frontend).
+        Ở cả 4 định dạng: đối chiếu trùng theo Tờ+Thửa (hoặc số thứ tự, với bản đồ không phải GPMB)
+        trên cùng mảnh, yêu cầu xác nhận ghi đè (field confirm_overwrite=1) nếu có trùng — không âm
+        thầm ghi đè dữ liệu đã có. Diện tích luôn TÍNH TỰ ĐỘNG bằng công thức Shoelace từ tọa độ các
+        đỉnh sau khi khép kín."""
         sess = self.require_auth()
         if not sess: return
         ct = self.headers.get('Content-Type', '')
@@ -4006,6 +4034,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             m = db.execute('SELECT project_id, loai_ban_do, xa FROM bt_maps WHERE id=?', (map_id,)).fetchone()
             if not m:
                 self.send_json({'error': 'Không tìm thấy Bản đồ'}, 404); return
+            # Chỉ Bản đồ GPMB mới có khái niệm Tờ/Thửa thật (sinh Thửa đất) — 3 loại bản đồ còn lại
+            # (mốc giới GPMB, địa chính qua từng thời kỳ, khác) không trích xuất/đoán Tờ/Thửa, chỉ đánh
+            # số thứ tự đơn giản cho từng đối tượng (theo yêu cầu của Minh).
+            is_gpmb = m['loai_ban_do'] == 'Bản đồ GPMB'
 
             if ext in ('.kml', '.kmz'):
                 ktt = None
@@ -4020,7 +4052,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                                               '25/2014/TT-BTNMT, hoặc hỏi đơn vị đo đạc).'}, 400)
                     return
                 try:
-                    kml_groups = self._extract_kml_groups(file_bytes, filename)
+                    kml_groups = self._extract_kml_groups(file_bytes, filename, is_gpmb)
                 except Exception as e:
                     self.send_json({'error': f'Không đọc được file: {e}'}, 400); return
 
@@ -4031,7 +4063,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if len(pts_wgs84) > 1 and pts_wgs84[0] == pts_wgs84[-1]:
                         pts_wgs84 = pts_wgs84[:-1]
                     if len(pts_wgs84) < 3:
-                        label = f"Tờ {g['so_to']} - Thửa {g['so_thua']}" if g['so_to'] else g['so_thua']
+                        label = (f"Tờ {g['so_to']} - Thửa {g['so_thua']}" if (is_gpmb and g['so_to'])
+                                 else (g['so_thua'] if is_gpmb else f"Đối tượng {g['so_thua']}"))
                         skipped_short.append(label)
                         continue
                     ring = [list(self._wgs84_lonlat_to_vn2000(lon, lat, ktt)) for lon, lat in pts_wgs84]
@@ -4050,7 +4083,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     self.send_json({'error': msg}, 400); return
             elif ext in ('.geojson', '.json'):
                 try:
-                    geo_groups = self._extract_geojson_groups(file_bytes)
+                    geo_groups = self._extract_geojson_groups(file_bytes, is_gpmb)
                 except Exception as e:
                     self.send_json({'error': f'Không đọc được file: {e}'}, 400); return
 
@@ -4076,7 +4109,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if len(pts) > 1 and pts[0] == pts[-1]:
                         pts = pts[:-1]
                     if len(pts) < 3:
-                        label = f"Tờ {g['so_to']} - Thửa {g['so_thua']}" if g['so_to'] else g['so_thua']
+                        label = (f"Tờ {g['so_to']} - Thửa {g['so_thua']}" if (is_gpmb and g['so_to'])
+                                 else (g['so_thua'] if is_gpmb else f"Đối tượng {g['so_thua']}"))
                         skipped_short.append(label)
                         continue
                     if g['is_wgs84']:
@@ -4167,7 +4201,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 for g in groups:
                     pts = g['pts']
                     if len(pts) < 3:
-                        skipped_short.append(f"Tờ {g['so_to']} - Thửa {g['so_thua']}")
+                        label = (f"Tờ {g['so_to']} - Thửa {g['so_thua']}" if (is_gpmb and g['so_to'])
+                                 else f"Đối tượng {g['so_thua']}")
+                        skipped_short.append(label)
                         continue
                     if auto_reorder:
                         # Bỏ đỉnh khép kín trùng lặp (nếu có) trước khi sắp xếp lại, tránh thuật toán bị
@@ -4205,7 +4241,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             for r in parsed_rows:
                 key = (r['so_to'].lower(), r['so_thua'].lower())
                 if key in existing_map:
-                    conflicts.append(f"Tờ {r['so_to']} - Thửa {r['so_thua']}")
+                    label = (f"Tờ {r['so_to']} - Thửa {r['so_thua']}" if (is_gpmb and r['so_to'])
+                             else f"Đối tượng {r['so_thua']}")
+                    conflicts.append(label)
 
             if conflicts and not confirm_overwrite:
                 self.send_json({'conflict': True, 'conflicts': conflicts, 'total': len(parsed_rows)}, 409)
