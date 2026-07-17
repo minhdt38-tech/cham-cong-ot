@@ -1028,6 +1028,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_file(fpath)
             return
 
+        if path == '/pending-loader.js':
+            # Hiệu ứng "đang xử lý" (overlay PTDA) dùng chung cho mọi trang — xem chú thích trong file.
+            self.send_file(os.path.join(PUBLIC_DIR, 'pending-loader.js'))
+            return
+
         routes = {
             '/api/me':                   self.api_me,
             '/api/manager/users':        self.api_manager_users_list,
