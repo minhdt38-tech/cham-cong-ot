@@ -185,7 +185,11 @@ SESSION_LOCK = threading.Lock()
 # --- DATABASE ---
 
 def get_db():
-    conn = sqlite3.connect(DB_PATH)
+    # timeout=30: server chạy ĐA LUỒNG (xem run()) — 2 request cùng ghi DB thì SQLite khóa file trong
+    # tích tắc; timeout cho phép request sau chờ tối đa 30s thay vì văng lỗi "database is locked" ngay.
+    # WAL mode (bên dưới) cho phép ĐỌC song song trong lúc 1 luồng đang GHI — quan trọng khi import
+    # hàng chục nghìn thửa chạy nhiều giây mà người dùng khác vẫn đang mở danh sách/bản đồ.
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
@@ -2867,6 +2871,20 @@ class Handler(http.server.BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             return default
 
+    def _send_conflict_response(self, conflicts, total):
+        """Trả về HTTP 409 yêu cầu xác nhận ghi đè — danh sách trùng bị CẮT CÒN TỐI ĐA 50 mục
+        (`conflicts_total` giữ con số thật) vì với file cỡ chục nghìn thửa (VD Bản đồ Hồng Vân 18.060
+        thửa import lại lần 2), trả về đủ hàng chục nghìn chuỗi vừa phình JSON response cả MB vừa làm
+        popup xác nhận phía frontend dựng 1 chuỗi văn bản khổng lồ gây đứng trình duyệt. Frontend hiển
+        thị 50 mục đầu + '... và N mục khác'."""
+        CAP = 50
+        self.send_json({
+            'conflict': True,
+            'conflicts': conflicts[:CAP],
+            'conflicts_total': len(conflicts),
+            'total': total,
+        }, 409)
+
     # ── BT v2: CHỦ THỂ & NHÂN KHẨU ──────────────────────────────────
     def api_bt_parties_list(self, qs):
         sess = self.require_auth()
@@ -3188,8 +3206,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     })
 
             if conflicts and not confirm_overwrite:
-                self.send_json({'conflict': True, 'conflicts': conflicts,
-                                 'total': len(party_rows) + len(member_rows)}, 409)
+                self._send_conflict_response(conflicts, len(party_rows) + len(member_rows))
                 return
 
             created_parties, updated_parties = 0, 0
@@ -3505,8 +3522,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     unmatched.append(label)
 
             if matched and not confirm_overwrite:
-                self.send_json({'conflict': True, 'conflicts': [m['label'] for m in matched],
-                                 'total': len(matched) + len(unmatched)}, 409)
+                self._send_conflict_response([m['label'] for m in matched], len(matched) + len(unmatched))
                 return
 
             updated = 0
@@ -4796,7 +4812,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     conflicts.append(label)
 
             if conflicts and not confirm_overwrite:
-                self.send_json({'conflict': True, 'conflicts': conflicts, 'total': len(parsed_rows)}, 409)
+                self._send_conflict_response(conflicts, len(parsed_rows))
                 return
 
             created, updated = 0, 0
@@ -5310,8 +5326,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 rows_to_write.append({'target_id': target_id, 'data': data, 'parcel_ids': parcel_ids})
 
             if conflicts and not confirm_overwrite:
-                self.send_json({'conflict': True, 'conflicts': conflicts,
-                                 'total': len(rows_to_write) + len(skipped)}, 409)
+                self._send_conflict_response(conflicts, len(rows_to_write) + len(skipped))
                 return
 
             created, updated = 0, 0
@@ -5707,8 +5722,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     })
 
             if conflicts and not confirm_overwrite:
-                self.send_json({'conflict': True, 'conflicts': conflicts,
-                                 'total': len(dossier_rows) + len(decision_rows)}, 409)
+                self._send_conflict_response(conflicts, len(dossier_rows) + len(decision_rows))
                 return
 
             created_dossiers, updated_dossiers = 0, 0
@@ -6015,7 +6029,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 rows_to_write.append({'target_id': target_id, 'data': data})
 
             if conflicts and not confirm_overwrite:
-                self.send_json({'conflict': True, 'conflicts': conflicts, 'total': len(rows_to_write)}, 409)
+                self._send_conflict_response(conflicts, len(rows_to_write))
                 return
 
             created, updated = 0, 0
@@ -6512,8 +6526,16 @@ def run():
     else:
         print('[Backup] R2 chua bat nen KHONG co auto-backup. Xem cac bien R2_* tren Railway.')
     handler = Handler
-    with socketserver.TCPServer(('', PORT), handler) as httpd:
-        httpd.allow_reuse_address = True
+    # ThreadingTCPServer thay cho TCPServer đơn luồng: trước đây 1 request chạy lâu (VD import bản đồ
+    # GPMB ~18.000 thửa mất nhiều giây) chặn đứng TOÀN BỘ hệ thống — mọi người dùng khác bấm gì cũng
+    # không phản hồi cho tới khi request đó xong (đúng hiện tượng "đơ" Minh báo 2026-07-17). Mỗi request
+    # giờ chạy trên 1 luồng riêng; daemon_threads=True để Ctrl+C/tắt tiến trình không bị treo chờ luồng.
+    # An toàn dữ liệu: mỗi request tự mở kết nối SQLite riêng qua get_db() (không dùng chung connection
+    # giữa các luồng), WAL + timeout=30 xử lý tranh chấp ghi (xem chú thích get_db()).
+    class ThreadingServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+        daemon_threads = True
+        allow_reuse_address = True
+    with ThreadingServer(('', PORT), handler) as httpd:
         print(f'Server running on port {PORT}')
         print(f'DATA_DIR: {DATA_DIR}')
         print(f'R2 enabled: {R2_ENABLED}')

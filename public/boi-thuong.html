@@ -1072,6 +1072,14 @@ th.filterable{position:relative}
      Thửa đất, Tài sản, Dự án, Hồ sơ Hộ — TÁCH RIÊNG khỏi #modal-import-confirm ở trên (vốn chỉ dành cho
      luồng Import Bản đồ GPMB) để không đụng/rủi ro luồng đó đang chạy tốt. Xem btStartImport/sendBtImport
      bên dưới. ══ -->
+<!-- ══ BUSY OVERLAY (2026-07-17): hiện khi đang gửi/xử lý import file lớn — trước đây không có phản
+     hồi gì trong lúc chờ (import 18.000 thửa mất nhiều giây) khiến người dùng tưởng hệ thống treo ══ -->
+<div id="bt-busy-overlay" style="display:none;position:fixed;inset:0;background:rgba(10,14,25,.72);z-index:9000;align-items:center;justify-content:center;flex-direction:column;gap:14px">
+  <div style="width:42px;height:42px;border:4px solid rgba(255,255,255,.25);border-top-color:#4da3ff;border-radius:50%;animation:btspin 0.9s linear infinite"></div>
+  <div id="bt-busy-msg" style="color:#dfe6f0;font-size:14px;max-width:420px;text-align:center;line-height:1.6"></div>
+</div>
+<style>@keyframes btspin{to{transform:rotate(360deg)}}</style>
+
 <div class="modal-overlay" id="modal-bt-import-confirm">
   <div class="modal modal-sm">
     <div class="modal-head">
@@ -1817,7 +1825,21 @@ function applyColFilter(colKey) {
   renderParcelsTable();
 }
 
-function renderParcelsTable() {
+// Phân trang hiển thị bảng Thửa đất (nâng cấp hiệu năng 2026-07-17): với dự án cả xã (18.060 thửa,
+// phòng bị 50.000) render đủ từng ấy <tr> một lượt làm đứng trình duyệt nhiều giây tới hàng phút.
+// Chỉ render PARCELS_PAGE_SIZE dòng đầu (sau lọc), bấm "Xem thêm" nạp thêm từng đợt. Bộ lọc/tìm kiếm
+// vẫn hoạt động trên TOÀN BỘ dữ liệu (getFilteredParcels lọc trước, phân trang chỉ cắt phần hiển thị)
+// — muốn tìm 1 thửa cụ thể thì lọc/tìm, không cần bấm "Xem thêm" tới nơi.
+const PARCELS_PAGE_SIZE = 200;
+let parcelsShownLimit = PARCELS_PAGE_SIZE;
+
+function showMoreParcels() {
+  parcelsShownLimit += PARCELS_PAGE_SIZE;
+  renderParcelsTable(true);
+}
+
+function renderParcelsTable(preserveLimit) {
+  if (!preserveLimit) parcelsShownLimit = PARCELS_PAGE_SIZE; // đổi bộ lọc/tải lại → quay về trang đầu
   const body = document.getElementById('parcel-tbl-body');
   const empty = document.getElementById('parcel-tbl-empty');
   const filtered = getFilteredParcels();
@@ -1831,7 +1853,8 @@ function renderParcelsTable() {
     return;
   }
   empty.style.display = 'none';
-  body.innerHTML = filtered.map((p, i) => `
+  const shown = filtered.slice(0, parcelsShownLimit);
+  let html = shown.map((p, i) => `
     <tr${p.has_gpmb_map ? '' : ' class="row-gpmb-warn"'}>
       <td>${i+1}</td>
       <td>${esc(p.so_to)}${p.has_gpmb_map ? '' : ' <span class="gpmb-warn-badge" title="Chưa được thể hiện trên bản đồ GPMB">⚠️</span>'}</td>
@@ -1847,6 +1870,14 @@ function renderParcelsTable() {
       </td>
     </tr>
   `).join('');
+  if (filtered.length > shown.length) {
+    html += `
+    <tr><td colspan="9" style="text-align:center;padding:10px">
+      <span style="font-size:12px;color:var(--muted)">Đang hiện ${shown.length.toLocaleString('vi-VN')}/${filtered.length.toLocaleString('vi-VN')} thửa — </span>
+      <button class="btn btn-ghost btn-sm" onclick="showMoreParcels()">⬇ Xem thêm ${Math.min(PARCELS_PAGE_SIZE, filtered.length - shown.length).toLocaleString('vi-VN')} thửa</button>
+    </td></tr>`;
+  }
+  body.innerHTML = html;
 }
 
 async function openParcelModal(id) {
@@ -2538,17 +2569,48 @@ function renderGpmbMapCanvas(fitView) {
     return;
   }
 
+  // Sơ đồ SVG minh họa (chế độ CHƯA khai Kinh tuyến trục) vẽ mỗi thửa 1 phần tử DOM — quá 2.000 thửa
+  // sẽ làm nặng trình duyệt vô ích (sơ đồ cỡ đó cũng không đọc được gì). Bản đồ thực Leaflet dùng
+  // canvas nên KHÔNG bị giới hạn này — hướng người dùng khai Kinh tuyến trục để chuyển sang bản đồ thực.
+  if (withGeo.length > 2000) {
+    emptyEl.textContent = `Đang bật ${withGeo.length.toLocaleString('vi-VN')} thửa/đối tượng — quá nhiều để vẽ sơ đồ minh họa. `
+      + 'Khai Kinh tuyến trục cho dự án (Sửa dự án) để xem trên bản đồ thực (không giới hạn số thửa).';
+    emptyEl.style.display = 'block';
+    svg.style.display = 'none';
+    svg.innerHTML = '';
+    return;
+  }
   leafletEl.style.display = 'none';
   emptyEl.style.display = 'none';
   svg.style.display = 'block';
   renderGpmbSvgCanvas(withGeo);
 }
 
+// Tính khung bao (bounding box) của danh sách điểm [x,y] bằng VÒNG LẶP thường — TUYỆT ĐỐI không dùng
+// Math.min(...mảng)/Math.max(...mảng) cho dữ liệu bản đồ: cú pháp spread đẩy TOÀN BỘ phần tử vào ngăn
+// xếp lời gọi hàm, trình duyệt giới hạn ~65.000 phần tử — file bản đồ cả xã (VD Bản đồ Hồng Vân 18.060
+// thửa = 167.099 tọa độ) vượt xa mức đó và VĂNG RangeError giữa chừng, làm mọi bước phía sau (tắt trạng
+// thái chờ, thông báo kết quả) không bao giờ chạy — đúng hiện tượng "đơ không phản hồi" Minh báo
+// 2026-07-17. Vòng lặp thường không giới hạn số phần tử (đã phòng bị cho cỡ 50.000 thửa trở lên).
+function ptsBbox(pts) {
+  let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+  for (const pt of pts) {
+    if (!Array.isArray(pt) || pt.length < 2) continue;
+    if (pt[0] < minX) minX = pt[0];
+    if (pt[0] > maxX) maxX = pt[0];
+    if (pt[1] < minY) minY = pt[1];
+    if (pt[1] > maxY) maxY = pt[1];
+  }
+  if (minX === Infinity) return null;
+  return { minX, maxX, minY, maxY };
+}
+
 function renderGpmbSvgCanvas(withGeo) {
   const svg = document.getElementById('gpmb-map-svg');
   const allPts = withGeo.flatMap(x => x.rings.flat().filter(pt => Array.isArray(pt) && pt.length >= 2));
-  const xs = allPts.map(p => p[0]), ys = allPts.map(p => p[1]);
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const bb = ptsBbox(allPts);
+  if (!bb) { svg.innerHTML = ''; return; }
+  const { minX, maxX, minY, maxY } = bb;
   const w = 800, h = 560, pad = 30;
   const spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1;
   const scale = Math.min((w - pad*2) / spanX, (h - pad*2) / spanY);
@@ -2754,9 +2816,52 @@ function updateGpmbZoomPercentDisplay() {
 
 // Nhãn thửa không còn ẩn/hiện theo mức zoom — luôn hiển thị, nhưng TỰ CO GIÃN (transform: scale) mỗi
 // khi zoom thay đổi để luôn vừa gọn bên trong ranh giới thửa của nó (tâm nhãn = tâm thửa, không đổi).
-// gpmbLabelEntries lưu {marker, outerLatLngs} của TỪNG thửa đang vẽ — dựng lại mỗi lần renderGpmbLeafletMap
-// vẽ lại lớp dữ liệu; outerLatLngs dùng để tính kích thước (px) của thửa trên màn hình ở zoom hiện tại.
+// gpmbLabelEntries lưu {marker, outerLatLngs} của TỪNG NHÃN ĐANG TỒN TẠI trên bản đồ — kể từ bản nâng
+// cấp hiệu năng 2026-07-17 (file 18.060 thửa làm treo trình duyệt), đây KHÔNG còn là toàn bộ thửa nữa
+// mà chỉ là các nhãn trong khung nhìn hiện tại (tối đa GPMB_MAX_VISIBLE_LABELS) — xem refreshGpmbVisibleLabels.
 let gpmbLabelEntries = [];
+
+// ── HỆ NHÃN THEO KHUNG NHÌN (nâng cấp hiệu năng 2026-07-17, phòng bị tới cỡ 50.000 thửa) ──
+// Trước đây renderGpmbLeafletMap tạo NGAY 1 marker nhãn HTML cho MỌI thửa (18.060 thửa = 18.060 phần
+// tử DOM), rồi updateGpmbLabelScaling đo offsetWidth từng nhãn (mỗi lần đo ép trình duyệt tính lại
+// bố cục — 18.060 lần/1 lần zoom) → treo hàng phút. Cách mới: renderGpmbLeafletMap chỉ LƯU DỮ LIỆU
+// nhãn (tọa độ tâm, ranh ngoài, html) vào gpmbLabelData; marker thật chỉ được tạo cho các thửa nằm
+// TRONG KHUNG NHÌN hiện tại, nhiều nhất GPMB_MAX_VISIBLE_LABELS cái (ưu tiên thửa diện tích lớn khi
+// khung nhìn rộng chứa quá nhiều thửa — phóng to dần sẽ thấy đủ nhãn các thửa nhỏ hơn). Dựng lại danh
+// sách nhãn mỗi khi kéo/zoom bản đồ (sự kiện moveend, có debounce) — mỗi lần chỉ đụng vài trăm phần
+// tử DOM nên luôn mượt bất kể tổng số thửa.
+const GPMB_MAX_VISIBLE_LABELS = 400;
+let gpmbLabelData = [];      // {latlng, outerLatLngs, html, area} cho MỌI thửa đang bật nhãn
+let gpmbLabelLayer = null;   // L.layerGroup chứa các marker nhãn đang tồn tại (subset của gpmbLabelData)
+let gpmbLabelRefreshTimer = null;
+
+function refreshGpmbVisibleLabels() {
+  if (!gpmbLeafletMap || !gpmbLabelLayer) return;
+  gpmbLabelLayer.clearLayers();
+  gpmbLabelEntries = [];
+  if (!gpmbLabelData.length) return;
+  const bounds = gpmbLeafletMap.getBounds();
+  let inView = gpmbLabelData.filter(d => bounds.contains(d.latlng));
+  if (inView.length > GPMB_MAX_VISIBLE_LABELS) {
+    // Quá nhiều thửa trong khung nhìn (đang zoom xa) — chỉ hiện nhãn các thửa LỚN nhất, vì ở mức zoom
+    // đó thửa nhỏ cũng chẳng đủ chỗ hiển thị nhãn đọc được (scale bị ép về sàn 0.3 vẫn chồng chéo).
+    inView = inView.slice().sort((a, b) => (b.area || 0) - (a.area || 0)).slice(0, GPMB_MAX_VISIBLE_LABELS);
+  }
+  inView.forEach(d => {
+    const marker = L.marker(d.latlng, {
+      icon: L.divIcon({ className: 'gpmb-parcel-label-anchor', html: d.html, iconSize: null })
+    });
+    gpmbLabelLayer.addLayer(marker);
+    gpmbLabelEntries.push({ marker, outerLatLngs: d.outerLatLngs });
+  });
+  updateGpmbLabelScaling();
+}
+
+function scheduleGpmbLabelRefresh() {
+  // Debounce: kéo/zoom liên tục chỉ dựng lại nhãn 1 lần sau khi người dùng dừng tay ~150ms.
+  clearTimeout(gpmbLabelRefreshTimer);
+  gpmbLabelRefreshTimer = setTimeout(refreshGpmbVisibleLabels, 150);
+}
 function updateGpmbLabelScaling() {
   if (!gpmbLeafletMap || !gpmbLabelEntries.length) return;
   gpmbLabelEntries.forEach(({ marker, outerLatLngs }) => {
@@ -2767,9 +2872,10 @@ function updateGpmbLabelScaling() {
     const naturalW = labelEl.offsetWidth, naturalH = labelEl.offsetHeight;
     if (!naturalW || !naturalH) return;
     const pts = outerLatLngs.map(ll => gpmbLeafletMap.latLngToContainerPoint(ll));
-    const xs = pts.map(pt => pt.x), ys = pts.map(pt => pt.y);
-    const bboxW = Math.max(...xs) - Math.min(...xs);
-    const bboxH = Math.max(...ys) - Math.min(...ys);
+    const bb = ptsBbox(pts.map(pt => [pt.x, pt.y])); // vòng lặp, không spread — xem chú thích ptsBbox
+    if (!bb) return;
+    const bboxW = bb.maxX - bb.minX;
+    const bboxH = bb.maxY - bb.minY;
     const PAD = 0.82; // chừa viền, nhãn không sát mép thửa
     let scale = Math.min((bboxW * PAD) / naturalW, (bboxH * PAD) / naturalH);
     if (!isFinite(scale) || scale <= 0) scale = 0.01;
@@ -2851,13 +2957,22 @@ function renderGpmbLeafletMap(withGeo, ktt, fitView) {
   // mà chỉ bật/tắt nhãn hoặc thêm/bớt mảnh khác thì giữ nguyên khung nhìn hiện tại, theo yêu cầu của Minh).
   const hadLayerBefore = !!gpmbLeafletLayer;
   if (isFirstInit) {
-    gpmbLeafletMap = L.map(container, { zoomControl: true, minZoom: GPMB_ZOOM_MIN, maxZoom: GPMB_ZOOM_MAX });
+    gpmbLeafletMap = L.map(container, {
+      zoomControl: true, minZoom: GPMB_ZOOM_MIN, maxZoom: GPMB_ZOOM_MAX,
+      // preferCanvas: vẽ ranh giới thửa bằng CANVAS thay vì SVG — với bản đồ cả xã (18.060 polygon,
+      // 167.099 đỉnh; phòng bị tới 50.000 thửa) SVG tạo từng ấy phần tử DOM làm trình duyệt quá tải,
+      // canvas chỉ là 1 tấm ảnh vẽ lại mỗi khung hình nên gánh được lượng hình lớn hơn hàng chục lần.
+      preferCanvas: true,
+    });
     gpmbBasemapLayersMain = createGpmbBasemapLayers();
     setGpmbMapBasemap(gpmbLeafletMap, gpmbBasemapLayersMain, currentBasemapProvider, currentBasemapVisible);
     new GpmbZoomPercentControl().addTo(gpmbLeafletMap);
     new GpmbLocateControl().addTo(gpmbLeafletMap);
     gpmbLeafletMap.on('zoomend', updateGpmbZoomPercentDisplay);
-    gpmbLeafletMap.on('zoomend', updateGpmbLabelScaling);
+    // moveend bắn cả khi zoom lẫn khi kéo bản đồ — dựng lại danh sách nhãn theo khung nhìn mới
+    // (thay cho zoomend→updateGpmbLabelScaling cũ vốn đo lại TOÀN BỘ nhãn của mọi thửa).
+    gpmbLeafletMap.on('moveend', scheduleGpmbLabelRefresh);
+    gpmbLabelLayer = L.layerGroup().addTo(gpmbLeafletMap);
     // Khung nhìn mặc định (trước khi có dữ liệu để fitBounds) — trung tâm Việt Nam, để bản đồ nền
     // luôn có gì đó để hiển thị/điều hướng được ngay cả khi chưa bật mảnh nào.
     gpmbLeafletMap.setView([16.0, 106.0], 6);
@@ -2866,6 +2981,8 @@ function renderGpmbLeafletMap(withGeo, ktt, fitView) {
   }
   if (gpmbLeafletLayer) { gpmbLeafletMap.removeLayer(gpmbLeafletLayer); gpmbLeafletLayer = null; }
   gpmbLabelEntries = [];
+  gpmbLabelData = [];
+  if (gpmbLabelLayer) gpmbLabelLayer.clearLayers();
 
   // Bản đồ nền (basemap) đã được gắn cố định vào gpmbLeafletMap ở lần khởi tạo (theo cài đặt của tab
   // 🛰️ Bản đồ nền) và KHÔNG bị đụng tới ở đây — chỉ lớp ranh giới thửa (gpmbLeafletLayer) mới bật/tắt/
@@ -2898,20 +3015,18 @@ function renderGpmbLeafletMap(withGeo, ktt, fitView) {
       layers.push(poly);
     });
     // Nút 🏷️ riêng của mảnh này đang tắt (độc lập với 👁 hiển thị mảnh) — vẫn vẽ ranh giới thửa như
-    // bình thường ở trên, chỉ bỏ qua việc tạo marker nhãn chữ đè lên bản đồ.
+    // bình thường ở trên, chỉ bỏ qua nhãn chữ. Nhãn KHÔNG tạo marker ngay tại đây nữa (xem chú thích
+    // hệ nhãn theo khung nhìn phía trên) — chỉ lưu dữ liệu, marker do refreshGpmbVisibleLabels tạo.
     if (showLabel !== false && outerRing && outerRing.length >= 3) {
       const centroid = polygonCentroid(outerRing);
       const ll = centroid && vn2000ToLonLat(centroid[0], centroid[1], ktt);
-      if (ll) {
-        const label = L.marker([ll[1], ll[0]], {
-          icon: L.divIcon({
-            className: 'gpmb-parcel-label-anchor',
-            html: `<div class="gpmb-parcel-label${isWarn ? ' gpl-warn' : ''}">${gpmbParcelLabelHtml(p, isGpmb, idx)}</div>`,
-            iconSize: null
-          })
+      if (ll && outerLatLngs) {
+        gpmbLabelData.push({
+          latlng: [ll[1], ll[0]],
+          outerLatLngs,
+          html: `<div class="gpmb-parcel-label${isWarn ? ' gpl-warn' : ''}">${gpmbParcelLabelHtml(p, isGpmb, idx)}</div>`,
+          area: p.dien_tich_tren_ban_do || 0,
         });
-        layers.push(label);
-        if (outerLatLngs) gpmbLabelEntries.push({ marker: label, outerLatLngs });
       }
     }
   });
@@ -2929,10 +3044,10 @@ function renderGpmbLeafletMap(withGeo, ktt, fitView) {
   if (fitView || !hadLayerBefore) {
     gpmbLeafletMap.fitBounds(group.getBounds(), { padding: [20, 20] });
   }
-  // fitBounds không phải lúc nào cũng bắn 'zoomend' (VD khi mức zoom mới trùng mức hiện tại) —
-  // gọi trực tiếp để đảm bảo hiển thị % zoom + kích thước nhãn thửa luôn đúng ngay sau khi vẽ lại lớp dữ liệu.
+  // fitBounds không phải lúc nào cũng bắn 'zoomend'/'moveend' (VD khi mức zoom mới trùng mức hiện tại)
+  // — gọi trực tiếp để đảm bảo % zoom + danh sách nhãn theo khung nhìn luôn đúng ngay sau khi vẽ lại.
   updateGpmbZoomPercentDisplay();
-  setTimeout(() => { gpmbLeafletMap && gpmbLeafletMap.invalidateSize(); updateGpmbLabelScaling(); }, 60);
+  setTimeout(() => { gpmbLeafletMap && gpmbLeafletMap.invalidateSize(); refreshGpmbVisibleLabels(); }, 60);
 }
 
 function initSplitResizer(resizerId, leftId, splitId, onResizeEnd) {
@@ -3290,7 +3405,19 @@ async function removeGpmbParcelRow(linkId) {
   } else toast('Lỗi khi xóa thửa', true);
 }
 
-function renderGpmbParcelsList() {
+// Phân trang danh sách thửa trong modal Bản đồ (nâng cấp hiệu năng 2026-07-17) — cùng lý do với
+// renderParcelsTable: 18.060 dòng render 1 lượt làm modal đứng hình. Chỉ hiện GPMB_LIST_PAGE_SIZE dòng
+// đầu + nút "Xem thêm" nạp từng đợt.
+const GPMB_LIST_PAGE_SIZE = 200;
+let gpmbParcelsShownLimit = GPMB_LIST_PAGE_SIZE;
+
+function showMoreGpmbParcels() {
+  gpmbParcelsShownLimit += GPMB_LIST_PAGE_SIZE;
+  renderGpmbParcelsList(true);
+}
+
+function renderGpmbParcelsList(preserveLimit) {
+  if (!preserveLimit) gpmbParcelsShownLimit = GPMB_LIST_PAGE_SIZE; // mở modal khác/tải lại → về trang đầu
   const box = document.getElementById('gpmb-parcels-list');
   const isGpmb = document.getElementById('gf-loai-ban-do').value === 'Bản đồ GPMB';
   if (!currentGpmbParcels.length) {
@@ -3298,7 +3425,8 @@ function renderGpmbParcelsList() {
     renderGpmbCombinedPreview();
     return;
   }
-  box.innerHTML = currentGpmbParcels.map((p, i) => {
+  const shownParcels = currentGpmbParcels.slice(0, gpmbParcelsShownLimit);
+  box.innerHTML = shownParcels.map((p, i) => {
     // Bản đồ GPMB: nhãn theo Tờ/Thửa thật + các chip liên quan đến Thửa đất. Bản đồ khác (mốc giới
     // GPMB/địa chính/khác): không có khái niệm Tờ/Thửa — chỉ đánh số thứ tự + diện tích polygon,
     // theo đúng yêu cầu của Minh (không trích xuất Tờ/Thửa cho các loại bản đồ này).
@@ -3317,6 +3445,13 @@ function renderGpmbParcelsList() {
     </div>
   `;
   }).join('');
+  if (currentGpmbParcels.length > shownParcels.length) {
+    box.innerHTML += `
+    <div style="text-align:center;padding:8px">
+      <span style="font-size:12px;color:var(--muted)">Đang hiện ${shownParcels.length.toLocaleString('vi-VN')}/${currentGpmbParcels.length.toLocaleString('vi-VN')} — </span>
+      <button class="btn btn-ghost btn-sm" onclick="showMoreGpmbParcels()">⬇ Xem thêm ${Math.min(GPMB_LIST_PAGE_SIZE, currentGpmbParcels.length - shownParcels.length).toLocaleString('vi-VN')}</button>
+    </div>`;
+  }
   renderGpmbCombinedPreview();
 }
 
@@ -3356,6 +3491,16 @@ function parseToaDoToRings(text) {
 function renderGpmbCombinedPreview() {
   const box = document.getElementById('gpmb-combined-preview');
   const isGpmb = document.getElementById('gf-loai-ban-do').value === 'Bản đồ GPMB';
+  // Cap hiệu năng (2026-07-17): xem trước SVG phải parse JSON tọa độ + vẽ 1 polygon DOM cho TỪNG thửa
+  // — với bản đồ cả xã (18.060 thửa) bước này đứng hình nhiều giây và hình 320×220px cũng không còn
+  // đọc được gì. Quá 2.000 thửa: bỏ xem trước, hướng người dùng xem trên bản đồ thực (canvas, không giới hạn).
+  if ((currentGpmbParcels || []).length > 2000) {
+    box.style.display = 'block';
+    box.innerHTML = `<div style="font-size:12px;color:var(--muted);padding:6px">`
+      + `${currentGpmbParcels.length.toLocaleString('vi-VN')} thửa/đối tượng — quá nhiều để vẽ hình xem trước thu nhỏ. `
+      + `Đóng cửa sổ này và bật 👁 bản đồ để xem toàn bộ trên bản đồ thực.</div>`;
+    return;
+  }
   const palette = ['#3498db','#e67e22','#2ecc71','#e74c3c','#9b59b6','#1abc9c','#f1c40f','#95a5a6'];
   const parsed = [];
   (currentGpmbParcels || []).forEach((p, idx) => {
@@ -3370,8 +3515,9 @@ function renderGpmbCombinedPreview() {
   });
   if (parsed.length < 1) { box.style.display = 'none'; box.innerHTML = ''; return; }
   const allPts = parsed.flatMap(pp => pp.pts);
-  const xs = allPts.map(p => p[0]), ys = allPts.map(p => p[1]);
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const bb = ptsBbox(allPts); // vòng lặp, không spread — xem chú thích ptsBbox
+  if (!bb) { box.style.display = 'none'; box.innerHTML = ''; return; }
+  const { minX, maxX, minY, maxY } = bb;
   const w = 320, h = 220, pad = 16;
   const spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1;
   const scale = Math.min((w - pad*2) / spanX, (h - pad*2) / spanY);
@@ -3576,8 +3722,9 @@ function renderGeoJSONPreview(text) {
     box.innerHTML = '<div style="font-size:12px;color:var(--muted)">Chưa nhận diện được toạ độ để xem trước</div>';
     return;
   }
-  const xs = pts.map(p => p[0]), ys = pts.map(p => p[1]);
-  const minX = Math.min(...xs), maxX = Math.max(...xs), minY = Math.min(...ys), maxY = Math.max(...ys);
+  const bb = ptsBbox(pts); // vòng lặp, không spread — xem chú thích ptsBbox
+  if (!bb) { box.style.display = 'none'; return; }
+  const { minX, maxX, minY, maxY } = bb;
   const w = 220, h = 160, pad = 10;
   const spanX = (maxX - minX) || 1, spanY = (maxY - minY) || 1;
   const scale = Math.min((w - pad*2) / spanX, (h - pad*2) / spanY);
@@ -3619,11 +3766,21 @@ async function sendGpmbImport(confirmOverwrite) {
   fd.append('file', pendingGpmbImportFile);
   if (confirmOverwrite) fd.append('confirm_overwrite', '1');
   if (document.getElementById('gpmb-import-auto-reorder').checked) fd.append('auto_reorder', '1');
-  const res = await fetch(`/api/bt/maps/${editGpmbMapId}/parcels/import`, { method: 'POST', body: fd });
+  showBtBusy('Đang import bản đồ — file nhiều thửa (cỡ chục nghìn) có thể mất vài chục giây, vui lòng không tải lại trang...');
+  let res;
+  try {
+    res = await fetch(`/api/bt/maps/${editGpmbMapId}/parcels/import`, { method: 'POST', body: fd });
+  } catch (e) {
+    hideBtBusy();
+    toast('Lỗi kết nối khi import file', true);
+    return;
+  }
   if (res.status === 409) {
+    hideBtBusy();
     const data = await res.json();
+    const { text, total } = btConflictListText(data);
     document.getElementById('import-confirm-msg').textContent =
-      `${data.conflicts.length} thửa trong file đã tồn tại trên mảnh này: ${data.conflicts.join(', ')}. Bạn có muốn ghi đè dữ liệu các thửa này không? Các thửa mới khác trong file (nếu có) vẫn sẽ được thêm bình thường.`;
+      `${total} thửa trong file đã tồn tại trên mảnh này: ${text}. Bạn có muốn ghi đè dữ liệu các thửa này không? Các thửa mới khác trong file (nếu có) vẫn sẽ được thêm bình thường.`;
     document.getElementById('modal-import-confirm').classList.add('open');
     return;
   }
@@ -3631,11 +3788,19 @@ async function sendGpmbImport(confirmOverwrite) {
   pendingGpmbImportFile = null;
   if (res.ok) {
     const data = await res.json();
-    await reloadGpmbDetail();
-    await refreshGpmbStatus();
-    updateTabLockUI();
+    // Giữ overlay trong lúc tải lại dữ liệu hiển thị — với bản đồ chục nghìn thửa, riêng bước tải lại
+    // chi tiết + vẽ lại danh sách/xem trước cũng mất vài giây.
+    showBtBusy('Import xong — đang tải lại dữ liệu hiển thị...');
+    try {
+      await reloadGpmbDetail();
+      await refreshGpmbStatus();
+      updateTabLockUI();
+    } finally {
+      hideBtBusy();
+    }
     toast(`Đã import: thêm mới ${data.created}, cập nhật ${data.updated} thửa`);
   } else {
+    hideBtBusy();
     const data = await res.json().catch(()=>({}));
     toast(data.error || 'Lỗi khi import file', true);
   }
@@ -3662,6 +3827,29 @@ async function confirmImportOverwrite() {
 // ══════════════════════════════════════════════════════════════
 let pendingBtImport = null; // { file, url, inputId, onDone }
 
+// Overlay "Đang xử lý..." dùng chung cho mọi luồng import (GPMB + generic Excel) — import file lớn
+// (VD 18.000 thửa) chạy nhiều giây; không có phản hồi thị giác thì người dùng tưởng app treo và bấm
+// loạn/tải lại trang giữa chừng.
+function showBtBusy(msg) {
+  document.getElementById('bt-busy-msg').textContent = msg || 'Đang xử lý...';
+  document.getElementById('bt-busy-overlay').style.display = 'flex';
+}
+function hideBtBusy() {
+  document.getElementById('bt-busy-overlay').style.display = 'none';
+}
+
+// Dựng câu thông báo trùng từ response 409 — backend chỉ trả TỐI ĐA 50 mục đầu (conflicts) kèm tổng
+// thật (conflicts_total) để response không phình cả MB với file chục nghìn thửa; phần vượt hiển thị
+// gọn "... và N mục khác".
+function btConflictListText(data) {
+  const total = data.conflicts_total || data.conflicts.length;
+  let text = data.conflicts.join(', ');
+  if (total > data.conflicts.length) {
+    text += ` … và ${(total - data.conflicts.length).toLocaleString('vi-VN')} mục khác`;
+  }
+  return { text, total };
+}
+
 function btExportExcel(url) {
   window.open(url, '_blank');
 }
@@ -3678,18 +3866,22 @@ async function sendBtImport(confirmOverwrite) {
   const fd = new FormData();
   fd.append('file', file);
   if (confirmOverwrite) fd.append('confirm_overwrite', '1');
+  showBtBusy('Đang import dữ liệu từ file Excel — file lớn có thể mất vài chục giây, vui lòng không tải lại trang...');
   let res;
   try {
     res = await fetch(url, { method: 'POST', body: fd });
   } catch (e) {
+    hideBtBusy();
     toast('Lỗi kết nối khi import file', true);
     pendingBtImport = null;
     return;
   }
+  hideBtBusy();
   if (res.status === 409) {
     const data = await res.json();
+    const { text, total } = btConflictListText(data);
     document.getElementById('bt-import-confirm-msg').textContent =
-      `${data.conflicts.length}/${data.total} dòng trong file trùng với dữ liệu đã có: ${data.conflicts.join(', ')}. ` +
+      `${total}/${data.total} dòng trong file trùng với dữ liệu đã có: ${text}. ` +
       `Bạn có muốn ghi đè các dòng này không? Các dòng khác trong file (nếu có) vẫn được xử lý bình thường.`;
     document.getElementById('modal-bt-import-confirm').classList.add('open');
     return;
