@@ -70,20 +70,22 @@ body{font-family:var(--font);background:var(--bg);color:var(--text);height:100vh
 .gpmb-label-btn{cursor:pointer;font-size:13px;width:20px;text-align:center;flex-shrink:0;opacity:.35}
 .gpmb-label-btn.on{opacity:1}
 .gpmb-label-btn.partial{opacity:.7}
-/* Nhãn thửa (nâng cấp 2026-07-17): không còn là L.marker/divIcon kích thước pixel cố định + JS đo lại
-   mỗi lần zoom. Giờ là L.svgOverlay gắn theo LatLngBounds thực (mét), NÊN TỰ CO GIÃN theo zoom giống
-   hệt đường ranh giới thửa (Leaflet tự transform, không cần JS tính lại) — xem refreshGpmbVisibleLabels/
-   buildGpmbLabelOverlay. Nội dung HTML nằm trong <foreignObject> nên co giãn CÙNG TỶ LỆ với khung SVG.
-   Vì vậy các đơn vị dưới đây (font-size, padding…) là đơn vị nội bộ của viewBox, không phải px màn hình
-   thật — xem GPMB_LABEL_VB_W trong JS. */
-.gpmb-parcel-label-overlay{pointer-events:none}
+/* Nhãn thửa (nâng cấp 2026-07-17, bản 2 — theo phản hồi của Minh sau khi xem thực tế): quay lại
+   L.marker/divIcon (KHÔNG dùng L.svgOverlay tự co giãn liên tục theo animation zoom nữa — Minh báo viền
+   nhãn tràn ra ngoài ranh giới thửa + không muốn nhãn "tự to nhỏ theo tỷ lệ thu phóng" nữa). Kích thước
+   PIXEL của mỗi nhãn được TÍNH TRƯỚC (theo diện tích thửa quy đổi ra pixel tại đúng mức zoom hiện tại)
+   rồi set CỐ ĐỊNH làm iconSize của marker — không có transform/scale nào chạy theo animation zoom của
+   Leaflet nữa; nhãn chỉ được tính lại kích thước khi dựng lại danh sách theo khung nhìn (mỗi khi kéo/zoom
+   XONG, xem refreshGpmbVisibleLabels/buildGpmbLabelMarker), không "sống" theo từng khung hình như trước.
+   Vì vậy các đơn vị dưới đây (font-size, padding…) là PX MÀN HÌNH THẬT, không phải đơn vị viewBox nữa. */
+.gpmb-parcel-label-anchor{position:relative}
 .gpmb-parcel-label{width:100%;height:100%;box-sizing:border-box;display:flex;flex-direction:column;
-  justify-content:center;gap:2px;padding:4px 7px;background:rgba(20,28,48,.88);color:#fff;
+  justify-content:center;gap:1px;padding:3px 6px;background:rgba(20,28,48,.88);color:#fff;
   border-radius:5px;border:1px solid rgba(93,173,226,.6);overflow:hidden;text-align:left;
-  font-family:inherit;line-height:1.25}
-.gpmb-parcel-label .gpl-head{font-weight:700;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.gpmb-parcel-label .gpl-row{font-size:13px;font-weight:500;color:#dfe6f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.gpmb-parcel-label .gpl-owner{font-size:13px;font-weight:500;overflow:hidden;
+  font-family:inherit;line-height:1.2}
+.gpmb-parcel-label .gpl-head{font-weight:700;font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gpmb-parcel-label .gpl-row{font-size:10px;font-weight:500;color:#dfe6f0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.gpmb-parcel-label .gpl-owner{font-size:10px;font-weight:500;overflow:hidden;
   text-overflow:ellipsis;white-space:nowrap}
 .gpmb-parcel-label.gpl-warn{background:rgba(122,22,22,.92);border-color:#e74c3c}
 .gpmb-parcel-label.gpl-warn .gpl-head{color:#ffd7d7}
@@ -2820,44 +2822,77 @@ function updateGpmbZoomPercentDisplay() {
   gpmbLeafletMap._gpmbZoomSlider.value = pct;
 }
 
-// ── HỆ NHÃN THEO KHUNG NHÌN + KÍCH THƯỚC THỰC (nâng cấp 2026-07-17) ──
-// Trước đây nhãn là L.marker/divIcon (kích thước PIXEL cố định trên màn hình, không đổi theo zoom) rồi
-// updateGpmbLabelScaling đo offsetWidth từng nhãn + tính lại scale MỖI LẦN zoom để giả lập việc "nhãn to/
-// nhỏ theo thửa" — với bản đồ nhiều thửa (hàng chục nghìn), đo lại toàn bộ như vậy làm treo trình duyệt.
-// Theo yêu cầu mới của Minh: nhãn phải TỰ to/nhỏ theo zoom GIỐNG HỆT đường ranh giới thửa (không JS tính
-// lại mỗi lần zoom), với kích thước THỰC (m²) = min(diện tích thửa × 70%, 1000m²), co thêm nếu vượt quá
-// ranh giới thực của thửa. Cách làm: mỗi nhãn là 1 L.svgOverlay gắn theo LatLngBounds thực (mét, không
-// phải pixel) — Leaflet tự dịch/co giãn overlay này y hệt cách nó co giãn L.polygon khi zoom, không cần
-// code ở đây can thiệp lại. Nội dung HTML nhãn nằm trong <foreignObject> nên co giãn cùng khung SVG.
-// Vẫn giữ cơ chế viewport-culling (chỉ dựng overlay cho nhãn trong khung nhìn, tối đa
-// GPMB_MAX_VISIBLE_LABELS) từ bản nâng cấp hiệu năng trước, vì số lượng DOM/overlay vẫn là chi phí chính.
+// ── HỆ NHÃN THEO KHUNG NHÌN + KÍCH THƯỚC THỰC, FIXED CỨNG (nâng cấp 2026-07-17, bản 2) ──
+// Bản đầu (L.svgOverlay, tự co giãn LIÊN TỤC theo animation zoom giống hệt ranh giới thửa) bị Minh báo
+// lỗi qua ảnh chụp thực tế: nhiều thửa bị NGHIÊNG/XÉO so với trục tọa độ Bắc-Nam/Đông-Tây (không phải
+// hình chữ nhật thẳng trục) — khung bao hình chữ nhật theo trục X/Y (bbox) của thửa đó LỚN HƠN NHIỀU so
+// với hình dạng thật, nên dù nhãn "nằm trong bbox" vẫn tràn viền ra khỏi ranh giới thật. Minh cũng yêu
+// cầu đổi lại: nhãn KHÔNG tự to/nhỏ theo tỷ lệ thu phóng nữa (fixed cứng), và diện tích mục tiêu giảm
+// còn 50% (thay vì 70%). 2 thay đổi so với bản đầu:
+// (1) Fit-trong-ranh-giới: thay bbox theo trục X/Y bằng bán kính "đường tròn nội tiếp gần đúng" = khoảng
+//     cách NGẮN NHẤT từ tâm thửa tới bất kỳ cạnh nào của đa giác (minDistToRingEdges) — không phụ thuộc
+//     hướng thửa nghiêng bao nhiêu độ, an toàn hơn nhiều với thửa xéo dọc theo đường/kênh mương.
+// (2) Cách dựng nhãn: bỏ hẳn L.svgOverlay (tự scale liên tục theo transform animation của Leaflet mỗi
+//     khung hình zoom). Quay lại L.marker + L.divIcon, nhưng kích thước ICON được TÍNH TRƯỚC bằng pixel
+//     THỰC tại đúng mức zoom hiện tại (map.latLngToContainerPoint từ 2 góc hộp mét đã tính) rồi set CỐ
+//     ĐỊNH — không có script nào scale nó thêm. Nhãn chỉ được TÍNH LẠI khi dựng lại danh sách theo khung
+//     nhìn (mỗi khi kéo/zoom XONG, debounce 150ms — xem scheduleGpmbLabelRefresh), không "sống" theo từng
+//     khung hình animation như svgOverlay — đúng nghĩa "fixed cứng, không tự thay đổi theo tỷ lệ thu
+//     phóng" mà vẫn luôn khớp diện tích thật của thửa tại đúng mức zoom hiện tại sau khi dựng lại.
+// Vẫn giữ nguyên cơ chế viewport-culling (tối đa GPMB_MAX_VISIBLE_LABELS) từ bản nâng cấp hiệu năng
+// trước — không liên quan gì tới 2 thay đổi trên, vẫn cần cho bản đồ hàng chục nghìn thửa.
 const GPMB_MAX_VISIBLE_LABELS = 400;
-const GPMB_LABEL_AREA_RATIO = 0.70;  // nhãn nhắm tới diện tích ~70% diện tích thửa (Minh xác nhận)
+const GPMB_LABEL_AREA_RATIO = 0.50;  // nhãn nhắm tới diện tích ~50% diện tích thửa (Minh xác nhận, giảm từ 70%)
 const GPMB_LABEL_MAX_AREA_M2 = 1000; // trần tuyệt đối: nhãn to nhất cũng không vượt quá thửa 1000m²
 const GPMB_LABEL_MIN_W_M = 1.5, GPMB_LABEL_MIN_H_M = 1; // sàn tối thiểu để nhãn thửa siêu nhỏ vẫn hiện được (dù chữ có thể bị cắt)
 const GPMB_LABEL_ASPECT = 1.35;      // tỷ lệ rộng:cao mặc định của khung nhãn (khớp bố cục tiêu đề + 3 dòng)
 const GPMB_LABEL_FIT_PAD = 0.88;     // chừa viền khi co nhãn vừa trong ranh giới thửa, không sát mép
-const GPMB_LABEL_VB_W = 200;         // đơn vị nội bộ viewBox SVG (không phải px màn hình) — xem CSS .gpmb-parcel-label
 let gpmbLabelData = [];      // {latlng, centroidVN:[x,y mét], outerRing:[[x,y mét]…], html, area} cho MỌI thửa đang bật nhãn
-let gpmbLabelLayer = null;   // L.layerGroup chứa các L.svgOverlay nhãn đang tồn tại (subset của gpmbLabelData)
+let gpmbLabelLayer = null;   // L.layerGroup chứa các L.marker nhãn đang tồn tại (subset của gpmbLabelData)
 let gpmbLabelRefreshTimer = null;
-let gpmbLabelKtt = null;     // Kinh tuyến trục của lần render gần nhất — cần để quy đổi lại mét→lon/lat khi dựng overlay
+let gpmbLabelKtt = null;     // Kinh tuyến trục của lần render gần nhất — cần để quy đổi lại mét→lon/lat khi dựng nhãn
 
-// Tính kích thước khung nhãn theo MÉT THỰC: diện tích mục tiêu = min(diện tích thửa×70%, 1000m²), suy ra
-// rộng/cao theo GPMB_LABEL_ASPECT, rồi co lại (giữ tỷ lệ) nếu vượt quá bbox thực của ranh giới thửa —
-// đúng yêu cầu "thửa to thì nhãn to, thửa nhỏ thì nhãn nhỏ, nhưng luôn nằm trong ranh giới thửa".
-function computeGpmbLabelBoxMeters(areaM2, outerRing) {
+// Khoảng cách từ 1 điểm tới 1 đoạn thẳng (dùng để tìm cạnh gần tâm thửa nhất) — hình học phẳng chuẩn.
+function pointToSegmentDist(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  let t = lenSq > 0 ? ((px - x1) * dx + (py - y1) * dy) / lenSq : 0;
+  t = Math.max(0, Math.min(1, t));
+  const cx = x1 + t * dx, cy = y1 + t * dy;
+  return Math.hypot(px - cx, py - cy);
+}
+// Khoảng cách NGẮN NHẤT từ điểm (cx,cy) tới bất kỳ cạnh nào của đa giác ring — dùng làm bán kính "đường
+// tròn nội tiếp gần đúng" quanh tâm thửa: mọi điểm trong đường tròn này chắc chắn còn nằm trong thửa (với
+// đa giác lồi; với đa giác lõm vẫn là ước lượng an toàn hợp lý), KHÔNG phụ thuộc thửa nghiêng theo hướng
+// nào — khắc phục lỗi tràn viền của cách tính bbox theo trục X/Y cũ với thửa xéo.
+function minDistToRingEdges(cx, cy, ring) {
+  if (!ring || ring.length < 2) return null;
+  let minD = Infinity;
+  for (let i = 0; i < ring.length; i++) {
+    const p1 = ring[i], p2 = ring[(i + 1) % ring.length];
+    if (!p1 || !p2) continue;
+    const d = pointToSegmentDist(cx, cy, p1[0], p1[1], p2[0], p2[1]);
+    if (d < minD) minD = d;
+  }
+  return isFinite(minD) ? minD : null;
+}
+
+// Tính kích thước khung nhãn theo MÉT THỰC: diện tích mục tiêu = min(diện tích thửa×50%, 1000m²), suy ra
+// rộng/cao theo GPMB_LABEL_ASPECT, rồi co lại (giữ tỷ lệ) nếu đường CHÉO của khung vượt quá đường kính
+// đường tròn nội tiếp gần đúng quanh tâm thửa (minDistToRingEdges×2) — đúng yêu cầu "thửa to thì nhãn to,
+// thửa nhỏ thì nhãn nhỏ, nhưng luôn nằm trong ranh giới thửa" kể cả khi thửa bị xéo/nghiêng.
+function computeGpmbLabelBoxMeters(areaM2, centroidVN, outerRing) {
   const targetArea = Math.min((areaM2 || 0) * GPMB_LABEL_AREA_RATIO, GPMB_LABEL_MAX_AREA_M2);
   if (!(targetArea > 0)) return null;
   let w = Math.sqrt(targetArea * GPMB_LABEL_ASPECT);
   let h = targetArea / w;
-  const bb = outerRing && outerRing.length >= 3 ? ptsBbox(outerRing) : null; // vòng lặp, không spread — xem chú thích ptsBbox
-  if (bb) {
-    const maxW = (bb.maxX - bb.minX) * GPMB_LABEL_FIT_PAD;
-    const maxH = (bb.maxY - bb.minY) * GPMB_LABEL_FIT_PAD;
-    if (maxW > 0 && maxH > 0) {
-      const factor = Math.min(1, maxW / w, maxH / h);
-      if (factor < 1) { w *= factor; h *= factor; }
+  const r = centroidVN && outerRing && outerRing.length >= 3 ? minDistToRingEdges(centroidVN[0], centroidVN[1], outerRing) : null;
+  if (r != null && r > 0) {
+    const diag = Math.hypot(w, h);
+    const maxDiag = 2 * r * GPMB_LABEL_FIT_PAD;
+    if (diag > maxDiag) {
+      const factor = maxDiag / diag;
+      w *= factor; h *= factor;
     }
   }
   w = Math.max(w, GPMB_LABEL_MIN_W_M);
@@ -2865,28 +2900,23 @@ function computeGpmbLabelBoxMeters(areaM2, outerRing) {
   return { w, h };
 }
 
-// Dựng 1 L.svgOverlay cho nhãn thửa d — overlay gắn theo LatLngBounds thực nên Leaflet tự co giãn theo
-// zoom giống hệt L.polygon, không cần code ở đây tính lại khi người dùng zoom/kéo bản đồ.
-function buildGpmbLabelOverlay(d) {
-  const box = computeGpmbLabelBoxMeters(d.area, d.outerRing);
-  if (!box || !d.centroidVN) return null;
+// Dựng 1 L.marker cho nhãn thửa d — kích thước icon là PIXEL THỰC tại đúng zoom hiện tại (đo bằng
+// latLngToContainerPoint từ 2 góc hộp mét đã tính), set CỐ ĐỊNH khi tạo marker — không có JS nào co giãn
+// thêm sau đó (khác hẳn bản trước dùng L.svgOverlay, tự scale theo từng khung hình animation zoom).
+function buildGpmbLabelMarker(d) {
+  const box = computeGpmbLabelBoxMeters(d.area, d.centroidVN, d.outerRing);
+  if (!box || !d.centroidVN || !gpmbLeafletMap) return null;
   const [cx, cy] = d.centroidVN;
   const halfW = box.w / 2, halfH = box.h / 2;
   const sw = vn2000ToLonLat(cx - halfW, cy - halfH, gpmbLabelKtt);
   const ne = vn2000ToLonLat(cx + halfW, cy + halfH, gpmbLabelKtt);
   if (!sw || !ne) return null;
-  const bounds = L.latLngBounds([sw[1], sw[0]], [ne[1], ne[0]]);
-  const vbW = GPMB_LABEL_VB_W, vbH = Math.max(1, Math.round(vbW * (box.h / box.w)));
-  const svgStr = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${vbW} ${vbH}">`
-    + `<foreignObject x="0" y="0" width="${vbW}" height="${vbH}">`
-    + `<div xmlns="http://www.w3.org/1999/xhtml" style="width:100%;height:100%">${d.html}</div>`
-    + `</foreignObject></svg>`;
-  let svgEl;
-  try {
-    svgEl = new DOMParser().parseFromString(svgStr, 'image/svg+xml').documentElement;
-    if (!svgEl || svgEl.nodeName === 'parsererror') return null;
-  } catch (e) { return null; }
-  return L.svgOverlay(svgEl, bounds, { interactive: false, className: 'gpmb-parcel-label-overlay' });
+  const pSw = gpmbLeafletMap.latLngToContainerPoint([sw[1], sw[0]]);
+  const pNe = gpmbLeafletMap.latLngToContainerPoint([ne[1], ne[0]]);
+  const pxW = Math.max(1, Math.round(Math.abs(pNe.x - pSw.x)));
+  const pxH = Math.max(1, Math.round(Math.abs(pSw.y - pNe.y)));
+  const icon = L.divIcon({ className: 'gpmb-parcel-label-anchor', html: d.html, iconSize: [pxW, pxH], iconAnchor: [pxW / 2, pxH / 2] });
+  return L.marker(d.latlng, { icon, interactive: false });
 }
 
 function refreshGpmbVisibleLabels() {
@@ -2901,8 +2931,8 @@ function refreshGpmbVisibleLabels() {
     inView = inView.slice().sort((a, b) => (b.area || 0) - (a.area || 0)).slice(0, GPMB_MAX_VISIBLE_LABELS);
   }
   inView.forEach(d => {
-    const overlay = buildGpmbLabelOverlay(d);
-    if (overlay) gpmbLabelLayer.addLayer(overlay);
+    const marker = buildGpmbLabelMarker(d);
+    if (marker) gpmbLabelLayer.addLayer(marker);
   });
 }
 
@@ -3009,7 +3039,7 @@ function renderGpmbLeafletMap(withGeo, ktt, fitView) {
   }
   if (gpmbLeafletLayer) { gpmbLeafletMap.removeLayer(gpmbLeafletLayer); gpmbLeafletLayer = null; }
   gpmbLabelData = [];
-  gpmbLabelKtt = ktt; // ghi nhớ để refreshGpmbVisibleLabels/buildGpmbLabelOverlay quy đổi lại mét→lon/lat khi dựng overlay theo khung nhìn
+  gpmbLabelKtt = ktt; // ghi nhớ để refreshGpmbVisibleLabels/buildGpmbLabelMarker quy đổi lại mét→lon/lat khi dựng nhãn theo khung nhìn
   if (gpmbLabelLayer) gpmbLabelLayer.clearLayers();
 
   // Bản đồ nền (basemap) đã được gắn cố định vào gpmbLeafletMap ở lần khởi tạo (theo cài đặt của tab
@@ -3041,9 +3071,9 @@ function renderGpmbLeafletMap(withGeo, ktt, fitView) {
       layers.push(poly);
     });
     // Nút 🏷️ riêng của mảnh này đang tắt (độc lập với 👁 hiển thị mảnh) — vẫn vẽ ranh giới thửa như
-    // bình thường ở trên, chỉ bỏ qua nhãn chữ. Nhãn KHÔNG tạo overlay ngay tại đây nữa (xem chú thích
+    // bình thường ở trên, chỉ bỏ qua nhãn chữ. Nhãn KHÔNG tạo marker ngay tại đây nữa (xem chú thích
     // hệ nhãn theo khung nhìn phía trên) — chỉ lưu dữ liệu (tâm + ranh ngoài THEO MÉT, chưa quy đổi),
-    // overlay thật do refreshGpmbVisibleLabels/buildGpmbLabelOverlay tạo, kể cả kích thước theo m².
+    // marker thật do refreshGpmbVisibleLabels/buildGpmbLabelMarker tạo, kể cả kích thước theo m².
     if (showLabel !== false && outerRing && outerRing.length >= 3) {
       const centroidVN = polygonCentroid(outerRing);
       const ll = centroidVN && vn2000ToLonLat(centroidVN[0], centroidVN[1], ktt);
