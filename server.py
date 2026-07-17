@@ -1082,6 +1082,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
         # BT API — GET
         if path == '/api/bt/projects':
             self.api_bt_projects_list(); return
+        if path == '/api/bt/projects/export':
+            self.api_bt_projects_export(); return
+        if path == '/api/bt/projects/template':
+            self.api_bt_projects_template(); return
         if path == '/api/bt/status-config':
             self.api_bt_status_config_list(); return
         m = re.match(r'^/api/bt/projects/(\d+)/stats$', path)
@@ -1101,6 +1105,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_bt_export(int(m.group(1))); return
         if path == '/api/bt/parties':
             self.api_bt_parties_list(qs); return
+        if path == '/api/bt/parties/export':
+            self.api_bt_parties_export(); return
+        if path == '/api/bt/parties/template':
+            self.api_bt_parties_template(); return
         m = re.match(r'^/api/bt/parties/(\d+)/members$', path)
         if m:
             self.api_bt_members_list(int(m.group(1))); return
@@ -1110,6 +1118,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.api_bt_gpmb_template(); return
         if path == '/api/bt/gpmb-geojson-template':
             self.api_bt_gpmb_geojson_template(); return
+        m = re.match(r'^/api/bt/projects/(\d+)/parcels/export$', path)
+        if m:
+            self.api_bt_parcels_export(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/parcels/template$', path)
+        if m:
+            self.api_bt_parcels_template(int(m.group(1))); return
         m = re.match(r'^/api/bt/projects/(\d+)/parcels$', path)
         if m:
             self.api_bt_parcels_list(int(m.group(1)), qs); return
@@ -1124,12 +1138,24 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/map-files/(\d+)/download$', path)
         if m:
             self.api_bt_map_files_download(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/assets/export$', path)
+        if m:
+            self.api_bt_assets_export(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/assets/template$', path)
+        if m:
+            self.api_bt_assets_template(int(m.group(1))); return
         m = re.match(r'^/api/bt/projects/(\d+)/assets$', path)
         if m:
             self.api_bt_assets_list(int(m.group(1)), qs); return
         m = re.match(r'^/api/bt/assets/(\d+)$', path)
         if m:
             self.api_bt_asset_detail(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/dossiers/export$', path)
+        if m:
+            self.api_bt_dossiers_export(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/dossiers/template$', path)
+        if m:
+            self.api_bt_dossiers_template(int(m.group(1))); return
         m = re.match(r'^/api/bt/projects/(\d+)/dossiers$', path)
         if m:
             self.api_bt_dossiers_list(int(m.group(1)), qs); return
@@ -1156,6 +1182,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             '/api/bt/projects':              self.api_bt_projects_create,
             '/api/bt/status-config':         self.api_bt_status_config_create,
             '/api/bt/parties':               self.api_bt_parties_create,
+            '/api/bt/parties/import':        self.api_bt_parties_import,
+            '/api/bt/projects/import':       self.api_bt_projects_import,
             '/api/bt/maps':                   self.api_bt_maps_create,
             '/api/manager/backups/run':      self.api_manager_backup_run,
         }
@@ -1171,6 +1199,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/parties/(\d+)/members$', path)
         if m:
             self.api_bt_members_create(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/parcels/import$', path)
+        if m:
+            self.api_bt_parcels_import(int(m.group(1))); return
         m = re.match(r'^/api/bt/projects/(\d+)/parcels$', path)
         if m:
             self.api_bt_parcels_create(int(m.group(1))); return
@@ -1190,9 +1221,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/maps/(\d+)/files$', path)
         if m:
             self.api_bt_map_files_upload(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/assets/import$', path)
+        if m:
+            self.api_bt_assets_import(int(m.group(1))); return
         m = re.match(r'^/api/bt/projects/(\d+)/assets$', path)
         if m:
             self.api_bt_assets_create(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/dossiers/import$', path)
+        if m:
+            self.api_bt_dossiers_import(int(m.group(1))); return
         m = re.match(r'^/api/bt/projects/(\d+)/dossiers$', path)
         if m:
             self.api_bt_dossiers_create(int(m.group(1))); return
@@ -2710,6 +2747,126 @@ class Handler(http.server.BaseHTTPRequestHandler):
     # BỒI THƯỜNG, HỖ TRỢ — API
     # ══════════════════════════════════════════════════════════════════
 
+    # ── BT v2: XUẤT/NHẬP EXCEL DÙNG CHUNG ────────────────────────────
+    # Áp dụng cho Chủ thể+Nhân khẩu, Thửa đất (phi không gian), Tài sản, Dự án, Hồ sơ Hộ+Quyết định —
+    # theo yêu cầu của Minh (rà soát thấy Bản đồ và Hồ sơ (cũ)/bt_records ĐÃ có sẵn Import/Xuất riêng
+    # nên 2 CSDL đó được bỏ qua, không đụng tới, xem thiet_ke_csdl_boi_thuong.md). Chỉ là các hàm tiện
+    # ích dựng/đọc file .xlsx dùng chung — mỗi module vẫn tự viết hàm export/import/template riêng vì
+    # cấu trúc cột và khoá đối chiếu trùng khác nhau hoàn toàn giữa các bảng (đã cân nhắc 1 hệ thống
+    # khai báo cột kiểu config-driven chung nhưng bỏ vì Chủ thể+Nhân khẩu và Hồ sơ Hộ+Quyết định là
+    # quan hệ cha-con 2 sheet, Thửa đất chỉ UPDATE không CREATE — quá khác nhau để gộp 1 khuôn mẫu mà
+    # không làm code khó đọc hơn).
+    def _new_xlsx_workbook(self):
+        import openpyxl
+        wb = openpyxl.Workbook()
+        wb.remove(wb.active)  # bỏ sheet mặc định trống — mỗi module tự tạo sheet theo tên riêng
+        return wb
+
+    def _xlsx_write_sheet(self, ws, headers, rows):
+        from openpyxl.styles import Font, PatternFill, Alignment
+        hdr_fill = PatternFill('solid', start_color='1B2A4A')
+        hdr_font = Font(bold=True, color='FFFFFF', name='Arial', size=10)
+        for ci, h in enumerate(headers, 1):
+            c = ws.cell(row=1, column=ci, value=h)
+            c.fill = hdr_fill
+            c.font = hdr_font
+            c.alignment = Alignment(horizontal='center', wrap_text=True)
+        for ri, row in enumerate(rows, 2):
+            for ci, v in enumerate(row, 1):
+                ws.cell(row=ri, column=ci, value=v)
+        for ci in range(1, len(headers) + 1):
+            letter = chr(64 + ci) if ci <= 26 else 'AA'  # đủ dùng vì mọi sheet ở đây đều <26 cột
+            ws.column_dimensions[letter].width = 20
+        return ws
+
+    def _xlsx_write_guide_sheet(self, ws, rows):
+        """rows: list các cặp (cột/khái niệm, giải thích) — dùng cho sheet 'Hướng dẫn' ở các file mẫu."""
+        from openpyxl.styles import Font, Alignment
+        for ri, (a, b) in enumerate(rows, 1):
+            ws.cell(row=ri, column=1, value=a).font = Font(bold=(ri == 1))
+            ws.cell(row=ri, column=2, value=b).alignment = Alignment(wrap_text=True, vertical='top')
+        ws.column_dimensions['A'].width = 30
+        ws.column_dimensions['B'].width = 90
+
+    def _send_xlsx_response(self, wb, filename):
+        buf = io.BytesIO()
+        wb.save(buf)
+        buf.seek(0)
+        data = buf.getvalue()
+        safe_name = filename.encode('ascii', errors='replace').decode()
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+        self.send_header('Content-Disposition', f'attachment; filename="{safe_name}"')
+        self.send_header('Content-Length', str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def _read_xlsx_upload(self):
+        """Đọc file .xlsx từ multipart request hiện tại (self.rfile). Trả về (fields, sheets, None) khi
+        thành công — sheets là {tên_sheet_viết_thường: (header_row, data_rows)} cho MỌI sheet trong file
+        (không chỉ sheet active), vì nhiều module cần đọc đồng thời 2 sheet cha-con (VD Chủ thể + Nhân
+        khẩu). Khi lỗi trả về (fields, None, thông_báo_lỗi) — caller tự gửi self.send_json(...,400)."""
+        import openpyxl
+        ct = self.headers.get('Content-Type', '')
+        if 'multipart/form-data' not in ct:
+            return {}, None, 'multipart required'
+        fields, files = self.read_multipart()
+        if 'file' not in files:
+            return fields, None, 'Thiếu file'
+        fitem = files['file']
+        file_bytes = fitem.file.read()
+        if file_bytes[:8] == b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1':
+            return fields, None, ('File này đang ở định dạng Excel cũ (.xls). Hệ thống chỉ đọc được .xlsx — '
+                                   'mở file bằng Excel rồi "Save As" sang định dạng .xlsx, sau đó import lại.')
+        try:
+            wb = openpyxl.load_workbook(io.BytesIO(file_bytes), data_only=True)
+        except Exception as e:
+            return fields, None, f'Không đọc được file: {e}'
+        sheets = {}
+        for ws in wb.worksheets:
+            raw_rows = list(ws.iter_rows(values_only=True))
+            if not raw_rows:
+                continue
+            header = [str(c).strip() if c is not None else '' for c in raw_rows[0]]
+            sheets[ws.title.strip().lower()] = (header, raw_rows[1:])
+        return fields, sheets, None
+
+    def _xlsx_find_col(self, header_row, keywords):
+        """Tìm cột đầu tiên có tiêu đề chứa 1 trong các từ khoá (so khớp không phân biệt hoa/thường)."""
+        for i, h in enumerate(header_row):
+            hl = (h or '').strip().lower()
+            for kw in keywords:
+                if kw in hl:
+                    return i
+        return None
+
+    def _xlsx_cell(self, row, idx):
+        if idx is None or idx >= len(row):
+            return None
+        return row[idx]
+
+    def _xlsx_cell_str(self, row, idx):
+        v = self._xlsx_cell(row, idx)
+        return '' if v is None else str(v).strip()
+
+    def _xlsx_cell_int(self, row, idx):
+        v = self._xlsx_cell(row, idx)
+        if v in (None, ''):
+            return None
+        try:
+            return int(float(v))
+        except (TypeError, ValueError):
+            return None
+
+    def _xlsx_cell_num(self, row, idx, default=0):
+        v = self._xlsx_cell(row, idx)
+        if v in (None, ''):
+            return default
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return default
+
     # ── BT v2: CHỦ THỂ & NHÂN KHẨU ──────────────────────────────────
     def api_bt_parties_list(self, qs):
         sess = self.require_auth()
@@ -2831,6 +2988,263 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.execute('DELETE FROM bt_household_members WHERE id=?', (mid,))
             db.commit()
         self.send_json({'ok': True})
+
+    def api_bt_parties_export(self):
+        """Xuất TOÀN BỘ Chủ thể + Nhân khẩu ra Excel (2 sheet) — Chủ thể không thuộc dự án cụ thể nào
+        (bảng bt_parties không có project_id) nên luôn xuất toàn hệ thống, không lọc theo dự án đang mở
+        (đã thống nhất với Minh — khác với Thửa đất/Tài sản/Hồ sơ Hộ vốn theo dự án)."""
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            parties = db.execute('SELECT * FROM bt_parties ORDER BY id').fetchall()
+            members = db.execute(
+                'SELECT m.*, p.so_cccd as chu_the_cccd, p.ho_ten as chu_the_ho_ten '
+                'FROM bt_household_members m JOIN bt_parties p ON p.id=m.chu_the_id ORDER BY m.id'
+            ).fetchall()
+        wb = self._new_xlsx_workbook()
+        self._xlsx_write_sheet(
+            wb.create_sheet('Chủ thể'),
+            ['ID', 'Loại chủ thể', 'Họ tên', 'Giới tính', 'Ngày sinh', 'Số CCCD', 'Ngày cấp CCCD',
+             'Nơi cấp CCCD', 'Địa chỉ thường trú', 'Số điện thoại', 'Ghi chú'],
+            [[p['id'], p['loai_chu_the'], p['ho_ten'], p['gioi_tinh'], p['ngay_sinh'], p['so_cccd'],
+              p['ngay_cap_cccd'], p['noi_cap_cccd'], p['dia_chi_thuong_tru'], p['so_dien_thoai'], p['ghi_chu']]
+             for p in parties]
+        )
+        self._xlsx_write_sheet(
+            wb.create_sheet('Nhân khẩu'),
+            ['ID', 'Số CCCD chủ thể', 'Họ tên chủ thể (tham khảo)', 'Họ tên', 'Quan hệ với chủ hộ',
+             'Ngày sinh', 'Số CCCD', 'Ghi chú'],
+            [[m['id'], m['chu_the_cccd'], m['chu_the_ho_ten'], m['ho_ten'], m['quan_he_voi_chu_ho'],
+              m['ngay_sinh'], m['so_cccd'], m['ghi_chu']]
+             for m in members]
+        )
+        self._send_xlsx_response(wb, 'chu-the-nhan-khau.xlsx')
+
+    def api_bt_parties_template(self):
+        sess = self.require_auth()
+        if not sess: return
+        wb = self._new_xlsx_workbook()
+        self._xlsx_write_sheet(
+            wb.create_sheet('Chủ thể'),
+            ['ID (để trống nếu thêm mới)', 'Loại chủ thể', 'Họ tên', 'Giới tính', 'Ngày sinh (yyyy-mm-dd)',
+             'Số CCCD', 'Ngày cấp CCCD', 'Nơi cấp CCCD', 'Địa chỉ thường trú', 'Số điện thoại', 'Ghi chú'],
+            [['', 'Cá nhân', 'Nguyễn Văn A', 'Nam', '1975-03-10', '001075012345', '2021-05-01',
+              'Cục Cảnh sát QLHC về TTXH', 'Thôn 1, xã ABC', '0912345678', ''],
+             ['', 'Hộ gia đình', 'Trần Thị B', 'Nữ', '1980-11-22', '001180054321', '2020-01-15',
+              'Cục Cảnh sát QLHC về TTXH', 'Thôn 2, xã ABC', '0987654321', '']]
+        )
+        self._xlsx_write_sheet(
+            wb.create_sheet('Nhân khẩu'),
+            ['ID (để trống nếu thêm mới)', 'Số CCCD chủ thể', 'Họ tên chủ thể (tham khảo)', 'Họ tên',
+             'Quan hệ với chủ hộ', 'Ngày sinh (yyyy-mm-dd)', 'Số CCCD', 'Ghi chú'],
+            [['', '001075012345', 'Nguyễn Văn A', 'Nguyễn Văn C', 'Con', '2005-06-01', '', '']]
+        )
+        self._xlsx_write_guide_sheet(wb.create_sheet('Hướng dẫn'), [
+            ('Cột', 'Ý nghĩa'),
+            ('ID', 'Để trống khi thêm mới. Điền đúng ID (xem cột ID khi Xuất Excel) nếu muốn CẬP NHẬT '
+                   'chủ thể/nhân khẩu đã có sẵn.'),
+            ('Số CCCD (sheet Chủ thể)', 'Nếu trùng với 1 chủ thể đã có sẵn (và không điền ID), hệ thống '
+                   'sẽ hỏi xác nhận trước khi ghi đè — không tự động ghi đè.'),
+            ('Số CCCD chủ thể (sheet Nhân khẩu)', 'BẮT BUỘC — dùng để xác định nhân khẩu này thuộc chủ '
+                   'thể nào. Phải khớp đúng Số CCCD của 1 dòng trong sheet Chủ thể (trong cùng file này, '
+                   'hoặc đã có sẵn trong hệ thống). "Họ tên chủ thể" chỉ để tham khảo, không dùng để đối chiếu.'),
+            ('Ngày', 'Định dạng yyyy-mm-dd (VD 1975-03-10). Có thể để trống.'),
+        ])
+        self._send_xlsx_response(wb, 'mau-import-chu-the-nhan-khau.xlsx')
+
+    def api_bt_parties_import(self):
+        """Import Chủ thể + Nhân khẩu từ file Excel 2 sheet ('Chủ thể' + 'Nhân khẩu', không phân biệt
+        hoa/thường). Đối chiếu trùng: có ID → luôn là CẬP NHẬT (không cần xác nhận, vì điền ID = ý định
+        rõ ràng của người dùng). Không có ID mà Số CCCD trùng bản ghi đã có → cần xác nhận ghi đè
+        (confirm_overwrite=1) trước khi áp dụng, không âm thầm ghi đè — theo đúng quy tắc GPMB import đã
+        có. Nhân khẩu bắt buộc có "Số CCCD chủ thể" khớp với 1 chủ thể (đã có sẵn, HOẶC vừa được khai ở
+        cùng sheet Chủ thể trong CÙNG file này) — nếu không tìm thấy, dòng đó bị bỏ qua và báo trong kết
+        quả trả về (skipped_members), không chặn toàn bộ import."""
+        sess = self.require_auth()
+        if not sess: return
+        fields, sheets, err = self._read_xlsx_upload()
+        if err:
+            self.send_json({'error': err}, 400); return
+        confirm_overwrite = fields.get('confirm_overwrite', '') == '1'
+        party_sheet = sheets.get('chủ thể') or sheets.get('chu the')
+        member_sheet = sheets.get('nhân khẩu') or sheets.get('nhan khau')
+        if not party_sheet and not member_sheet:
+            self.send_json({'error': 'File cần có sheet "Chủ thể" và/hoặc "Nhân khẩu" đúng tên như file mẫu.'}, 400)
+            return
+
+        with get_db() as db:
+            existing_parties = db.execute('SELECT id, so_cccd FROM bt_parties').fetchall()
+            cccd_to_id = {p['so_cccd'].strip().lower(): p['id'] for p in existing_parties if (p['so_cccd'] or '').strip()}
+            id_set = {p['id'] for p in existing_parties}
+
+            conflicts = []
+            party_rows = []
+            if party_sheet:
+                header, data_rows = party_sheet
+                COL = {
+                    'id': self._xlsx_find_col(header, ['id']),
+                    'loai': self._xlsx_find_col(header, ['loại chủ thể', 'loai chu the']),
+                    'ho_ten': self._xlsx_find_col(header, ['họ tên', 'ho ten']),
+                    'gioi_tinh': self._xlsx_find_col(header, ['giới tính', 'gioi tinh']),
+                    'ngay_sinh': self._xlsx_find_col(header, ['ngày sinh', 'ngay sinh']),
+                    'cccd': self._xlsx_find_col(header, ['số cccd', 'so cccd', 'cccd']),
+                    'ngay_cap': self._xlsx_find_col(header, ['ngày cấp', 'ngay cap']),
+                    'noi_cap': self._xlsx_find_col(header, ['nơi cấp', 'noi cap']),
+                    'dia_chi': self._xlsx_find_col(header, ['địa chỉ', 'dia chi']),
+                    'sdt': self._xlsx_find_col(header, ['điện thoại', 'dien thoai']),
+                    'ghi_chu': self._xlsx_find_col(header, ['ghi chú', 'ghi chu']),
+                }
+                if COL['ho_ten'] is None:
+                    self.send_json({'error': 'Sheet "Chủ thể" thiếu cột Họ tên.'}, 400); return
+                for row in data_rows:
+                    if not any(row):
+                        continue
+                    ho_ten = self._xlsx_cell_str(row, COL['ho_ten'])
+                    if not ho_ten:
+                        continue
+                    row_id = self._xlsx_cell_int(row, COL['id'])
+                    cccd = self._xlsx_cell_str(row, COL['cccd'])
+                    data = {
+                        'loai_chu_the': self._xlsx_cell_str(row, COL['loai']) or 'Cá nhân',
+                        'ho_ten': ho_ten,
+                        'gioi_tinh': self._xlsx_cell_str(row, COL['gioi_tinh']),
+                        'ngay_sinh': self._xlsx_cell_str(row, COL['ngay_sinh']) or None,
+                        'so_cccd': cccd,
+                        'ngay_cap_cccd': self._xlsx_cell_str(row, COL['ngay_cap']) or None,
+                        'noi_cap_cccd': self._xlsx_cell_str(row, COL['noi_cap']),
+                        'dia_chi_thuong_tru': self._xlsx_cell_str(row, COL['dia_chi']),
+                        'so_dien_thoai': self._xlsx_cell_str(row, COL['sdt']),
+                        'ghi_chu': self._xlsx_cell_str(row, COL['ghi_chu']),
+                    }
+                    target_id, is_conflict = None, False
+                    if row_id is not None and row_id in id_set:
+                        target_id = row_id
+                    elif cccd and cccd.lower() in cccd_to_id:
+                        target_id = cccd_to_id[cccd.lower()]
+                        is_conflict = True
+                        conflicts.append(f'Chủ thể: {ho_ten} (CCCD {cccd})')
+                    party_rows.append({'target_id': target_id, 'data': data, 'cccd': cccd})
+
+            member_rows = []
+            skipped_no_party = []
+            if member_sheet:
+                header, data_rows = member_sheet
+                COL = {
+                    'id': self._xlsx_find_col(header, ['id']),
+                    'cccd_chu_the': self._xlsx_find_col(header, ['cccd chủ thể', 'cccd chu the']),
+                    'ho_ten': self._xlsx_find_col(header, ['họ tên', 'ho ten']),
+                    'quan_he': self._xlsx_find_col(header, ['quan hệ', 'quan he']),
+                    'ngay_sinh': self._xlsx_find_col(header, ['ngày sinh', 'ngay sinh']),
+                    'cccd': self._xlsx_find_col(header, ['số cccd', 'so cccd', 'cccd']),
+                    'ghi_chu': self._xlsx_find_col(header, ['ghi chú', 'ghi chu']),
+                }
+                if COL['cccd_chu_the'] is None:
+                    self.send_json({'error': 'Sheet "Nhân khẩu" thiếu cột "Số CCCD chủ thể" (khoá liên kết).'}, 400); return
+                if COL['ho_ten'] is None:
+                    self.send_json({'error': 'Sheet "Nhân khẩu" thiếu cột Họ tên.'}, 400); return
+                existing_members = db.execute('SELECT id, chu_the_id, so_cccd FROM bt_household_members').fetchall()
+                member_id_set = {m['id'] for m in existing_members}
+                member_cccd_to_id = {}
+                for m in existing_members:
+                    if (m['so_cccd'] or '').strip():
+                        member_cccd_to_id[(m['chu_the_id'], m['so_cccd'].strip().lower())] = m['id']
+
+                for row in data_rows:
+                    if not any(row):
+                        continue
+                    ho_ten = self._xlsx_cell_str(row, COL['ho_ten'])
+                    if not ho_ten:
+                        continue
+                    cccd_chu_the = self._xlsx_cell_str(row, COL['cccd_chu_the'])
+                    if not cccd_chu_the:
+                        skipped_no_party.append(ho_ten); continue
+                    key = cccd_chu_the.lower()
+                    parent_id = cccd_to_id.get(key)
+                    parent_is_new = False
+                    if parent_id is None:
+                        match = next((pr for pr in party_rows if pr['cccd'] and pr['cccd'].lower() == key), None)
+                        if match:
+                            parent_is_new = True
+                        else:
+                            skipped_no_party.append(ho_ten); continue
+                    row_id = self._xlsx_cell_int(row, COL['id'])
+                    cccd = self._xlsx_cell_str(row, COL['cccd'])
+                    data = {
+                        'ho_ten': ho_ten,
+                        'quan_he_voi_chu_ho': self._xlsx_cell_str(row, COL['quan_he']),
+                        'ngay_sinh': self._xlsx_cell_str(row, COL['ngay_sinh']) or None,
+                        'so_cccd': cccd,
+                        'ghi_chu': self._xlsx_cell_str(row, COL['ghi_chu']),
+                    }
+                    target_id = None
+                    if row_id is not None and row_id in member_id_set:
+                        target_id = row_id
+                    elif not parent_is_new and cccd and (parent_id, cccd.lower()) in member_cccd_to_id:
+                        target_id = member_cccd_to_id[(parent_id, cccd.lower())]
+                        conflicts.append(f'Nhân khẩu: {ho_ten} (CCCD {cccd})')
+                    member_rows.append({
+                        'target_id': target_id, 'data': data,
+                        'parent_cccd_key': key, 'parent_id': None if parent_is_new else parent_id,
+                    })
+
+            if conflicts and not confirm_overwrite:
+                self.send_json({'conflict': True, 'conflicts': conflicts,
+                                 'total': len(party_rows) + len(member_rows)}, 409)
+                return
+
+            created_parties, updated_parties = 0, 0
+            cccd_key_to_real_id = dict(cccd_to_id)
+            for pr in party_rows:
+                d = pr['data']
+                if pr['target_id']:
+                    db.execute(
+                        'UPDATE bt_parties SET loai_chu_the=?, ho_ten=?, gioi_tinh=?, ngay_sinh=?, so_cccd=?, '
+                        'ngay_cap_cccd=?, noi_cap_cccd=?, dia_chi_thuong_tru=?, so_dien_thoai=?, ghi_chu=? WHERE id=?',
+                        (d['loai_chu_the'], d['ho_ten'], d['gioi_tinh'], d['ngay_sinh'], d['so_cccd'],
+                         d['ngay_cap_cccd'], d['noi_cap_cccd'], d['dia_chi_thuong_tru'], d['so_dien_thoai'],
+                         d['ghi_chu'], pr['target_id'])
+                    )
+                    real_id = pr['target_id']
+                    updated_parties += 1
+                else:
+                    cur = db.execute(
+                        'INSERT INTO bt_parties (loai_chu_the, ho_ten, gioi_tinh, ngay_sinh, so_cccd, '
+                        'ngay_cap_cccd, noi_cap_cccd, dia_chi_thuong_tru, so_dien_thoai, ghi_chu) '
+                        'VALUES (?,?,?,?,?,?,?,?,?,?)',
+                        (d['loai_chu_the'], d['ho_ten'], d['gioi_tinh'], d['ngay_sinh'], d['so_cccd'],
+                         d['ngay_cap_cccd'], d['noi_cap_cccd'], d['dia_chi_thuong_tru'], d['so_dien_thoai'], d['ghi_chu'])
+                    )
+                    real_id = cur.lastrowid
+                    created_parties += 1
+                if pr['cccd']:
+                    cccd_key_to_real_id[pr['cccd'].lower()] = real_id
+
+            created_members, updated_members, skipped_members = 0, 0, len(skipped_no_party)
+            for mr in member_rows:
+                parent_id = mr['parent_id'] or cccd_key_to_real_id.get(mr['parent_cccd_key'])
+                if not parent_id:
+                    skipped_members += 1
+                    continue
+                d = mr['data']
+                if mr['target_id']:
+                    db.execute(
+                        'UPDATE bt_household_members SET ho_ten=?, quan_he_voi_chu_ho=?, ngay_sinh=?, so_cccd=?, ghi_chu=? WHERE id=?',
+                        (d['ho_ten'], d['quan_he_voi_chu_ho'], d['ngay_sinh'], d['so_cccd'], d['ghi_chu'], mr['target_id'])
+                    )
+                    updated_members += 1
+                else:
+                    db.execute(
+                        'INSERT INTO bt_household_members (chu_the_id, ho_ten, quan_he_voi_chu_ho, ngay_sinh, so_cccd, ghi_chu) '
+                        'VALUES (?,?,?,?,?,?)',
+                        (parent_id, d['ho_ten'], d['quan_he_voi_chu_ho'], d['ngay_sinh'], d['so_cccd'], d['ghi_chu'])
+                    )
+                    created_members += 1
+            db.commit()
+        self.send_json({
+            'ok': True, 'created_parties': created_parties, 'updated_parties': updated_parties,
+            'created_members': created_members, 'updated_members': updated_members,
+            'skipped_members': skipped_members,
+        })
 
     # ── BT v2: THỬA ĐẤT (gốc + theo dự án + đồng sở hữu) ────────────
     def api_bt_parcel_master_search(self, qs):
@@ -2969,6 +3383,142 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.execute('DELETE FROM bt_parcels WHERE id=?', (parcel_id,))
             db.commit()
         self.send_json({'ok': True})
+
+    def api_bt_parcels_export(self, pid):
+        """Xuất Thửa đất của 1 dự án ra Excel — CHỈ các trường phi không gian (loại đất, nguồn gốc SD,
+        số GCN, ghi chú...). Tờ/Thửa/Xã/diện tích/chủ sử dụng chỉ xuất ra để THAM KHẢO/đối chiếu, không
+        chỉnh sửa được qua Import — Bản đồ GPMB là nguồn duy nhất sinh/sửa Tờ-Thửa-diện tích-chủ SD, xem
+        [[boi_thuong_schema_redesign]]."""
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT pl.*, (SELECT GROUP_CONCAT(pt.ho_ten, ', ') FROM bt_parcel_owners po "
+                ' JOIN bt_parties pt ON pt.id=po.chu_the_id WHERE po.parcel_id=pl.id) as chu_so_huu '
+                'FROM bt_parcels pl WHERE pl.project_id=? ORDER BY pl.xa, pl.so_to, pl.so_thua', (pid,)
+            ).fetchall()
+        wb = self._new_xlsx_workbook()
+        self._xlsx_write_sheet(
+            wb.create_sheet('Thửa đất'),
+            ['Tờ (đối chiếu, không sửa)', 'Thửa (đối chiếu, không sửa)', 'Xã (đối chiếu, không sửa)',
+             'Diện tích (m², đối chiếu, không sửa)', 'Chủ sử dụng (đối chiếu, không sửa)',
+             'Loại đất', 'Nguồn gốc sử dụng', 'Số GCN', 'Ngày cấp GCN', 'Ghi chú'],
+            [[r['so_to'], r['so_thua'], r['xa'], r['tong_dien_tich'], r['chu_so_huu'],
+              r['loai_dat'], r['nguon_goc_su_dung'], r['so_gcn'], r['ngay_cap_gcn'], r['ghi_chu']]
+             for r in rows]
+        )
+        self._send_xlsx_response(wb, 'thua-dat.xlsx')
+
+    def api_bt_parcels_template(self, pid):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            sample = db.execute(
+                'SELECT so_to, so_thua, xa FROM bt_parcels WHERE project_id=? ORDER BY id LIMIT 2', (pid,)
+            ).fetchall()
+        wb = self._new_xlsx_workbook()
+        rows = [[r['so_to'], r['so_thua'], r['xa'], '', '', '']  for r in sample] or \
+               [['1', '4', '', '', '', '']]
+        self._xlsx_write_sheet(
+            wb.create_sheet('Thửa đất'),
+            ['Tờ', 'Thửa', 'Xã', 'Loại đất', 'Nguồn gốc sử dụng', 'Số GCN', 'Ngày cấp GCN', 'Ghi chú'],
+            [r + ['', ''] for r in rows]
+        )
+        self._xlsx_write_guide_sheet(wb.create_sheet('Hướng dẫn'), [
+            ('Cột', 'Ý nghĩa'),
+            ('Tờ / Thửa / Xã', 'BẮT BUỘC, dùng để xác định CẬP NHẬT thửa đất nào — phải khớp đúng với 1 '
+                   'thửa đã có trong dự án (lấy từ Xuất Excel, hoặc xem tab Thửa đất). File này KHÔNG thể '
+                   'tạo thửa mới — Bản đồ GPMB mới là nơi duy nhất tạo thửa đất (vào tab 📐 Bản đồ, mảnh '
+                   'trích đo Bản đồ GPMB, để thêm thửa mới).'),
+            ('Loại đất / Nguồn gốc sử dụng / Số GCN / Ngày cấp GCN / Ghi chú',
+                   'Các trường ĐƯỢC PHÉP sửa qua Import — điền giá trị mới sẽ ghi đè giá trị cũ.'),
+            ('Nếu không tìm thấy Tờ+Thửa+Xã khớp', 'Dòng đó bị bỏ qua, không tạo thửa mới, và được báo '
+                   'lại trong kết quả sau khi import.'),
+        ])
+        self._send_xlsx_response(wb, 'mau-import-thua-dat.xlsx')
+
+    def api_bt_parcels_import(self, pid):
+        """Import (chỉ CẬP NHẬT, không tạo mới) các trường phi không gian của Thửa đất trong 1 dự án —
+        đối chiếu theo (Tờ, Thửa, Xã) để tìm đúng thửa đã có. Vì bản chất luôn là ghi đè dữ liệu đã có
+        (không có nhánh 'tạo mới' nào để so sánh), MỌI dòng khớp được đều cần xác nhận trước khi áp dụng
+        (confirm_overwrite=1) — nhất quán với quy tắc 'chặn + hỏi xác nhận ghi đè' đã áp dụng cho GPMB
+        import. Dòng không khớp thửa nào chỉ được báo lại (skipped), không chặn các dòng khớp khác."""
+        sess = self.require_auth()
+        if not sess: return
+        fields, sheets, err = self._read_xlsx_upload()
+        if err:
+            self.send_json({'error': err}, 400); return
+        confirm_overwrite = fields.get('confirm_overwrite', '') == '1'
+        sheet = sheets.get('thửa đất') or sheets.get('thua dat') or (list(sheets.values())[0] if sheets else None)
+        if not sheet:
+            self.send_json({'error': 'File rỗng hoặc không đọc được sheet nào.'}, 400); return
+        header, data_rows = sheet
+        COL = {
+            'so_to': self._xlsx_find_col(header, ['tờ', 'to']),
+            'so_thua': self._xlsx_find_col(header, ['thửa', 'thua']),
+            'xa': self._xlsx_find_col(header, ['xã', 'xa']),
+            'loai_dat': self._xlsx_find_col(header, ['loại đất', 'loai dat']),
+            'nguon_goc': self._xlsx_find_col(header, ['nguồn gốc', 'nguon goc']),
+            'so_gcn': self._xlsx_find_col(header, ['số gcn', 'so gcn', 'gcn']),
+            'ngay_cap_gcn': self._xlsx_find_col(header, ['ngày cấp', 'ngay cap']),
+            'ghi_chu': self._xlsx_find_col(header, ['ghi chú', 'ghi chu']),
+        }
+        if COL['so_to'] is None or COL['so_thua'] is None:
+            self.send_json({'error': 'Không tìm thấy cột Tờ / Thửa trong file. Vui lòng dùng đúng file mẫu.'}, 400)
+            return
+
+        with get_db() as db:
+            existing = db.execute('SELECT id, so_to, so_thua, xa FROM bt_parcels WHERE project_id=?', (pid,)).fetchall()
+            key_to_id = {}
+            for e in existing:
+                key_to_id[(str(e['so_to'] or '').strip().lower(), str(e['so_thua'] or '').strip().lower(),
+                           str(e['xa'] or '').strip().lower())] = e['id']
+
+            matched, unmatched = [], []
+            for row in data_rows:
+                if not any(row):
+                    continue
+                so_to = self._xlsx_cell_str(row, COL['so_to'])
+                so_thua = self._xlsx_cell_str(row, COL['so_thua'])
+                xa = self._xlsx_cell_str(row, COL['xa'])
+                if not so_to and not so_thua:
+                    continue
+                key = (so_to.lower(), so_thua.lower(), xa.lower())
+                target_id = key_to_id.get(key)
+                if target_id is None and not xa:
+                    # Không có cột Xã trong file (hoặc để trống) — thử khớp bỏ qua Xã nếu chỉ có đúng 1
+                    # thửa cùng Tờ+Thửa trong dự án (an toàn khi dự án chỉ có 1 xã hoặc Tờ/Thửa không lặp).
+                    cands = [v for k, v in key_to_id.items() if k[0] == so_to.lower() and k[1] == so_thua.lower()]
+                    if len(cands) == 1:
+                        target_id = cands[0]
+                label = f'Tờ {so_to} - Thửa {so_thua}' + (f' (xã {xa})' if xa else '')
+                data = {
+                    'loai_dat': self._xlsx_cell_str(row, COL['loai_dat']),
+                    'nguon_goc_su_dung': self._xlsx_cell_str(row, COL['nguon_goc']),
+                    'so_gcn': self._xlsx_cell_str(row, COL['so_gcn']),
+                    'ngay_cap_gcn': self._xlsx_cell_str(row, COL['ngay_cap_gcn']) or None,
+                    'ghi_chu': self._xlsx_cell_str(row, COL['ghi_chu']),
+                }
+                if target_id:
+                    matched.append({'id': target_id, 'label': label, 'data': data})
+                else:
+                    unmatched.append(label)
+
+            if matched and not confirm_overwrite:
+                self.send_json({'conflict': True, 'conflicts': [m['label'] for m in matched],
+                                 'total': len(matched) + len(unmatched)}, 409)
+                return
+
+            updated = 0
+            for m in matched:
+                d = m['data']
+                db.execute(
+                    'UPDATE bt_parcels SET loai_dat=?, nguon_goc_su_dung=?, so_gcn=?, ngay_cap_gcn=?, ghi_chu=? WHERE id=?',
+                    (d['loai_dat'], d['nguon_goc_su_dung'], d['so_gcn'], d['ngay_cap_gcn'], d['ghi_chu'], m['id'])
+                )
+                updated += 1
+            db.commit()
+        self.send_json({'ok': True, 'updated': updated, 'skipped': unmatched})
 
     def api_bt_project_gpmb_status(self, pid):
         """Kiểm tra dự án đã có Bản đồ GPMB với ít nhất 1 thửa hay chưa — dùng để khoá/mở khoá các tab khác."""
@@ -4611,6 +5161,187 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.commit()
         self.send_json({'ok': True})
 
+    def api_bt_assets_export(self, pid):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            rows = db.execute(
+                'SELECT a.*, pt.ho_ten as chu_ten, pt.so_cccd as chu_cccd, '
+                "(SELECT GROUP_CONCAT(pl.so_to || '.' || pl.so_thua, ', ') "
+                ' FROM bt_asset_parcels ap2 JOIN bt_parcels pl ON pl.id=ap2.parcel_id '
+                ' WHERE ap2.asset_id=a.id) as thua_dat '
+                'FROM bt_assets a JOIN bt_asset_parcels ap ON ap.asset_id=a.id JOIN bt_parcels p ON p.id=ap.parcel_id '
+                'WHERE p.project_id=? GROUP BY a.id ORDER BY a.id', (pid,)
+            ).fetchall()
+        wb = self._new_xlsx_workbook()
+        self._xlsx_write_sheet(
+            wb.create_sheet('Tài sản'),
+            ['ID', 'Tờ.Thửa liên kết', 'Loại tài sản (nhóm)', 'Loại tài sản (cụ thể)',
+             'Số CCCD chủ tài sản', 'Họ tên chủ tài sản (tham khảo)', 'Đơn vị tính',
+             'Số lượng/khối lượng', 'Thời điểm hình thành', 'Tình trạng pháp lý',
+             'Ngày kiểm đếm', 'Người kiểm đếm', 'Ghi chú'],
+            [[r['id'], r['thua_dat'], r['loai_tai_san_nhom'], r['loai_tai_san_cu_the'],
+              r['chu_cccd'], r['chu_ten'], r['don_vi_tinh'], r['so_luong_khoi_luong'],
+              r['thoi_diem_hinh_thanh'], r['tinh_trang_phap_ly'], r['ngay_kiem_dem'],
+              r['nguoi_kiem_dem'], r['ghi_chu']]
+             for r in rows]
+        )
+        self._send_xlsx_response(wb, 'tai-san.xlsx')
+
+    def api_bt_assets_template(self, pid):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            sample = db.execute(
+                "SELECT so_to || '.' || so_thua as tt FROM bt_parcels WHERE project_id=? ORDER BY id LIMIT 1", (pid,)
+            ).fetchone()
+        thua_vi_du = sample['tt'] if sample else '1.4'
+        wb = self._new_xlsx_workbook()
+        self._xlsx_write_sheet(
+            wb.create_sheet('Tài sản'),
+            ['ID (để trống nếu thêm mới)', 'Tờ.Thửa liên kết', 'Loại tài sản (nhóm)', 'Loại tài sản (cụ thể)',
+             'Số CCCD chủ tài sản', 'Đơn vị tính', 'Số lượng/khối lượng', 'Thời điểm hình thành',
+             'Tình trạng pháp lý', 'Ngày kiểm đếm', 'Người kiểm đếm', 'Ghi chú'],
+            [['', thua_vi_du, 'Cây trồng', 'Xoài trên 5 năm tuổi', '', 'Cây', 12, '',
+              'Đúng quy định', '', '', '']]
+        )
+        self._xlsx_write_guide_sheet(wb.create_sheet('Hướng dẫn'), [
+            ('Cột', 'Ý nghĩa'),
+            ('ID', 'Để trống khi thêm mới. Điền ID (xem khi Xuất Excel) nếu muốn CẬP NHẬT tài sản đã có.'),
+            ('Tờ.Thửa liên kết', 'BẮT BUỘC — 1 hoặc nhiều thửa trong dự án, phân tách bởi dấu phẩy, VD '
+                   '"1.4, 1.5". Phải khớp đúng Tờ.Thửa của thửa đã có trong dự án. Tài sản không liên kết '
+                   'được thửa nào sẽ bị bỏ qua khi import.'),
+            ('Số CCCD chủ tài sản', 'Không bắt buộc — nếu điền, phải khớp 1 chủ thể đã có trong hệ thống '
+                   '(tab Chủ thể), nếu không khớp sẽ để trống, không chặn import.'),
+            ('Nếu trùng', 'Hệ thống coi là trùng khi CÙNG Tờ.Thửa liên kết + CÙNG Loại tài sản (cụ thể) đã '
+                   'có sẵn trong dự án (và không điền ID) — sẽ hỏi xác nhận trước khi ghi đè.'),
+        ])
+        self._send_xlsx_response(wb, 'mau-import-tai-san.xlsx')
+
+    def api_bt_assets_import(self, pid):
+        """Import Tài sản trên đất cho 1 dự án. Đối chiếu trùng: có ID → CẬP NHẬT trực tiếp. Không có ID
+        → coi là trùng (cần confirm_overwrite=1) nếu đã tồn tại 1 tài sản cùng (bộ Tờ.Thửa liên kết +
+        Loại tài sản cụ thể) trong dự án — vì bt_assets không có cột nào khác đủ để làm khoá tự nhiên.
+        Dòng không liên kết được thửa hợp lệ nào bị bỏ qua (skipped), không chặn các dòng khác."""
+        sess = self.require_auth()
+        if not sess: return
+        fields, sheets, err = self._read_xlsx_upload()
+        if err:
+            self.send_json({'error': err}, 400); return
+        confirm_overwrite = fields.get('confirm_overwrite', '') == '1'
+        sheet = sheets.get('tài sản') or sheets.get('tai san') or (list(sheets.values())[0] if sheets else None)
+        if not sheet:
+            self.send_json({'error': 'File rỗng hoặc không đọc được sheet nào.'}, 400); return
+        header, data_rows = sheet
+        COL = {
+            'id': self._xlsx_find_col(header, ['id']),
+            'thua': self._xlsx_find_col(header, ['tờ.thửa', 'to.thua', 'thửa liên kết', 'thua lien ket']),
+            'nhom': self._xlsx_find_col(header, ['loại tài sản (nhóm)', 'nhóm']),
+            'cu_the': self._xlsx_find_col(header, ['loại tài sản (cụ thể)', 'cụ thể', 'cu the']),
+            'cccd': self._xlsx_find_col(header, ['cccd']),
+            'don_vi': self._xlsx_find_col(header, ['đơn vị', 'don vi']),
+            'so_luong': self._xlsx_find_col(header, ['số lượng', 'so luong', 'khối lượng']),
+            'thoi_diem': self._xlsx_find_col(header, ['thời điểm hình thành', 'thoi diem']),
+            'tinh_trang': self._xlsx_find_col(header, ['tình trạng', 'tinh trang']),
+            'ngay_kiem_dem': self._xlsx_find_col(header, ['ngày kiểm đếm', 'ngay kiem dem']),
+            'nguoi_kiem_dem': self._xlsx_find_col(header, ['người kiểm đếm', 'nguoi kiem dem']),
+            'ghi_chu': self._xlsx_find_col(header, ['ghi chú', 'ghi chu']),
+        }
+        if COL['thua'] is None or COL['cu_the'] is None:
+            self.send_json({'error': 'Không tìm thấy cột Tờ.Thửa liên kết / Loại tài sản (cụ thể). Vui lòng dùng đúng file mẫu.'}, 400)
+            return
+
+        with get_db() as db:
+            parcels = db.execute('SELECT id, so_to, so_thua FROM bt_parcels WHERE project_id=?', (pid,)).fetchall()
+            tt_to_id = {f"{p['so_to']}.{p['so_thua']}".strip().lower(): p['id'] for p in parcels}
+            parties = db.execute('SELECT id, so_cccd FROM bt_parties').fetchall()
+            cccd_to_party = {p['so_cccd'].strip().lower(): p['id'] for p in parties if (p['so_cccd'] or '').strip()}
+            existing_assets = db.execute(
+                'SELECT a.id, a.loai_tai_san_cu_the, '
+                "(SELECT GROUP_CONCAT(pl.id) FROM bt_asset_parcels ap JOIN bt_parcels pl ON pl.id=ap.parcel_id "
+                ' WHERE ap.asset_id=a.id) as parcel_ids '
+                'FROM bt_assets a JOIN bt_asset_parcels ap2 ON ap2.asset_id=a.id JOIN bt_parcels p2 ON p2.id=ap2.parcel_id '
+                'WHERE p2.project_id=? GROUP BY a.id', (pid,)
+            ).fetchall()
+            asset_key_to_id = {}
+            for a in existing_assets:
+                pset = frozenset((a['parcel_ids'] or '').split(','))
+                asset_key_to_id[(pset, (a['loai_tai_san_cu_the'] or '').strip().lower())] = a['id']
+            id_set = {a['id'] for a in existing_assets}
+
+            conflicts, rows_to_write, skipped = [], [], []
+            for row in data_rows:
+                if not any(row):
+                    continue
+                cu_the = self._xlsx_cell_str(row, COL['cu_the'])
+                thua_raw = self._xlsx_cell_str(row, COL['thua'])
+                if not cu_the and not thua_raw:
+                    continue
+                parcel_ids = []
+                for tok in thua_raw.split(','):
+                    tok = tok.strip().lower()
+                    if tok and tok in tt_to_id:
+                        parcel_ids.append(tt_to_id[tok])
+                if not parcel_ids:
+                    skipped.append(f'{cu_the or "(không tên)"} — Tờ.Thửa "{thua_raw}" không khớp thửa nào trong dự án')
+                    continue
+                cccd = self._xlsx_cell_str(row, COL['cccd'])
+                data = {
+                    'loai_tai_san_nhom': self._xlsx_cell_str(row, COL['nhom']),
+                    'loai_tai_san_cu_the': cu_the,
+                    'chu_tai_san_id': cccd_to_party.get(cccd.lower()) if cccd else None,
+                    'don_vi_tinh': self._xlsx_cell_str(row, COL['don_vi']),
+                    'so_luong_khoi_luong': self._xlsx_cell_num(row, COL['so_luong']),
+                    'thoi_diem_hinh_thanh': self._xlsx_cell_str(row, COL['thoi_diem']) or None,
+                    'tinh_trang_phap_ly': self._xlsx_cell_str(row, COL['tinh_trang']) or 'Đúng quy định',
+                    'ngay_kiem_dem': self._xlsx_cell_str(row, COL['ngay_kiem_dem']) or None,
+                    'nguoi_kiem_dem': self._xlsx_cell_str(row, COL['nguoi_kiem_dem']),
+                    'ghi_chu': self._xlsx_cell_str(row, COL['ghi_chu']),
+                }
+                row_id = self._xlsx_cell_int(row, COL['id'])
+                target_id = None
+                if row_id is not None and row_id in id_set:
+                    target_id = row_id
+                else:
+                    key = (frozenset(str(x) for x in parcel_ids), cu_the.strip().lower())
+                    if key in asset_key_to_id:
+                        target_id = asset_key_to_id[key]
+                        conflicts.append(f'{cu_the} ({thua_raw})')
+                rows_to_write.append({'target_id': target_id, 'data': data, 'parcel_ids': parcel_ids})
+
+            if conflicts and not confirm_overwrite:
+                self.send_json({'conflict': True, 'conflicts': conflicts,
+                                 'total': len(rows_to_write) + len(skipped)}, 409)
+                return
+
+            created, updated = 0, 0
+            for r in rows_to_write:
+                d = r['data']
+                if r['target_id']:
+                    db.execute(
+                        'UPDATE bt_assets SET loai_tai_san_nhom=?, loai_tai_san_cu_the=?, chu_tai_san_id=?, '
+                        'don_vi_tinh=?, so_luong_khoi_luong=?, thoi_diem_hinh_thanh=?, tinh_trang_phap_ly=?, '
+                        'ngay_kiem_dem=?, nguoi_kiem_dem=?, ghi_chu=? WHERE id=?',
+                        (d['loai_tai_san_nhom'], d['loai_tai_san_cu_the'], d['chu_tai_san_id'], d['don_vi_tinh'],
+                         d['so_luong_khoi_luong'], d['thoi_diem_hinh_thanh'], d['tinh_trang_phap_ly'],
+                         d['ngay_kiem_dem'], d['nguoi_kiem_dem'], d['ghi_chu'], r['target_id'])
+                    )
+                    self._save_asset_parcels(db, r['target_id'], r['parcel_ids'])
+                    updated += 1
+                else:
+                    cur = db.execute(
+                        'INSERT INTO bt_assets (loai_tai_san_nhom, loai_tai_san_cu_the, chu_tai_san_id, don_vi_tinh, '
+                        'so_luong_khoi_luong, thoi_diem_hinh_thanh, tinh_trang_phap_ly, ngay_kiem_dem, nguoi_kiem_dem, ghi_chu) '
+                        'VALUES (?,?,?,?,?,?,?,?,?,?)',
+                        (d['loai_tai_san_nhom'], d['loai_tai_san_cu_the'], d['chu_tai_san_id'], d['don_vi_tinh'],
+                         d['so_luong_khoi_luong'], d['thoi_diem_hinh_thanh'], d['tinh_trang_phap_ly'],
+                         d['ngay_kiem_dem'], d['nguoi_kiem_dem'], d['ghi_chu'])
+                    )
+                    self._save_asset_parcels(db, cur.lastrowid, r['parcel_ids'])
+                    created += 1
+            db.commit()
+        self.send_json({'ok': True, 'created': created, 'updated': updated, 'skipped': skipped})
+
     # ── BT v2: HỒ SƠ HỘ + QUYẾT ĐỊNH THEO THỬA ──────────────────────
 
     def api_bt_dossiers_list(self, project_id, qs):
@@ -4747,6 +5478,301 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.commit()
         self.send_json({'ok': True})
 
+    def api_bt_dossiers_export(self, pid):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            dossiers = db.execute(
+                'SELECT d.*, pt.ho_ten as chu_ho_ten, pt.so_cccd as chu_ho_cccd '
+                'FROM bt_dossiers d LEFT JOIN bt_parties pt ON pt.id=d.chu_the_id '
+                'WHERE d.project_id=? ORDER BY d.id', (pid,)
+            ).fetchall()
+            decisions = db.execute(
+                'SELECT pd.*, pt.ho_ten as chu_ho_ten, pt.so_cccd as chu_ho_cccd, pl.so_to, pl.so_thua '
+                'FROM bt_parcel_decisions pd '
+                'JOIN bt_dossiers d ON d.id=pd.ho_so_ho_id '
+                'LEFT JOIN bt_parties pt ON pt.id=d.chu_the_id '
+                'JOIN bt_parcels pl ON pl.id=pd.parcel_id '
+                'WHERE d.project_id=? ORDER BY pd.id', (pid,)
+            ).fetchall()
+        wb = self._new_xlsx_workbook()
+        self._xlsx_write_sheet(
+            wb.create_sheet('Hồ sơ Hộ'),
+            ['ID', 'Số CCCD chủ hộ', 'Họ tên chủ hộ (tham khảo)', 'Tiền thưởng tiến độ',
+             'Hỗ trợ ổn định đời sống', 'Hỗ trợ đào tạo chuyển đổi nghề', 'Hỗ trợ tái định cư',
+             'Hỗ trợ khác', 'Số tiền tạm ứng', 'Số tiền đã chi trả', 'Ngày chi trả',
+             'Có đơn ý kiến', 'Nội dung ý kiến', 'Ghi chú'],
+            [[d['id'], d['chu_ho_cccd'], d['chu_ho_ten'], d['tien_thuong_tien_do'],
+              d['tien_ho_tro_on_dinh_doi_song'], d['tien_ho_tro_dao_tao_chuyen_doi_nghe'],
+              d['tien_ho_tro_tai_dinh_cu'], d['tien_ho_tro_khac'], d['so_tien_tam_ung'],
+              d['so_tien_da_chi_tra'], d['ngay_chi_tra'], 'Có' if d['co_don_y_kien'] else '',
+              d['noi_dung_y_kien'], d['ghi_chu']]
+             for d in dossiers]
+        )
+        self._xlsx_write_sheet(
+            wb.create_sheet('Quyết định theo Thửa'),
+            ['ID', 'Số CCCD chủ hộ', 'Họ tên chủ hộ (tham khảo)', 'Tờ', 'Thửa', 'Số quyết định',
+             'Ngày quyết định', 'Tiền BT đất', 'Tiền BT tài sản', 'Trạng thái', 'Ghi chú'],
+            [[q['id'], q['chu_ho_cccd'], q['chu_ho_ten'], q['so_to'], q['so_thua'], q['so_quyet_dinh_pd'],
+              q['ngay_quyet_dinh_pd'], q['tien_bt_dat'], q['tien_bt_tai_san'], q['trang_thai'], q['ghi_chu']]
+             for q in decisions]
+        )
+        self._send_xlsx_response(wb, 'ho-so-ho-quyet-dinh.xlsx')
+
+    def api_bt_dossiers_template(self, pid):
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            sample_party = db.execute(
+                'SELECT pt.so_cccd, pt.ho_ten FROM bt_parcel_owners po '
+                'JOIN bt_parties pt ON pt.id=po.chu_the_id JOIN bt_parcels pl ON pl.id=po.parcel_id '
+                'WHERE pl.project_id=? AND pt.so_cccd != "" LIMIT 1', (pid,)
+            ).fetchone()
+            sample_parcel = db.execute('SELECT so_to, so_thua FROM bt_parcels WHERE project_id=? LIMIT 1', (pid,)).fetchone()
+        cccd_vd = sample_party['so_cccd'] if sample_party else '001075012345'
+        ten_vd = sample_party['ho_ten'] if sample_party else 'Nguyễn Văn A'
+        to_vd = sample_parcel['so_to'] if sample_parcel else '1'
+        thua_vd = sample_parcel['so_thua'] if sample_parcel else '4'
+        wb = self._new_xlsx_workbook()
+        self._xlsx_write_sheet(
+            wb.create_sheet('Hồ sơ Hộ'),
+            ['ID (để trống nếu thêm mới)', 'Số CCCD chủ hộ', 'Tiền thưởng tiến độ', 'Hỗ trợ ổn định đời sống',
+             'Hỗ trợ đào tạo chuyển đổi nghề', 'Hỗ trợ tái định cư', 'Hỗ trợ khác', 'Số tiền tạm ứng',
+             'Số tiền đã chi trả', 'Ngày chi trả (yyyy-mm-dd)', 'Có đơn ý kiến (Có/để trống)',
+             'Nội dung ý kiến', 'Ghi chú'],
+            [['', cccd_vd, 0, 0, 0, 0, 0, 0, 0, '', '', '', '']]
+        )
+        self._xlsx_write_sheet(
+            wb.create_sheet('Quyết định theo Thửa'),
+            ['ID (để trống nếu thêm mới)', 'Số CCCD chủ hộ', 'Tờ', 'Thửa', 'Số quyết định',
+             'Ngày quyết định (yyyy-mm-dd)', 'Tiền BT đất', 'Tiền BT tài sản', 'Trạng thái', 'Ghi chú'],
+            [['', cccd_vd, to_vd, thua_vd, '', '', 0, 0, 'Chưa thực hiện', '']]
+        )
+        self._xlsx_write_guide_sheet(wb.create_sheet('Hướng dẫn'), [
+            ('Cột', 'Ý nghĩa'),
+            ('ID', 'Để trống khi thêm mới. Điền ID (xem khi Xuất Excel) nếu muốn CẬP NHẬT.'),
+            ('Số CCCD chủ hộ', f'BẮT BUỘC ở cả 2 sheet — phải khớp 1 Chủ thể ĐÃ CÓ SẴN trong hệ thống '
+                   f'(vào tab Chủ thể để thêm trước nếu chưa có, VD "{ten_vd}" / {cccd_vd}). Không tự tạo '
+                   'chủ thể mới từ file này.'),
+            ('Tờ / Thửa (sheet Quyết định)', 'Phải khớp 1 thửa đã có trong dự án đang mở.'),
+            ('Nếu trùng', 'Hồ sơ Hộ: trùng khi CÙNG chủ hộ đã có hồ sơ trong dự án. Quyết định: trùng khi '
+                   'CÙNG hồ sơ hộ + CÙNG thửa đã có quyết định. Cả 2 trường hợp đều cần xác nhận trước khi '
+                   'ghi đè (không tự động).'),
+            ('Dòng không khớp được chủ hộ/thửa', 'Bị bỏ qua, báo lại trong kết quả sau khi import.'),
+        ])
+        self._send_xlsx_response(wb, 'mau-import-ho-so-ho.xlsx')
+
+    def api_bt_dossiers_import(self, pid):
+        """Import Hồ sơ Hộ + Quyết định theo Thửa cho 1 dự án, 2 sheet cha-con. KHÁC với luồng lưu qua
+        modal (_save_dossier_decisions xoá-hết-rồi-chèn-lại-toàn-bộ mỗi lần lưu) — import chỉ UPSERT
+        từng dòng theo khoá tự nhiên, không xoá quyết định nào không có mặt trong file, để tránh mất dữ
+        liệu khi người dùng import file chỉ chứa 1 phần bản ghi."""
+        sess = self.require_auth()
+        if not sess: return
+        fields, sheets, err = self._read_xlsx_upload()
+        if err:
+            self.send_json({'error': err}, 400); return
+        confirm_overwrite = fields.get('confirm_overwrite', '') == '1'
+        dossier_sheet = sheets.get('hồ sơ hộ') or sheets.get('ho so ho')
+        decision_sheet = sheets.get('quyết định theo thửa') or sheets.get('quyet dinh theo thua')
+        if not dossier_sheet and not decision_sheet:
+            self.send_json({'error': 'File cần có sheet "Hồ sơ Hộ" và/hoặc "Quyết định theo Thửa" đúng tên như file mẫu.'}, 400)
+            return
+
+        with get_db() as db:
+            parties = db.execute('SELECT id, so_cccd, ho_ten FROM bt_parties').fetchall()
+            cccd_to_party = {p['so_cccd'].strip().lower(): (p['id'], p['ho_ten']) for p in parties if (p['so_cccd'] or '').strip()}
+            existing_dossiers = db.execute('SELECT id, chu_the_id FROM bt_dossiers WHERE project_id=?', (pid,)).fetchall()
+            dossier_by_party = {d['chu_the_id']: d['id'] for d in existing_dossiers}
+            dossier_id_set = {d['id'] for d in existing_dossiers}
+            parcels = db.execute('SELECT id, so_to, so_thua FROM bt_parcels WHERE project_id=?', (pid,)).fetchall()
+            tt_to_parcel = {(str(p['so_to']).strip().lower(), str(p['so_thua']).strip().lower()): p['id'] for p in parcels}
+
+            conflicts = []
+            dossier_rows, skipped_dossiers = [], []
+            if dossier_sheet:
+                header, data_rows = dossier_sheet
+                COL = {
+                    'id': self._xlsx_find_col(header, ['id']),
+                    'cccd': self._xlsx_find_col(header, ['cccd']),
+                    'thuong': self._xlsx_find_col(header, ['thưởng tiến độ', 'thuong tien do']),
+                    'on_dinh': self._xlsx_find_col(header, ['ổn định đời sống', 'on dinh doi song']),
+                    'dao_tao': self._xlsx_find_col(header, ['đào tạo', 'dao tao']),
+                    'tai_dinh_cu': self._xlsx_find_col(header, ['tái định cư', 'tai dinh cu']),
+                    'khac': self._xlsx_find_col(header, ['hỗ trợ khác', 'ho tro khac']),
+                    'tam_ung': self._xlsx_find_col(header, ['tạm ứng', 'tam ung']),
+                    'da_chi': self._xlsx_find_col(header, ['đã chi trả', 'da chi tra']),
+                    'ngay_chi': self._xlsx_find_col(header, ['ngày chi trả', 'ngay chi tra']),
+                    'co_don': self._xlsx_find_col(header, ['có đơn', 'co don']),
+                    'noi_dung': self._xlsx_find_col(header, ['nội dung ý kiến', 'noi dung y kien']),
+                    'ghi_chu': self._xlsx_find_col(header, ['ghi chú', 'ghi chu']),
+                }
+                if COL['cccd'] is None:
+                    self.send_json({'error': 'Sheet "Hồ sơ Hộ" thiếu cột Số CCCD chủ hộ.'}, 400); return
+                for row in data_rows:
+                    if not any(row):
+                        continue
+                    cccd = self._xlsx_cell_str(row, COL['cccd'])
+                    if not cccd:
+                        continue
+                    party = cccd_to_party.get(cccd.lower())
+                    if not party:
+                        skipped_dossiers.append(f'CCCD {cccd} chưa có trong Chủ thể'); continue
+                    chu_the_id, ten = party
+                    row_id = self._xlsx_cell_int(row, COL['id'])
+                    data = {
+                        'chu_the_id': chu_the_id,
+                        'tien_thuong_tien_do': self._xlsx_cell_num(row, COL['thuong']),
+                        'tien_ho_tro_on_dinh_doi_song': self._xlsx_cell_num(row, COL['on_dinh']),
+                        'tien_ho_tro_dao_tao_chuyen_doi_nghe': self._xlsx_cell_num(row, COL['dao_tao']),
+                        'tien_ho_tro_tai_dinh_cu': self._xlsx_cell_num(row, COL['tai_dinh_cu']),
+                        'tien_ho_tro_khac': self._xlsx_cell_num(row, COL['khac']),
+                        'so_tien_tam_ung': self._xlsx_cell_num(row, COL['tam_ung']),
+                        'so_tien_da_chi_tra': self._xlsx_cell_num(row, COL['da_chi']),
+                        'ngay_chi_tra': self._xlsx_cell_str(row, COL['ngay_chi']) or None,
+                        'co_don_y_kien': 1 if self._xlsx_cell_str(row, COL['co_don']).lower().startswith('c') else 0,
+                        'noi_dung_y_kien': self._xlsx_cell_str(row, COL['noi_dung']),
+                        'ghi_chu': self._xlsx_cell_str(row, COL['ghi_chu']),
+                    }
+                    target_id = None
+                    if row_id is not None and row_id in dossier_id_set:
+                        target_id = row_id
+                    elif chu_the_id in dossier_by_party:
+                        target_id = dossier_by_party[chu_the_id]
+                        conflicts.append(f'Hồ sơ Hộ: {ten} (CCCD {cccd})')
+                    dossier_rows.append({'target_id': target_id, 'data': data, 'chu_the_id': chu_the_id})
+
+            decision_rows, skipped_decisions = [], []
+            if decision_sheet:
+                header, data_rows = decision_sheet
+                COL = {
+                    'id': self._xlsx_find_col(header, ['id']),
+                    'cccd': self._xlsx_find_col(header, ['cccd']),
+                    'so_to': self._xlsx_find_col(header, ['tờ', 'to']),
+                    'so_thua': self._xlsx_find_col(header, ['thửa', 'thua']),
+                    'so_qd': self._xlsx_find_col(header, ['số quyết định', 'so quyet dinh']),
+                    'ngay_qd': self._xlsx_find_col(header, ['ngày quyết định', 'ngay quyet dinh']),
+                    'tien_dat': self._xlsx_find_col(header, ['tiền bt đất', 'tien bt dat']),
+                    'tien_ts': self._xlsx_find_col(header, ['tiền bt tài sản', 'tien bt tai san']),
+                    'trang_thai': self._xlsx_find_col(header, ['trạng thái', 'trang thai']),
+                    'ghi_chu': self._xlsx_find_col(header, ['ghi chú', 'ghi chu']),
+                }
+                if COL['cccd'] is None or COL['so_to'] is None or COL['so_thua'] is None:
+                    self.send_json({'error': 'Sheet "Quyết định theo Thửa" thiếu cột CCCD chủ hộ / Tờ / Thửa.'}, 400); return
+                existing_decisions = db.execute(
+                    'SELECT pd.id, pd.ho_so_ho_id, pd.parcel_id FROM bt_parcel_decisions pd '
+                    'JOIN bt_dossiers d ON d.id=pd.ho_so_ho_id WHERE d.project_id=?', (pid,)
+                ).fetchall()
+                decision_id_set = {d['id'] for d in existing_decisions}
+                decision_key_to_id = {(d['ho_so_ho_id'], d['parcel_id']): d['id'] for d in existing_decisions}
+                for row in data_rows:
+                    if not any(row):
+                        continue
+                    cccd = self._xlsx_cell_str(row, COL['cccd'])
+                    so_to = self._xlsx_cell_str(row, COL['so_to'])
+                    so_thua = self._xlsx_cell_str(row, COL['so_thua'])
+                    if not cccd or (not so_to and not so_thua):
+                        continue
+                    party = cccd_to_party.get(cccd.lower())
+                    parcel_id = tt_to_parcel.get((so_to.lower(), so_thua.lower()))
+                    if not party:
+                        skipped_decisions.append(f'Tờ {so_to} - Thửa {so_thua}: CCCD {cccd} chưa có trong Chủ thể'); continue
+                    if not parcel_id:
+                        skipped_decisions.append(f'Tờ {so_to} - Thửa {so_thua}: không khớp thửa nào trong dự án'); continue
+                    chu_the_id, ten = party
+                    # Hồ sơ hộ của chủ hộ này: có thể đã tồn tại, hoặc vừa được khai ở sheet Hồ sơ Hộ
+                    # trong CÙNG file (chưa có id thật, resolve ở PASS 2 dưới).
+                    dossier_target_existing = dossier_by_party.get(chu_the_id)
+                    dossier_target_new = next((dr for dr in dossier_rows if dr['chu_the_id'] == chu_the_id), None)
+                    if dossier_target_existing is None and dossier_target_new is None:
+                        skipped_decisions.append(f'Tờ {so_to} - Thửa {so_thua}: chủ hộ {ten} chưa có Hồ sơ Hộ trong dự án này'); continue
+                    row_id = self._xlsx_cell_int(row, COL['id'])
+                    data = {
+                        'so_quyet_dinh_pd': self._xlsx_cell_str(row, COL['so_qd']),
+                        'ngay_quyet_dinh_pd': self._xlsx_cell_str(row, COL['ngay_qd']) or None,
+                        'tien_bt_dat': self._xlsx_cell_num(row, COL['tien_dat']),
+                        'tien_bt_tai_san': self._xlsx_cell_num(row, COL['tien_ts']),
+                        'trang_thai': self._xlsx_cell_str(row, COL['trang_thai']) or 'Chưa thực hiện',
+                        'ghi_chu': self._xlsx_cell_str(row, COL['ghi_chu']),
+                    }
+                    target_id = None
+                    if row_id is not None and row_id in decision_id_set:
+                        target_id = row_id
+                    elif dossier_target_existing and (dossier_target_existing, parcel_id) in decision_key_to_id:
+                        target_id = decision_key_to_id[(dossier_target_existing, parcel_id)]
+                        conflicts.append(f'Quyết định: Tờ {so_to} - Thửa {so_thua} ({ten})')
+                    decision_rows.append({
+                        'target_id': target_id, 'data': data, 'parcel_id': parcel_id,
+                        'dossier_existing_id': dossier_target_existing, 'chu_the_id': chu_the_id,
+                    })
+
+            if conflicts and not confirm_overwrite:
+                self.send_json({'conflict': True, 'conflicts': conflicts,
+                                 'total': len(dossier_rows) + len(decision_rows)}, 409)
+                return
+
+            created_dossiers, updated_dossiers = 0, 0
+            party_to_real_dossier_id = dict(dossier_by_party)
+            for dr in dossier_rows:
+                d = dr['data']
+                if dr['target_id']:
+                    db.execute(
+                        'UPDATE bt_dossiers SET chu_the_id=?, tien_thuong_tien_do=?, tien_ho_tro_on_dinh_doi_song=?, '
+                        'tien_ho_tro_dao_tao_chuyen_doi_nghe=?, tien_ho_tro_tai_dinh_cu=?, tien_ho_tro_khac=?, '
+                        'so_tien_tam_ung=?, so_tien_da_chi_tra=?, ngay_chi_tra=?, co_don_y_kien=?, noi_dung_y_kien=?, '
+                        'ghi_chu=?, updated_at=datetime(\'now\',\'localtime\') WHERE id=?',
+                        (d['chu_the_id'], d['tien_thuong_tien_do'], d['tien_ho_tro_on_dinh_doi_song'],
+                         d['tien_ho_tro_dao_tao_chuyen_doi_nghe'], d['tien_ho_tro_tai_dinh_cu'], d['tien_ho_tro_khac'],
+                         d['so_tien_tam_ung'], d['so_tien_da_chi_tra'], d['ngay_chi_tra'], d['co_don_y_kien'],
+                         d['noi_dung_y_kien'], d['ghi_chu'], dr['target_id'])
+                    )
+                    real_id = dr['target_id']
+                    updated_dossiers += 1
+                else:
+                    cur = db.execute(
+                        'INSERT INTO bt_dossiers (project_id, chu_the_id, tien_thuong_tien_do, '
+                        'tien_ho_tro_on_dinh_doi_song, tien_ho_tro_dao_tao_chuyen_doi_nghe, tien_ho_tro_tai_dinh_cu, '
+                        'tien_ho_tro_khac, so_tien_tam_ung, so_tien_da_chi_tra, ngay_chi_tra, co_don_y_kien, '
+                        'noi_dung_y_kien, ghi_chu) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)',
+                        (pid, d['chu_the_id'], d['tien_thuong_tien_do'], d['tien_ho_tro_on_dinh_doi_song'],
+                         d['tien_ho_tro_dao_tao_chuyen_doi_nghe'], d['tien_ho_tro_tai_dinh_cu'], d['tien_ho_tro_khac'],
+                         d['so_tien_tam_ung'], d['so_tien_da_chi_tra'], d['ngay_chi_tra'], d['co_don_y_kien'],
+                         d['noi_dung_y_kien'], d['ghi_chu'])
+                    )
+                    real_id = cur.lastrowid
+                    created_dossiers += 1
+                party_to_real_dossier_id[dr['chu_the_id']] = real_id
+
+            created_decisions, updated_decisions, skipped_decisions_count = 0, 0, len(skipped_decisions)
+            for qr in decision_rows:
+                dossier_id = qr['dossier_existing_id'] or party_to_real_dossier_id.get(qr['chu_the_id'])
+                if not dossier_id:
+                    skipped_decisions_count += 1
+                    continue
+                d = qr['data']
+                if qr['target_id']:
+                    db.execute(
+                        'UPDATE bt_parcel_decisions SET so_quyet_dinh_pd=?, ngay_quyet_dinh_pd=?, tien_bt_dat=?, '
+                        'tien_bt_tai_san=?, trang_thai=?, ghi_chu=? WHERE id=?',
+                        (d['so_quyet_dinh_pd'], d['ngay_quyet_dinh_pd'], d['tien_bt_dat'], d['tien_bt_tai_san'],
+                         d['trang_thai'], d['ghi_chu'], qr['target_id'])
+                    )
+                    updated_decisions += 1
+                else:
+                    db.execute(
+                        'INSERT INTO bt_parcel_decisions (ho_so_ho_id, parcel_id, so_quyet_dinh_pd, ngay_quyet_dinh_pd, '
+                        'tien_bt_dat, tien_bt_tai_san, trang_thai, ghi_chu) VALUES (?,?,?,?,?,?,?,?)',
+                        (dossier_id, qr['parcel_id'], d['so_quyet_dinh_pd'], d['ngay_quyet_dinh_pd'],
+                         d['tien_bt_dat'], d['tien_bt_tai_san'], d['trang_thai'], d['ghi_chu'])
+                    )
+                    created_decisions += 1
+            db.commit()
+        self.send_json({
+            'ok': True, 'created_dossiers': created_dossiers, 'updated_dossiers': updated_dossiers,
+            'skipped_dossiers': skipped_dossiers, 'created_decisions': created_decisions,
+            'updated_decisions': updated_decisions, 'skipped_decisions': skipped_decisions,
+        })
+
     def api_bt_projects_list(self):
         sess = self.require_auth()
         if not sess: return
@@ -4879,6 +5905,143 @@ class Handler(http.server.BaseHTTPRequestHandler):
             db.execute('DELETE FROM bt_projects WHERE id=?', (pid,))
             db.commit()
         self.send_json({'ok': True})
+
+    def api_bt_projects_export(self):
+        """Xuất TOÀN BỘ danh sách Dự án ra Excel — 'Dự án' tự nó LÀ danh sách nhiều bản ghi, không có
+        khái niệm 'dự án đang mở' để thu hẹp phạm vi thêm (khác Thửa đất/Tài sản/Hồ sơ Hộ vốn là dữ liệu
+        CON của 1 dự án cụ thể). Không xuất ranh_gioi_du_an (GeoJSON)/kinh_tuyen_truc/basemap_*/
+        custom_fields — các trường không gian/kỹ thuật, không phù hợp vòng lặp Excel."""
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            rows = db.execute('SELECT * FROM bt_projects ORDER BY id').fetchall()
+        wb = self._new_xlsx_workbook()
+        self._xlsx_write_sheet(
+            wb.create_sheet('Dự án'),
+            ['ID', 'Tên dự án', 'Mô tả', 'Địa điểm', 'Chủ đầu tư', 'Diện tích dự án (m²)',
+             'Ngày thông báo thu hồi', 'Ngày bắt đầu', 'Ngày kết thúc dự kiến', 'Danh sách xã'],
+            [[r['id'], r['name'], r['mo_ta'], r['dia_diem'], r['chu_dau_tu'], r['dien_tich_du_an'],
+              r['ngay_thong_bao_thu_hoi'], r['ngay_bat_dau'], r['ngay_ket_thuc_du_kien'],
+              ', '.join(json.loads(r['danh_sach_xa'] or '[]'))]
+             for r in rows]
+        )
+        self._send_xlsx_response(wb, 'du-an.xlsx')
+
+    def api_bt_projects_template(self):
+        sess = self.require_auth()
+        if not sess: return
+        wb = self._new_xlsx_workbook()
+        self._xlsx_write_sheet(
+            wb.create_sheet('Dự án'),
+            ['ID (để trống nếu thêm mới)', 'Tên dự án', 'Mô tả', 'Địa điểm', 'Chủ đầu tư',
+             'Diện tích dự án (m²)', 'Ngày thông báo thu hồi (yyyy-mm-dd)', 'Ngày bắt đầu (yyyy-mm-dd)',
+             'Ngày kết thúc dự kiến (yyyy-mm-dd)', 'Danh sách xã (phân tách bởi dấu phẩy)'],
+            [['', 'Dự án mở rộng đường ABC', 'Mô tả ngắn gọn dự án', 'Huyện XYZ', 'Ban QLDA huyện XYZ',
+              15000, '2026-01-15', '2026-03-01', '2026-12-31', 'Xã A, Xã B']]
+        )
+        self._xlsx_write_guide_sheet(wb.create_sheet('Hướng dẫn'), [
+            ('Cột', 'Ý nghĩa'),
+            ('ID', 'Để trống khi thêm mới. Điền ID (xem khi Xuất Excel) nếu muốn CẬP NHẬT dự án đã có.'),
+            ('Tên dự án', 'BẮT BUỘC. Nếu trùng tên với 1 dự án đã có (và không điền ID), hệ thống sẽ hỏi '
+                   'xác nhận trước khi ghi đè.'),
+            ('Danh sách xã', 'Mỗi xã phân tách bởi dấu phẩy, VD "Xã A, Xã B, Phường C".'),
+            ('Không có trong file này', 'Ranh giới không gian dự án, Kinh tuyến trục VN-2000, Bản đồ nền — '
+                   'các trường này chỉ khai báo được qua giao diện "Sửa dự án", không qua Excel.'),
+        ])
+        self._send_xlsx_response(wb, 'mau-import-du-an.xlsx')
+
+    def api_bt_projects_import(self):
+        """Import Dự án từ Excel. Đối chiếu trùng: có ID → CẬP NHẬT trực tiếp. Không có ID mà Tên dự án
+        trùng (không phân biệt hoa/thường) với dự án đã có → cần xác nhận ghi đè. Chỉ ghi các trường phi
+        không gian (xem docstring api_bt_projects_export) — dự án tạo mới qua đường này sẽ có
+        Kinh tuyến trục/ranh giới/Bản đồ nền trống, cần khai bổ sung qua "Sửa dự án" nếu dùng tab Bản đồ."""
+        sess = self.require_manager()
+        if not sess: return
+        fields, sheets, err = self._read_xlsx_upload()
+        if err:
+            self.send_json({'error': err}, 400); return
+        confirm_overwrite = fields.get('confirm_overwrite', '') == '1'
+        sheet = sheets.get('dự án') or sheets.get('du an') or (list(sheets.values())[0] if sheets else None)
+        if not sheet:
+            self.send_json({'error': 'File rỗng hoặc không đọc được sheet nào.'}, 400); return
+        header, data_rows = sheet
+        COL = {
+            'id': self._xlsx_find_col(header, ['id']),
+            'name': self._xlsx_find_col(header, ['tên dự án', 'ten du an']),
+            'mo_ta': self._xlsx_find_col(header, ['mô tả', 'mo ta']),
+            'dia_diem': self._xlsx_find_col(header, ['địa điểm', 'dia diem']),
+            'chu_dau_tu': self._xlsx_find_col(header, ['chủ đầu tư', 'chu dau tu']),
+            'dien_tich': self._xlsx_find_col(header, ['diện tích dự án', 'dien tich du an']),
+            'ngay_tb': self._xlsx_find_col(header, ['thông báo thu hồi', 'thong bao thu hoi']),
+            'ngay_bd': self._xlsx_find_col(header, ['ngày bắt đầu', 'ngay bat dau']),
+            'ngay_kt': self._xlsx_find_col(header, ['kết thúc dự kiến', 'ket thuc du kien']),
+            'xa': self._xlsx_find_col(header, ['danh sách xã', 'danh sach xa']),
+        }
+        if COL['name'] is None:
+            self.send_json({'error': 'Không tìm thấy cột Tên dự án trong file. Vui lòng dùng đúng file mẫu.'}, 400)
+            return
+
+        with get_db() as db:
+            existing = db.execute('SELECT id, name FROM bt_projects').fetchall()
+            id_set = {e['id'] for e in existing}
+            name_to_id = {e['name'].strip().lower(): e['id'] for e in existing if (e['name'] or '').strip()}
+
+            conflicts, rows_to_write = [], []
+            for row in data_rows:
+                if not any(row):
+                    continue
+                name = self._xlsx_cell_str(row, COL['name'])
+                if not name:
+                    continue
+                row_id = self._xlsx_cell_int(row, COL['id'])
+                danh_sach_xa = self._normalize_danh_sach_xa(self._xlsx_cell_str(row, COL['xa']))
+                data = {
+                    'name': name,
+                    'mo_ta': self._xlsx_cell_str(row, COL['mo_ta']),
+                    'dia_diem': self._xlsx_cell_str(row, COL['dia_diem']),
+                    'chu_dau_tu': self._xlsx_cell_str(row, COL['chu_dau_tu']),
+                    'dien_tich_du_an': self._xlsx_cell_num(row, COL['dien_tich']),
+                    'ngay_thong_bao_thu_hoi': self._xlsx_cell_str(row, COL['ngay_tb']) or None,
+                    'ngay_bat_dau': self._xlsx_cell_str(row, COL['ngay_bd']) or None,
+                    'ngay_ket_thuc_du_kien': self._xlsx_cell_str(row, COL['ngay_kt']) or None,
+                    'danh_sach_xa': danh_sach_xa,
+                }
+                target_id = None
+                if row_id is not None and row_id in id_set:
+                    target_id = row_id
+                elif name.lower() in name_to_id:
+                    target_id = name_to_id[name.lower()]
+                    conflicts.append(f'Dự án: {name}')
+                rows_to_write.append({'target_id': target_id, 'data': data})
+
+            if conflicts and not confirm_overwrite:
+                self.send_json({'conflict': True, 'conflicts': conflicts, 'total': len(rows_to_write)}, 409)
+                return
+
+            created, updated = 0, 0
+            for r in rows_to_write:
+                d = r['data']
+                if r['target_id']:
+                    db.execute(
+                        'UPDATE bt_projects SET name=?, mo_ta=?, dia_diem=?, chu_dau_tu=?, dien_tich_du_an=?, '
+                        'ngay_thong_bao_thu_hoi=?, ngay_bat_dau=?, ngay_ket_thuc_du_kien=?, danh_sach_xa=? WHERE id=?',
+                        (d['name'], d['mo_ta'], d['dia_diem'], d['chu_dau_tu'], d['dien_tich_du_an'],
+                         d['ngay_thong_bao_thu_hoi'], d['ngay_bat_dau'], d['ngay_ket_thuc_du_kien'],
+                         json.dumps(d['danh_sach_xa'], ensure_ascii=False), r['target_id'])
+                    )
+                    updated += 1
+                else:
+                    db.execute(
+                        'INSERT INTO bt_projects (name, mo_ta, dia_diem, chu_dau_tu, dien_tich_du_an, '
+                        'ngay_thong_bao_thu_hoi, ngay_bat_dau, ngay_ket_thuc_du_kien, danh_sach_xa) '
+                        'VALUES (?,?,?,?,?,?,?,?,?)',
+                        (d['name'], d['mo_ta'], d['dia_diem'], d['chu_dau_tu'], d['dien_tich_du_an'],
+                         d['ngay_thong_bao_thu_hoi'], d['ngay_bat_dau'], d['ngay_ket_thuc_du_kien'],
+                         json.dumps(d['danh_sach_xa'], ensure_ascii=False))
+                    )
+                    created += 1
+            db.commit()
+        self.send_json({'ok': True, 'created': created, 'updated': updated})
 
     def api_bt_project_stats(self, pid):
         sess = self.require_auth()

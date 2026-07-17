@@ -250,6 +250,13 @@ th.filterable{position:relative}
     <h2>🏗️ Dự án</h2>
     <button class="btn-new-proj" onclick="openProjModal()">＋ Thêm dự án</button>
   </div>
+  <div style="display:flex;gap:6px;padding:0 12px 10px;flex-wrap:wrap">
+    <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="btExportExcel('/api/bt/projects/export')">📤 Xuất Excel</button>
+    <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="document.getElementById('bt-import-projects-input').click()">📥 Nhập Excel</button>
+    <button class="btn btn-ghost" style="font-size:11px;padding:4px 8px" onclick="btExportExcel('/api/bt/projects/template')">📄 File mẫu</button>
+    <input type="file" id="bt-import-projects-input" style="display:none" accept=".xlsx"
+      onchange="btStartImport(this.files[0], '/api/bt/projects/import', 'bt-import-projects-input', onProjectsImportDone)">
+  </div>
   <div id="proj-list"></div>
   <div class="sb-nav">
     <a href="#" onclick="showPartiesView();return false;">👤 Chủ thể / Hộ dân</a>
@@ -349,6 +356,11 @@ th.filterable{position:relative}
       <div class="search-box">
         <input id="parcel-search-inp" type="text" placeholder="Tìm số tờ, số thửa..." oninput="debouncedLoadParcels()">
       </div>
+      <button class="btn btn-ghost" onclick="btExportExcel(`/api/bt/projects/${currentProjId}/parcels/export`)">📤 Xuất Excel</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('bt-import-parcels-input').click()">📥 Nhập Excel</button>
+      <button class="btn btn-ghost" onclick="btExportExcel(`/api/bt/projects/${currentProjId}/parcels/template`)">📄 Tải file mẫu</button>
+      <input type="file" id="bt-import-parcels-input" style="display:none" accept=".xlsx"
+        onchange="btStartImport(this.files[0], `/api/bt/projects/${currentProjId}/parcels/import`, 'bt-import-parcels-input', onParcelsImportDone)">
     </div>
     <div class="form-group form-full" style="font-size:12px;color:var(--muted);padding:0 16px 10px">
       Thửa đất được tạo tự động từ Bản đồ GPMB. Để thêm/sửa/xóa thửa hoặc thay đổi số tờ, số thửa, diện tích, xã — vào tab 🗂️ Bản đồ (loại Bản đồ GPMB).
@@ -420,6 +432,11 @@ th.filterable{position:relative}
         <input id="asset-search-inp" type="text" placeholder="Tìm loại tài sản..." oninput="debouncedLoadAssets()">
       </div>
       <button class="btn btn-primary" onclick="openAssetModal()">＋ Thêm tài sản</button>
+      <button class="btn btn-ghost" onclick="btExportExcel(`/api/bt/projects/${currentProjId}/assets/export`)">📤 Xuất Excel</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('bt-import-assets-input').click()">📥 Nhập Excel</button>
+      <button class="btn btn-ghost" onclick="btExportExcel(`/api/bt/projects/${currentProjId}/assets/template`)">📄 Tải file mẫu</button>
+      <input type="file" id="bt-import-assets-input" style="display:none" accept=".xlsx"
+        onchange="btStartImport(this.files[0], `/api/bt/projects/${currentProjId}/assets/import`, 'bt-import-assets-input', onAssetsImportDone)">
     </div>
     <div class="tbl-wrap">
       <table>
@@ -453,6 +470,11 @@ th.filterable{position:relative}
         <input id="dossier-search-inp" type="text" placeholder="Tìm tên chủ hộ..." oninput="debouncedLoadDossiers()">
       </div>
       <button class="btn btn-primary" onclick="openDossierModal()">＋ Thêm hồ sơ hộ</button>
+      <button class="btn btn-ghost" onclick="btExportExcel(`/api/bt/projects/${currentProjId}/dossiers/export`)">📤 Xuất Excel</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('bt-import-dossiers-input').click()">📥 Nhập Excel</button>
+      <button class="btn btn-ghost" onclick="btExportExcel(`/api/bt/projects/${currentProjId}/dossiers/template`)">📄 Tải file mẫu</button>
+      <input type="file" id="bt-import-dossiers-input" style="display:none" accept=".xlsx"
+        onchange="btStartImport(this.files[0], `/api/bt/projects/${currentProjId}/dossiers/import`, 'bt-import-dossiers-input', onDossiersImportDone)">
     </div>
     <div class="tbl-wrap">
       <table>
@@ -538,6 +560,11 @@ th.filterable{position:relative}
         <input id="party-search-inp" type="text" placeholder="Tìm họ tên, CCCD, số điện thoại..." oninput="debouncedLoadParties()">
       </div>
       <button class="btn btn-primary" onclick="openPartyModal()">＋ Thêm chủ thể</button>
+      <button class="btn btn-ghost" onclick="btExportExcel('/api/bt/parties/export')">📤 Xuất Excel</button>
+      <button class="btn btn-ghost" onclick="document.getElementById('bt-import-parties-input').click()">📥 Nhập Excel</button>
+      <button class="btn btn-ghost" onclick="btExportExcel('/api/bt/parties/template')">📄 Tải file mẫu</button>
+      <input type="file" id="bt-import-parties-input" style="display:none" accept=".xlsx"
+        onchange="btStartImport(this.files[0], '/api/bt/parties/import', 'bt-import-parties-input', onPartiesImportDone)">
     </div>
     <div class="tbl-wrap">
       <table>
@@ -1037,6 +1064,26 @@ th.filterable{position:relative}
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeImportConfirm()">Hủy</button>
       <button class="btn btn-primary" onclick="confirmImportOverwrite()">Ghi đè và tiếp tục</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ BT GENERIC IMPORT OVERWRITE CONFIRM MODAL (dùng chung cho Xuất/Nhập/Mẫu Excel ở Chủ thể,
+     Thửa đất, Tài sản, Dự án, Hồ sơ Hộ — TÁCH RIÊNG khỏi #modal-import-confirm ở trên (vốn chỉ dành cho
+     luồng Import Bản đồ GPMB) để không đụng/rủi ro luồng đó đang chạy tốt. Xem btStartImport/sendBtImport
+     bên dưới. ══ -->
+<div class="modal-overlay" id="modal-bt-import-confirm">
+  <div class="modal modal-sm">
+    <div class="modal-head">
+      <h3>Xác nhận ghi đè dữ liệu</h3>
+      <button class="modal-close" onclick="closeBtImportConfirm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="bt-import-confirm-msg" style="font-size:14px;line-height:1.6"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeBtImportConfirm()">Hủy</button>
+      <button class="btn btn-primary" onclick="confirmBtImportOverwrite()">Ghi đè và tiếp tục</button>
     </div>
   </div>
 </div>
@@ -3603,6 +3650,102 @@ function closeImportConfirm() {
 async function confirmImportOverwrite() {
   document.getElementById('modal-import-confirm').classList.remove('open');
   await sendGpmbImport(true);
+}
+
+// ══════════════════════════════════════════════════════════════
+// BT GENERIC XUẤT/NHẬP/MẪU EXCEL — dùng chung cho Chủ thể+Nhân khẩu, Thửa đất, Tài sản, Dự án,
+// Hồ sơ Hộ+Quyết định (Bản đồ và Hồ sơ (cũ) đã có luồng riêng, không dùng bộ hàm này — xem
+// thiet_ke_csdl_boi_thuong.md). "Xuất Excel"/"Tải file mẫu" chỉ là window.open GET đơn giản (có cookie
+// đăng nhập sẵn); "Nhập Excel" theo đúng mẫu hình bật/tắt-ghi-đè đã dùng ở Bản đồ GPMB (xem
+// sendGpmbImport ở trên) nhưng dùng modal + state RIÊNG (#modal-bt-import-confirm/pendingBtImport) để
+// không đụng luồng GPMB đang chạy tốt.
+// ══════════════════════════════════════════════════════════════
+let pendingBtImport = null; // { file, url, inputId, onDone }
+
+function btExportExcel(url) {
+  window.open(url, '_blank');
+}
+
+async function btStartImport(file, url, inputId, onDone) {
+  if (!file) return;
+  pendingBtImport = { file, url, inputId, onDone };
+  await sendBtImport(false);
+}
+
+async function sendBtImport(confirmOverwrite) {
+  if (!pendingBtImport) return;
+  const { file, url, inputId, onDone } = pendingBtImport;
+  const fd = new FormData();
+  fd.append('file', file);
+  if (confirmOverwrite) fd.append('confirm_overwrite', '1');
+  let res;
+  try {
+    res = await fetch(url, { method: 'POST', body: fd });
+  } catch (e) {
+    toast('Lỗi kết nối khi import file', true);
+    pendingBtImport = null;
+    return;
+  }
+  if (res.status === 409) {
+    const data = await res.json();
+    document.getElementById('bt-import-confirm-msg').textContent =
+      `${data.conflicts.length}/${data.total} dòng trong file trùng với dữ liệu đã có: ${data.conflicts.join(', ')}. ` +
+      `Bạn có muốn ghi đè các dòng này không? Các dòng khác trong file (nếu có) vẫn được xử lý bình thường.`;
+    document.getElementById('modal-bt-import-confirm').classList.add('open');
+    return;
+  }
+  if (inputId) document.getElementById(inputId).value = '';
+  if (res.ok) {
+    const data = await res.json();
+    pendingBtImport = null;
+    if (onDone) onDone(data);
+  } else {
+    const data = await res.json().catch(() => ({}));
+    toast(data.error || 'Lỗi khi import file', true);
+    pendingBtImport = null;
+  }
+}
+
+function closeBtImportConfirm() {
+  document.getElementById('modal-bt-import-confirm').classList.remove('open');
+  if (pendingBtImport && pendingBtImport.inputId) document.getElementById(pendingBtImport.inputId).value = '';
+  pendingBtImport = null;
+}
+
+async function confirmBtImportOverwrite() {
+  document.getElementById('modal-bt-import-confirm').classList.remove('open');
+  await sendBtImport(true);
+}
+
+function onPartiesImportDone(data) {
+  loadParties();
+  toast(`Đã import: thêm mới ${data.created_parties} chủ thể (cập nhật ${data.updated_parties}), `
+    + `thêm mới ${data.created_members} nhân khẩu (cập nhật ${data.updated_members})`
+    + (data.skipped_members ? `, bỏ qua ${data.skipped_members} nhân khẩu không khớp chủ thể` : ''));
+}
+
+function onParcelsImportDone(data) {
+  loadParcels();
+  toast(`Đã cập nhật ${data.updated} thửa đất` + (data.skipped && data.skipped.length ? `, bỏ qua ${data.skipped.length} dòng không khớp thửa nào` : ''));
+}
+
+function onAssetsImportDone(data) {
+  loadAssets();
+  toast(`Đã import: thêm mới ${data.created}, cập nhật ${data.updated} tài sản`
+    + (data.skipped && data.skipped.length ? `, bỏ qua ${data.skipped.length} dòng không liên kết được thửa` : ''));
+}
+
+function onDossiersImportDone(data) {
+  loadDossiers();
+  toast(`Đã import: Hồ sơ Hộ thêm mới ${data.created_dossiers}/cập nhật ${data.updated_dossiers}, `
+    + `Quyết định thêm mới ${data.created_decisions}/cập nhật ${data.updated_decisions}`
+    + ((data.skipped_dossiers && data.skipped_dossiers.length) || (data.skipped_decisions && data.skipped_decisions.length)
+       ? `, có dòng bị bỏ qua do không khớp chủ hộ/thửa` : ''));
+}
+
+function onProjectsImportDone(data) {
+  loadProjects();
+  toast(`Đã import: thêm mới ${data.created}, cập nhật ${data.updated} dự án`);
 }
 
 // ══════════════════════════════════════════════════════════════
