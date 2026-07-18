@@ -311,6 +311,7 @@ th.filterable{position:relative}
       <div class="search-box">
         <input id="gpmb-search-inp" type="text" placeholder="Tìm tên bản đồ, đơn vị lập..." oninput="debouncedLoadGpmbMaps()">
       </div>
+      <button class="btn btn-ghost" onclick="openParcelGeoSearch()">🔍 Tìm thửa đất</button>
       <button class="btn btn-primary" onclick="openGpmbModal()">＋ Thêm bản đồ</button>
       <button class="btn btn-ghost gpmb-info-btn" onclick="openGpmbInfoModal()" title="Hướng dẫn">❗</button>
     </div>
@@ -1056,6 +1057,40 @@ th.filterable{position:relative}
     </div>
     <div class="modal-footer">
       <button class="btn btn-primary" onclick="closeGpmbInfoModal()">Đã hiểu</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══ TÌM THỬA ĐẤT TRÊN BẢN ĐỒ (tab 🗂️ Bản đồ) — tìm theo Tờ/Thửa liên kết, Chủ sử dụng, Diện tích;
+     mỗi kết quả có nút Xem để zoom bản đồ Leaflet tới đúng vị trí thửa đó ══ -->
+<div class="modal-overlay" id="modal-geo-search">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>🔍 Tìm thửa đất trên bản đồ</h3>
+      <button class="modal-close" onclick="closeParcelGeoSearchModal()">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-grid">
+        <div class="form-group"><label>Số tờ</label>
+          <select id="gs-so-to" onchange="onGeoSearchSoToChange()"><option value="">-- Tất cả --</option></select>
+        </div>
+        <div class="form-group"><label>Số thửa</label>
+          <select id="gs-so-thua"><option value="">-- Tất cả --</option></select>
+        </div>
+        <div class="form-group form-full"><label>Tên chủ sử dụng</label>
+          <input id="gs-chu-su-dung" type="text" placeholder="Nhập 1 phần họ tên...">
+        </div>
+        <div class="form-group"><label>Diện tích từ (m²)</label><input id="gs-dt-min" type="number" step="0.1"></div>
+        <div class="form-group"><label>đến (m²)</label><input id="gs-dt-max" type="number" step="0.1"></div>
+      </div>
+      <div style="margin-top:12px">
+        <button class="btn btn-primary" onclick="runParcelGeoSearch()">🔍 Tìm kiếm</button>
+      </div>
+      <div id="geo-search-summary" style="font-size:12px;color:var(--muted);margin-top:14px"></div>
+      <div id="geo-search-results" style="margin-top:6px;max-height:360px;overflow:auto"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeParcelGeoSearchModal()">Đóng</button>
     </div>
   </div>
 </div>
@@ -2346,6 +2381,154 @@ async function toggleGroupVisibility(groupKey) {
   }
   renderGpmbMapsPanel();
   renderGpmbMapCanvas();
+}
+
+// ══════════════════════════════════════════════════════════════
+// TÌM THỬA ĐẤT TRÊN BẢN ĐỒ (tab 🗂️ Bản đồ) — theo Tờ/Thửa (2 dropdown liên kết: chọn Tờ trước, Thửa
+// lọc theo Tờ đã chọn), Tên chủ sử dụng, khoảng Diện tích. Kết quả kèm nút "Xem" zoom bản đồ Leaflet
+// (gpmbLeafletMap) tới đúng polygon của thửa đó, tự bật mảnh bản đồ tương ứng nếu đang tắt.
+// ══════════════════════════════════════════════════════════════
+let geoSearchPairs = [];     // [{so_to, so_thua}, ...] toàn bộ dự án — tải 1 lần khi mở modal
+let geoSearchResults = [];   // kết quả tìm kiếm gần nhất (tra map_id/toa_do khi bấm Xem)
+let gpmbHighlightLayer = null;
+
+async function openParcelGeoSearch() {
+  if (!currentProjId) return;
+  document.getElementById('gs-chu-su-dung').value = '';
+  document.getElementById('gs-dt-min').value = '';
+  document.getElementById('gs-dt-max').value = '';
+  document.getElementById('geo-search-summary').textContent = 'Đang tải danh sách Tờ/Thửa...';
+  document.getElementById('geo-search-results').innerHTML = '';
+  document.getElementById('modal-geo-search').classList.add('open');
+
+  const res = await fetch(`/api/bt/projects/${currentProjId}/parcels/so-to-thua-list`);
+  geoSearchPairs = res.ok ? await res.json() : [];
+  const soToList = [...new Set(geoSearchPairs.map(p => p.so_to))];
+  document.getElementById('gs-so-to').innerHTML =
+    '<option value="">-- Tất cả --</option>' + soToList.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+  document.getElementById('gs-so-thua').innerHTML = '<option value="">-- Tất cả --</option>';
+  document.getElementById('geo-search-summary').textContent = '';
+}
+
+function closeParcelGeoSearchModal() {
+  document.getElementById('modal-geo-search').classList.remove('open');
+}
+
+function onGeoSearchSoToChange() {
+  const soTo = document.getElementById('gs-so-to').value;
+  const soThuaSelect = document.getElementById('gs-so-thua');
+  if (!soTo) {
+    soThuaSelect.innerHTML = '<option value="">-- Tất cả --</option>';
+    return;
+  }
+  const thuas = geoSearchPairs.filter(p => p.so_to === soTo).map(p => p.so_thua);
+  soThuaSelect.innerHTML = '<option value="">-- Tất cả --</option>' + thuas.map(t => `<option value="${esc(t)}">${esc(t)}</option>`).join('');
+}
+
+async function runParcelGeoSearch() {
+  const params = new URLSearchParams();
+  const soTo = document.getElementById('gs-so-to').value.trim();
+  const soThua = document.getElementById('gs-so-thua').value.trim();
+  const chuSuDung = document.getElementById('gs-chu-su-dung').value.trim();
+  const dtMin = document.getElementById('gs-dt-min').value.trim();
+  const dtMax = document.getElementById('gs-dt-max').value.trim();
+  if (soTo) params.set('so_to', soTo);
+  if (soThua) params.set('so_thua', soThua);
+  if (chuSuDung) params.set('chu_su_dung', chuSuDung);
+  if (dtMin) params.set('dt_min', dtMin);
+  if (dtMax) params.set('dt_max', dtMax);
+  if (![...params.keys()].length) { toast('Vui lòng nhập ít nhất 1 điều kiện tìm kiếm', true); return; }
+
+  document.getElementById('geo-search-summary').textContent = 'Đang tìm kiếm...';
+  const res = await fetch(`/api/bt/projects/${currentProjId}/parcels/geo-search?${params}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) { toast(data.error || 'Lỗi khi tìm kiếm', true); document.getElementById('geo-search-summary').textContent = ''; return; }
+  geoSearchResults = data.results || [];
+  renderGeoSearchResults(data.total || 0);
+}
+
+function renderGeoSearchResults(total) {
+  const box = document.getElementById('geo-search-results');
+  const summary = document.getElementById('geo-search-summary');
+  if (!geoSearchResults.length) {
+    summary.textContent = 'Không tìm thấy thửa đất nào khớp.';
+    box.innerHTML = '';
+    return;
+  }
+  summary.textContent = total > geoSearchResults.length
+    ? `Tìm thấy ${total.toLocaleString('vi-VN')} thửa — hiển thị ${geoSearchResults.length} kết quả đầu, hãy thu hẹp tìm kiếm để xem đủ.`
+    : `Tìm thấy ${total.toLocaleString('vi-VN')} thửa.`;
+  box.innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Tờ</th><th>Thửa</th><th>Xã</th><th style="text-align:right">Diện tích (m²)</th><th>Chủ sử dụng</th><th></th>
+      </tr></thead>
+      <tbody>
+        ${geoSearchResults.map((r, i) => `
+          <tr>
+            <td>${esc(r.so_to || '')}</td>
+            <td>${esc(r.so_thua || '')}</td>
+            <td>${esc(r.xa || '')}</td>
+            <td style="text-align:right">${r.tong_dien_tich != null ? fmt1(r.tong_dien_tich) : ''}</td>
+            <td>${esc(r.chu_so_huu || '') || '<span style="color:var(--muted)">—</span>'}</td>
+            <td>${r.toa_do
+              ? `<button class="btn btn-ghost btn-sm" onclick="zoomToGeoSearchResult(${i})">👁 Xem</button>`
+              : '<span style="color:var(--muted);font-size:12px">Chưa có tọa độ</span>'}</td>
+          </tr>
+        `).join('')}
+      </tbody>
+    </table>
+  `;
+}
+
+function zoomToGeoSearchResult(i) {
+  const r = geoSearchResults[i];
+  if (!r) return;
+  zoomToParcelGeo(r.map_id, r.toa_do);
+}
+
+async function zoomToParcelGeo(mapId, toaDo) {
+  if (!toaDo) { toast('Thửa này chưa có tọa độ trên Bản đồ GPMB.', true); return; }
+  const rings = parseToaDoToRings(toaDo);
+  if (!rings || !rings.length) { toast('Không đọc được tọa độ của thửa này.', true); return; }
+  const proj = projectsList.find(pr => pr.id === currentProjId);
+  const ktt = proj && proj.kinh_tuyen_truc != null && proj.kinh_tuyen_truc !== '' ? parseFloat(proj.kinh_tuyen_truc) : null;
+  if (ktt === null || Number.isNaN(ktt) || typeof proj4 !== 'function') {
+    toast('Dự án chưa khai Kinh tuyến trục nên chưa quy đổi được tọa độ sang bản đồ thực.', true);
+    return;
+  }
+  const outer = rings[0].filter(pt => Array.isArray(pt) && pt.length >= 2);
+  const latlngs = outer.map(pt => vn2000ToLonLat(pt[0], pt[1], ktt)).filter(Boolean).map(([lon, lat]) => [lat, lon]);
+  if (latlngs.length < 3) { toast('Không quy đổi được tọa độ của thửa này.', true); return; }
+
+  // Đảm bảo mảnh Bản đồ GPMB chứa thửa này đang bật hiển thị — nếu đang tắt, tự bật lên để vẽ ranh giới.
+  if (mapId) {
+    await ensureMapDetail(mapId);
+    if (!visibleMapIds.has(mapId)) {
+      visibleMapIds.add(mapId);
+      renderGpmbMapsPanel();
+    }
+  }
+  // Không cần switchTab('gpmb') — nút "Tìm thửa đất" chỉ xuất hiện trong toolbar của chính tab này nên
+  // luôn đang mở sẵn; gọi lại sẽ kích hoạt loadGpmbMaps() tải lại toàn bộ + tự fitBounds, gây tranh chấp
+  // (race condition) với thao tác zoom thẳng tới thửa ngay bên dưới.
+  renderGpmbMapCanvas(false); // fitView=false: tự zoom thẳng tới thửa ngay bên dưới, không cần fit toàn bộ layer
+
+  // Đợi layer vừa bật vẽ xong (renderGpmbLeafletMap tự invalidateSize/refresh nhãn sau 1 khoảng trễ ngắn).
+  setTimeout(() => {
+    if (!gpmbLeafletMap) return;
+    const bounds = L.polygon(latlngs).getBounds();
+    gpmbLeafletMap.fitBounds(bounds, { padding: [60, 60], maxZoom: 20 });
+    if (gpmbHighlightLayer) { gpmbLeafletMap.removeLayer(gpmbHighlightLayer); gpmbHighlightLayer = null; }
+    gpmbHighlightLayer = L.polygon(latlngs, {
+      color: '#ff2d55', weight: 4, fill: true, fillColor: '#ff2d55', fillOpacity: 0.28
+    }).addTo(gpmbLeafletMap);
+    setTimeout(() => {
+      if (gpmbHighlightLayer) { gpmbLeafletMap.removeLayer(gpmbHighlightLayer); gpmbHighlightLayer = null; }
+    }, 4000);
+  }, 150);
+
+  closeParcelGeoSearchModal();
 }
 
 // Bật/tắt riêng NHÃN THỬA của 1 mảnh — độc lập với việc bật/tắt cả mảnh (toggleMapVisibility ở trên):

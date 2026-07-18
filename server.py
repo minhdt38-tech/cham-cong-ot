@@ -1133,6 +1133,12 @@ class Handler(http.server.BaseHTTPRequestHandler):
         m = re.match(r'^/api/bt/projects/(\d+)/parcels/template$', path)
         if m:
             self.api_bt_parcels_template(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/parcels/so-to-thua-list$', path)
+        if m:
+            self.api_bt_parcels_so_to_thua_list(int(m.group(1))); return
+        m = re.match(r'^/api/bt/projects/(\d+)/parcels/geo-search$', path)
+        if m:
+            self.api_bt_parcels_geo_search(int(m.group(1)), qs); return
         m = re.match(r'^/api/bt/projects/(\d+)/parcels$', path)
         if m:
             self.api_bt_parcels_list(int(m.group(1)), qs); return
@@ -3284,6 +3290,85 @@ class Handler(http.server.BaseHTTPRequestHandler):
         })
 
     # ── BT v2: THỬA ĐẤT (gốc + theo dự án + đồng sở hữu) ────────────
+    def api_bt_parcels_so_to_thua_list(self, pid):
+        """Trả về TOÀN BỘ cặp (Số tờ, Số thửa) đã có trong dự án — dùng để dựng 2 dropdown liên kết
+        (chọn Tờ trước, Thửa lọc theo Tờ đã chọn) ở ô tìm kiếm trên tab 🗂️ Bản đồ, phía frontend tự
+        nhóm lại từ danh sách phẳng này (tránh phải gọi API 2 lần: 1 lần lấy Tờ, 1 lần lấy Thửa theo
+        Tờ). Với dự án cỡ 18.060 thửa (Hồng Vân), danh sách phẳng vẫn chỉ vài trăm KB, tải 1 lần khi mở
+        ô tìm kiếm là đủ nhẹ."""
+        sess = self.require_auth()
+        if not sess: return
+        with get_db() as db:
+            rows = db.execute(
+                "SELECT DISTINCT so_to, so_thua FROM bt_parcels "
+                "WHERE project_id=? AND so_to IS NOT NULL AND so_to!=''", (pid,)
+            ).fetchall()
+
+        def numkey(v):
+            try:
+                return (0, float(str(v).replace(',', '.')))
+            except (TypeError, ValueError):
+                return (1, str(v or ''))
+        pairs = [{'so_to': r['so_to'], 'so_thua': r['so_thua']} for r in rows]
+        pairs.sort(key=lambda p: (numkey(p['so_to']), numkey(p['so_thua'])))
+        self.send_json(pairs)
+
+    def api_bt_parcels_geo_search(self, pid, qs):
+        """Tìm thửa đất trong dự án theo Số tờ / Số thửa / Tên chủ sử dụng / khoảng Diện tích — dùng
+        cho ô tìm kiếm ở tab 🗂️ Bản đồ (khác với tìm kiếm Tờ/Thửa đơn giản ở tab 🗺️ Thửa đất). Mỗi kết
+        quả kèm map_id + toa_do (lấy từ liên kết Bản đồ GPMB gần nhất của thửa, nếu có) để frontend
+        zoom thẳng bản đồ Leaflet tới đúng vị trí khi bấm "Xem" — không cần tải lại toàn bộ chi tiết
+        bản đồ. Yêu cầu ít nhất 1 điều kiện lọc (tránh trả về cả 18.060 thửa không cần thiết); giới hạn
+        tối đa 300 kết quả, kèm `total` để frontend báo khi bị cắt bớt và gợi ý thu hẹp tìm kiếm."""
+        sess = self.require_auth()
+        if not sess: return
+        so_to = qs.get('so_to', [''])[0].strip()
+        so_thua = qs.get('so_thua', [''])[0].strip()
+        chu_su_dung = qs.get('chu_su_dung', [''])[0].strip()
+        dt_min = qs.get('dt_min', [''])[0].strip()
+        dt_max = qs.get('dt_max', [''])[0].strip()
+        if not (so_to or so_thua or chu_su_dung or dt_min or dt_max):
+            self.send_json({'error': 'Vui lòng nhập ít nhất 1 điều kiện tìm kiếm (Số tờ, Số thửa, Chủ sử dụng hoặc Diện tích).'}, 400)
+            return
+
+        where = 'WHERE pl.project_id=? '
+        params = [pid]
+        if so_to:
+            where += 'AND pl.so_to=? '
+            params.append(so_to)
+        if so_thua:
+            where += 'AND pl.so_thua=? '
+            params.append(so_thua)
+        if chu_su_dung:
+            where += ('AND EXISTS(SELECT 1 FROM bt_parcel_owners po JOIN bt_parties pt ON pt.id=po.chu_the_id '
+                       'WHERE po.parcel_id=pl.id AND pt.ho_ten LIKE ?) ')
+            params.append(f'%{chu_su_dung}%')
+        if dt_min:
+            try:
+                where += 'AND pl.tong_dien_tich >= ? '
+                params.append(float(dt_min.replace(',', '.')))
+            except ValueError:
+                pass
+        if dt_max:
+            try:
+                where += 'AND pl.tong_dien_tich <= ? '
+                params.append(float(dt_max.replace(',', '.')))
+            except ValueError:
+                pass
+
+        with get_db() as db:
+            total = db.execute(f'SELECT COUNT(*) FROM bt_parcels pl {where}', params).fetchone()[0]
+            rows = db.execute(
+                "SELECT pl.id, pl.so_to, pl.so_thua, pl.xa, pl.tong_dien_tich, "
+                "(SELECT GROUP_CONCAT(CASE WHEN pt.so_cccd IS NOT NULL AND pt.so_cccd!='' "
+                "  THEN pt.ho_ten || ' - ' || pt.so_cccd ELSE pt.ho_ten END, '; ') FROM bt_parcel_owners po "
+                " JOIN bt_parties pt ON pt.id=po.chu_the_id WHERE po.parcel_id=pl.id) as chu_so_huu, "
+                "(SELECT mp2.map_id FROM bt_map_parcels mp2 WHERE mp2.parcel_id=pl.id ORDER BY mp2.id DESC LIMIT 1) as map_id, "
+                "(SELECT mp2.toa_do FROM bt_map_parcels mp2 WHERE mp2.parcel_id=pl.id ORDER BY mp2.id DESC LIMIT 1) as toa_do "
+                f"FROM bt_parcels pl {where} ORDER BY pl.xa, pl.so_to, pl.so_thua LIMIT 300", params
+            ).fetchall()
+        self.send_json({'results': [dict(r) for r in rows], 'total': total})
+
     def api_bt_parcel_master_search(self, qs):
         """Gợi ý Thửa đất gốc trùng — LỌC THEO XÃ khi có truyền xa: Số tờ/Số thửa chỉ duy nhất trong
         phạm vi 1 xã, 2 xã khác nhau hoàn toàn có thể cùng có "Tờ 1 - Thửa 1" mà là 2 thửa khác nhau —
