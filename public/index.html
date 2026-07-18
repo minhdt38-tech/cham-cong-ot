@@ -1485,9 +1485,18 @@ async function renderAllRecords() {
 async function renderReport() {
   const now = new Date();
   let month = now.getMonth() + 1, year = now.getFullYear();
+  let mode = 'month'; // 'month' | 'range'
+  let dateFrom = '', dateTo = '';
+
+  function toISO(d) {
+    return d.toISOString().slice(0,10);
+  }
 
   async function load() {
-    const stats = await api('GET', `/api/manager/stats?month=${month}&year=${year}`);
+    const qs = mode === 'range' && dateFrom && dateTo
+      ? `from=${dateFrom}&to=${dateTo}`
+      : `month=${month}&year=${year}`;
+    const stats = await api('GET', `/api/manager/stats?${qs}`);
     const rows = stats.map(u => `
       <tr>
         <td><strong>${u.full_name}</strong>${u.department?`<br><small style="color:var(--muted)">${u.department}</small>`:''}</td>
@@ -1500,18 +1509,35 @@ async function renderReport() {
     `).join('');
     const totHours = stats.reduce((s,u)=>s+(u.total_hours||0),0);
 
+    const reportTitle = mode === 'range' && dateFrom && dateTo
+      ? `📈 Báo cáo OT từ ${dateFrom.split('-').reverse().join('/')} đến ${dateTo.split('-').reverse().join('/')}`
+      : `📈 Báo cáo OT tháng ${month}/${year}`;
+    const exportQs = mode === 'range' && dateFrom && dateTo
+      ? `from=${dateFrom}&to=${dateTo}`
+      : `month=${month}&year=${year}`;
+
     set('content-area', `
       <div class="card">
         <div class="flex justify-between items-center mb-4" style="flex-wrap:wrap;gap:10px">
-          <h3>📈 Báo cáo OT tháng ${month}/${year}</h3>
-          <div class="filter-bar" style="margin:0">
-            <select id="r-month" onchange="updateReport()">
-              ${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1==month?'selected':''}>Tháng ${i+1}</option>`).join('')}
+          <h3>${reportTitle}</h3>
+          <div class="filter-bar" style="margin:0;flex-wrap:wrap;gap:8px">
+            <select id="r-mode" onchange="switchReportMode()">
+              <option value="month" ${mode==='month'?'selected':''}>Theo tháng</option>
+              <option value="range" ${mode==='range'?'selected':''}>Theo khoảng ngày</option>
             </select>
-            <select id="r-year" onchange="updateReport()">
-              ${[year-1,year,year+1].map(y=>`<option value="${y}" ${y==year?'selected':''}>${y}</option>`).join('')}
-            </select>
-            <button class="btn btn-success btn-sm" onclick="exportExcel(${month},${year})">📥 Xuất Excel</button>
+            ${mode === 'month' ? `
+              <select id="r-month" onchange="updateReport()">
+                ${Array.from({length:12},(_,i)=>`<option value="${i+1}" ${i+1==month?'selected':''}>Tháng ${i+1}</option>`).join('')}
+              </select>
+              <select id="r-year" onchange="updateReport()">
+                ${[year-1,year,year+1].map(y=>`<option value="${y}" ${y==year?'selected':''}>${y}</option>`).join('')}
+              </select>
+            ` : `
+              <input type="date" id="r-from" value="${dateFrom}" onchange="updateReportRange()">
+              <span style="color:var(--muted)">đến</span>
+              <input type="date" id="r-to" value="${dateTo}" onchange="updateReportRange()">
+            `}
+            <button class="btn btn-success btn-sm" onclick="exportExcel('${exportQs}')">📥 Xuất Excel</button>
           </div>
         </div>
         <div class="table-wrap">
@@ -1537,6 +1563,25 @@ async function renderReport() {
   window.updateReport = () => {
     month = +document.getElementById('r-month').value;
     year = +document.getElementById('r-year').value;
+    load();
+  };
+  window.updateReportRange = () => {
+    dateFrom = document.getElementById('r-from').value;
+    dateTo = document.getElementById('r-to').value;
+    if (dateFrom && dateTo && dateFrom > dateTo) {
+      alert('Ngày bắt đầu phải trước hoặc bằng ngày kết thúc.');
+      return;
+    }
+    load();
+  };
+  window.switchReportMode = () => {
+    mode = document.getElementById('r-mode').value;
+    if (mode === 'range' && !dateFrom) {
+      const first = new Date(year, month - 1, 1);
+      const last = new Date(year, month, 0);
+      dateFrom = toISO(first);
+      dateTo = toISO(last);
+    }
     load();
   };
   load();
@@ -2098,10 +2143,9 @@ function copyPw(pw, btn) {
   });
 }
 
-function exportExcel(month, year) {
+function exportExcel(qs) {
   const a = document.createElement('a');
-  a.href = `/api/manager/export?month=${month}&year=${year}`;
-  a.download = `cham_cong_OT_T${month}_${year}.xlsx`;
+  a.href = `/api/manager/export?${qs}`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

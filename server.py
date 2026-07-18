@@ -1979,9 +1979,14 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         month  = qs.get('month', [None])[0]
         year   = qs.get('year',  [None])[0]
+        date_from = qs.get('from', [None])[0]
+        date_to   = qs.get('to',   [None])[0]
         date_filter = ''
         params = []
-        if month and year:
+        if date_from and date_to:
+            date_filter = "AND r.request_date BETWEEN ? AND ?"
+            params.extend([date_from, date_to])
+        elif month and year:
             date_filter = "AND strftime('%Y-%m', r.request_date) = ?"
             params.append(f"{year}-{month.zfill(2)}")
         sql = f"""
@@ -2008,6 +2013,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return
         month = qs.get('month', [None])[0]
         year  = qs.get('year',  [None])[0]
+        date_from = qs.get('from', [None])[0]
+        date_to   = qs.get('to',   [None])[0]
         sql = """SELECT r.id, u.full_name, u.department,
                         r.request_date, r.ot_type,
                         r.start_time, r.end_time, r.hours,
@@ -2016,14 +2023,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
                  JOIN users u ON r.user_id = u.id
                  WHERE 1=1"""
         params = []
-        if month and year:
+        if date_from and date_to:
+            sql += " AND r.request_date BETWEEN ? AND ?"
+            params.extend([date_from, date_to])
+        elif month and year:
             sql += " AND strftime('%Y-%m', r.request_date) = ?"
             params.append(f"{year}-{month.zfill(2)}")
         sql += ' ORDER BY r.request_date DESC, u.full_name'
         with get_db() as db:
             rows = db.execute(sql, params).fetchall()
 
-        label_month = f'T{month}_{year}' if month and year else 'tat_ca'
+        if date_from and date_to:
+            label_month = f'{date_from}_den_{date_to}'
+        elif month and year:
+            label_month = f'T{month}_{year}'
+        else:
+            label_month = 'tat_ca'
 
         if OPENPYXL_AVAILABLE:
             wb = openpyxl.Workbook()
