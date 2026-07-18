@@ -2040,6 +2040,11 @@ async function saveParcel() {
   if (res.ok) {
     closeParcelModal();
     await loadParcels();
+    // Chủ sở hữu vừa lưu có thể vừa đổi — nhãn thửa trên tab 🗂️ Bản đồ (renderGpmbMapCanvas) đọc từ
+    // mapDetailCache (chỉ tải 1 lần rồi giữ nguyên), không tự biết thửa này đổi chủ nên xóa cache toàn
+    // bộ để lần tới xem tab Bản đồ được tải lại đúng dữ liệu mới (không biết chắc thửa này thuộc mảnh
+    // Bản đồ GPMB nào từ đây nên xóa hết, theo đúng cách đã dùng ở applyMocgioiRecompute).
+    mapDetailCache = {};
     toast(wasEditing ? 'Đã cập nhật thửa đất' : 'Đã thêm thửa đất mới');
   } else { toast('Lỗi khi lưu thửa đất', true); }
   return body;
@@ -4220,6 +4225,12 @@ function onPartiesImportDone(data) {
 
 function onParcelsImportDone(data) {
   loadParcels();
+  if (data.synced_owners) {
+    // Import vừa có thể đổi chủ sử dụng hàng loạt — xóa cache chi tiết bản đồ (mapDetailCache) để tab
+    // 🗂️ Bản đồ tải lại đúng dữ liệu mới ở lần xem tiếp theo, tránh nhãn thửa hiển thị chủ SD cũ (xem
+    // giải thích tương tự ở saveParcel()).
+    mapDetailCache = {};
+  }
   let msg = `Đã cập nhật ${data.updated} thửa đất`;
   if (data.skipped && data.skipped.length) msg += `, bỏ qua ${data.skipped.length} dòng không khớp thửa nào`;
   if (data.synced_owners) {
