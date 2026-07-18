@@ -308,10 +308,9 @@ th.filterable{position:relative}
   <!-- GPMB MAP TAB (Bản đồ GPMB — nguồn gốc sinh Thửa đất) -->
   <div id="tab-gpmb" style="flex:1;display:none;flex-direction:column;overflow:hidden">
     <div class="toolbar">
-      <div class="search-box">
-        <input id="gpmb-search-inp" type="text" placeholder="Tìm tên bản đồ, đơn vị lập..." oninput="debouncedLoadGpmbMaps()">
+      <div class="search-box" onclick="openParcelGeoSearch()" style="cursor:pointer">
+        <input type="text" placeholder="Tìm thửa đất theo Tờ/Thửa, chủ sử dụng, diện tích..." readonly style="cursor:pointer">
       </div>
-      <button class="btn btn-ghost" onclick="openParcelGeoSearch()">🔍 Tìm thửa đất</button>
       <button class="btn btn-primary" onclick="openGpmbModal()">＋ Thêm bản đồ</button>
       <button class="btn btn-ghost gpmb-info-btn" onclick="openGpmbInfoModal()" title="Hướng dẫn">❗</button>
     </div>
@@ -2313,18 +2312,12 @@ async function reloadMapDetail() {
 // ══════════════════════════════════════════════════════════════
 let gpmbMapsList = [];
 let editGpmbMapId = null;
-let gpmbSearchTimer = null;
 let gpmbDupCheckTimer = null;
 let gpmbPreviewTimer = null;
 let selectedGpmbParcelMasterId = null;
 let currentGpmbParcels = [];
 let currentGpmbFiles = [];
 let editingGpmbParcelId = null;
-
-function debouncedLoadGpmbMaps() {
-  clearTimeout(gpmbSearchTimer);
-  gpmbSearchTimer = setTimeout(loadGpmbMaps, 300);
-}
 
 const GPMB_TYPE_STYLE = {
   'Bản đồ GPMB':          { color: '#5dade2', badge: 'GPMB' },
@@ -2350,9 +2343,9 @@ function groupKeyOf(m) { return (m.xa || '').trim() || '(Chưa phân nhóm)'; }
 
 async function loadGpmbMaps() {
   if (!currentProjId) return;
-  const q = document.getElementById('gpmb-search-inp').value.trim();
+  // Ô tìm kiếm theo tên bản đồ/đơn vị lập đã bị bỏ (thay bằng ô Tìm thửa đất ở cùng vị trí trong
+  // toolbar) — danh sách bản đồ ở đây luôn tải đầy đủ, không còn tham số q.
   const params = new URLSearchParams({ project_id: currentProjId });
-  if (q) params.set('q', q);
   const res = await fetch(`/api/bt/maps?${params}`);
   if (!res.ok) return;
   gpmbMapsList = await res.json();
