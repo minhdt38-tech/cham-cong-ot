@@ -348,6 +348,22 @@ th.filterable{position:relative}
           <div id="gpmb-map-empty" style="color:var(--muted);font-size:13px;text-align:center;padding:20px">Bấm 👁 bên trái để bật hiển thị bản đồ</div>
           <svg id="gpmb-map-svg" style="display:none;width:100%;height:100%" preserveAspectRatio="xMidYMid meet"></svg>
           <div id="gpmb-map-leaflet" style="display:none;width:100%;height:100%;border-radius:8px"></div>
+
+          <!-- Popup góc bản đồ — hiện sau khi bấm "Xem" 1 kết quả tìm kiếm, cho phép quay lại danh
+               sách kết quả hoặc lướt tiếp Trước/Sau mà không cần mở lại toàn bộ modal tìm kiếm — phục
+               vụ trường hợp tìm ra nhiều kết quả, cần xem lần lượt từng thửa để tìm đúng thửa cần. -->
+          <div id="geo-search-back-widget" style="display:none;position:absolute;top:14px;right:14px;z-index:1000;background:#1a2b3c;border:1px solid var(--border);border-radius:10px;padding:10px 12px;box-shadow:0 4px 14px rgba(0,0,0,.35);font-size:12px;max-width:260px">
+            <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:4px">
+              <strong id="geo-search-widget-title" style="font-size:13px"></strong>
+              <button onclick="closeGeoSearchBackWidget()" style="background:none;border:none;color:var(--muted);cursor:pointer;font-size:15px;line-height:1;padding:0" title="Đóng">✕</button>
+            </div>
+            <div id="geo-search-widget-sub" style="color:var(--muted);margin-bottom:8px;line-height:1.4"></div>
+            <div style="display:flex;gap:6px">
+              <button class="btn btn-ghost btn-sm" onclick="navigateGeoSearchResult(-1)" title="Xem thửa trước">◀ Trước</button>
+              <button class="btn btn-ghost btn-sm" onclick="navigateGeoSearchResult(1)" title="Xem thửa sau">Sau ▶</button>
+              <button class="btn btn-primary btn-sm" onclick="reopenGeoSearchModal()">📋 Danh sách</button>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2390,6 +2406,8 @@ async function toggleGroupVisibility(groupKey) {
 // ══════════════════════════════════════════════════════════════
 let geoSearchPairs = [];     // [{so_to, so_thua}, ...] toàn bộ dự án — tải 1 lần khi mở modal
 let geoSearchResults = [];   // kết quả tìm kiếm gần nhất (tra map_id/toa_do khi bấm Xem)
+let geoSearchLastTotal = 0;  // tổng số khớp thật (có thể > geoSearchResults.length nếu bị cắt ở 300)
+let currentGeoSearchViewIndex = -1; // vị trí (trong geoSearchResults) đang xem trên bản đồ — dùng cho popup góc + Trước/Sau
 let gpmbHighlightLayer = null;
 
 async function openParcelGeoSearch() {
@@ -2399,6 +2417,8 @@ async function openParcelGeoSearch() {
   document.getElementById('gs-dt-max').value = '';
   document.getElementById('geo-search-summary').textContent = 'Đang tải danh sách Tờ/Thửa...';
   document.getElementById('geo-search-results').innerHTML = '';
+  geoSearchResults = []; geoSearchLastTotal = 0; currentGeoSearchViewIndex = -1;
+  closeGeoSearchBackWidget();
   document.getElementById('modal-geo-search').classList.add('open');
 
   const res = await fetch(`/api/bt/projects/${currentProjId}/parcels/so-to-thua-list`);
@@ -2444,7 +2464,10 @@ async function runParcelGeoSearch() {
   const data = await res.json().catch(() => ({}));
   if (!res.ok) { toast(data.error || 'Lỗi khi tìm kiếm', true); document.getElementById('geo-search-summary').textContent = ''; return; }
   geoSearchResults = data.results || [];
-  renderGeoSearchResults(data.total || 0);
+  geoSearchLastTotal = data.total || 0;
+  currentGeoSearchViewIndex = -1; // tìm kiếm mới — bỏ ngữ cảnh "đang xem thửa nào" của lần tìm trước
+  closeGeoSearchBackWidget();
+  renderGeoSearchResults(geoSearchLastTotal);
 }
 
 function renderGeoSearchResults(total) {
@@ -2465,14 +2488,14 @@ function renderGeoSearchResults(total) {
       </tr></thead>
       <tbody>
         ${geoSearchResults.map((r, i) => `
-          <tr>
+          <tr${i === currentGeoSearchViewIndex ? ' style="background:rgba(77,163,255,.15)"' : ''}>
             <td>${esc(r.so_to || '')}</td>
             <td>${esc(r.so_thua || '')}</td>
             <td>${esc(r.xa || '')}</td>
             <td style="text-align:right">${r.tong_dien_tich != null ? fmt1(r.tong_dien_tich) : ''}</td>
             <td>${esc(r.chu_so_huu || '') || '<span style="color:var(--muted)">—</span>'}</td>
             <td>${r.toa_do
-              ? `<button class="btn btn-ghost btn-sm" onclick="zoomToGeoSearchResult(${i})">👁 Xem</button>`
+              ? `<button class="btn btn-ghost btn-sm" onclick="zoomToGeoSearchResult(${i})">${i === currentGeoSearchViewIndex ? '📍 Đang xem' : '👁 Xem'}</button>`
               : '<span style="color:var(--muted);font-size:12px">Chưa có tọa độ</span>'}</td>
           </tr>
         `).join('')}
@@ -2484,7 +2507,43 @@ function renderGeoSearchResults(total) {
 function zoomToGeoSearchResult(i) {
   const r = geoSearchResults[i];
   if (!r) return;
+  currentGeoSearchViewIndex = i;
   zoomToParcelGeo(r.map_id, r.toa_do);
+}
+
+// Lướt Trước/Sau trong danh sách kết quả (từ popup góc bản đồ) — bỏ qua các kết quả không có tọa độ
+// (không zoom được) thay vì đứng yên; nếu TẤT CẢ đều thiếu tọa độ thì báo và không làm gì.
+function navigateGeoSearchResult(delta) {
+  if (!geoSearchResults.length) return;
+  const n = geoSearchResults.length;
+  let idx = currentGeoSearchViewIndex;
+  for (let step = 0; step < n; step++) {
+    idx = (idx + delta + n) % n;
+    if (geoSearchResults[idx].toa_do) { zoomToGeoSearchResult(idx); return; }
+  }
+  toast('Không có thửa nào khác có tọa độ để xem.', true);
+}
+
+// Mở lại modal danh sách kết quả TỪ popup góc bản đồ — KHÔNG gọi openParcelGeoSearch() vì hàm đó reset
+// toàn bộ bộ lọc + tải lại danh sách Tờ/Thửa; ở đây chỉ cần hiện lại đúng bảng kết quả đang có sẵn.
+function reopenGeoSearchModal() {
+  document.getElementById('modal-geo-search').classList.add('open');
+  renderGeoSearchResults(geoSearchLastTotal);
+}
+
+function showGeoSearchBackWidget() {
+  const r = geoSearchResults[currentGeoSearchViewIndex];
+  if (!r) return;
+  document.getElementById('geo-search-widget-title').textContent = `Tờ ${r.so_to} - Thửa ${r.so_thua}`;
+  document.getElementById('geo-search-widget-sub').innerHTML =
+    `Kết quả ${currentGeoSearchViewIndex + 1}/${geoSearchResults.length}` +
+    (r.chu_so_huu ? `<br>${esc(r.chu_so_huu)}` : '');
+  document.getElementById('geo-search-back-widget').style.display = 'block';
+}
+
+function closeGeoSearchBackWidget() {
+  document.getElementById('geo-search-back-widget').style.display = 'none';
+  if (gpmbHighlightLayer && gpmbLeafletMap) { gpmbLeafletMap.removeLayer(gpmbHighlightLayer); gpmbHighlightLayer = null; }
 }
 
 async function zoomToParcelGeo(mapId, toaDo) {
@@ -2519,16 +2578,17 @@ async function zoomToParcelGeo(mapId, toaDo) {
     if (!gpmbLeafletMap) return;
     const bounds = L.polygon(latlngs).getBounds();
     gpmbLeafletMap.fitBounds(bounds, { padding: [60, 60], maxZoom: 20 });
+    // Highlight GIỮ NGUYÊN (không tự tắt sau vài giây) — vẫn còn popup góc bản đồ cho phép lướt Trước/
+    // Sau hoặc quay lại danh sách, nên cần thấy rõ ranh giới thửa đang xem trong suốt quá trình đó; chỉ
+    // gỡ khi zoom sang thửa khác (removeLayer ngay trên) hoặc khi đóng hẳn popup (closeGeoSearchBackWidget).
     if (gpmbHighlightLayer) { gpmbLeafletMap.removeLayer(gpmbHighlightLayer); gpmbHighlightLayer = null; }
     gpmbHighlightLayer = L.polygon(latlngs, {
       color: '#ff2d55', weight: 4, fill: true, fillColor: '#ff2d55', fillOpacity: 0.28
     }).addTo(gpmbLeafletMap);
-    setTimeout(() => {
-      if (gpmbHighlightLayer) { gpmbLeafletMap.removeLayer(gpmbHighlightLayer); gpmbHighlightLayer = null; }
-    }, 4000);
   }, 150);
 
   closeParcelGeoSearchModal();
+  showGeoSearchBackWidget();
 }
 
 // Bật/tắt riêng NHÃN THỬA của 1 mảnh — độc lập với việc bật/tắt cả mảnh (toggleMapVisibility ở trên):
