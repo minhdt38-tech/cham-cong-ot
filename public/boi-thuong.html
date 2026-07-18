@@ -1898,7 +1898,7 @@ async function openParcelModal(id) {
   const pres = await fetch('/api/bt/parties');
   ownerPickerParties = pres.ok ? await pres.json() : [];
   document.getElementById('plf-owner-select').innerHTML =
-    ownerPickerParties.map(p => `<option value="${p.id}">${esc(p.ho_ten)}</option>`).join('');
+    ownerPickerParties.map(p => `<option value="${p.id}">${esc(p.ho_ten)}${p.so_cccd ? ' - ' + esc(p.so_cccd) : ' (chưa có CCCD)'}</option>`).join('');
 
   const fields = ['so-to','so-thua','xa','loai-dat','nguon-goc','tong-dt','dt-thu-hoi','dt-con-lai','so-gcn','ngay-cap-gcn','ghi-chu'];
   fields.forEach(f => document.getElementById('plf-'+f).value = '');
@@ -1920,7 +1920,7 @@ async function openParcelModal(id) {
       document.getElementById('plf-ghi-chu').value = p.ghi_chu || '';
       selectedMasterId = p.parcel_master_id || null;
       currentParcelOwners = (p.owners || []).map(o => ({
-        chu_the_id: o.chu_the_id, ho_ten: o.ho_ten, vai_tro: o.vai_tro, ty_le_so_huu: o.ty_le_so_huu
+        chu_the_id: o.chu_the_id, ho_ten: o.ho_ten, so_cccd: o.so_cccd, vai_tro: o.vai_tro, ty_le_so_huu: o.ty_le_so_huu
       }));
       document.getElementById('parcel-warn-banner').style.display = p.has_gpmb_map ? 'none' : 'block';
     }
@@ -1941,7 +1941,7 @@ function addOwnerRow() {
   const vaiTro = document.getElementById('plf-owner-vai-tro').value;
   const tyLe = document.getElementById('plf-owner-ty-le').value;
   currentParcelOwners.push({
-    chu_the_id: chuTheId, ho_ten: party ? party.ho_ten : '', vai_tro: vaiTro,
+    chu_the_id: chuTheId, ho_ten: party ? party.ho_ten : '', so_cccd: party ? party.so_cccd : '', vai_tro: vaiTro,
     ty_le_so_huu: tyLe ? parseFloat(tyLe) : null
   });
   document.getElementById('plf-owner-ty-le').value = '';
@@ -1961,7 +1961,7 @@ function renderOwnersList() {
   }
   box.innerHTML = currentParcelOwners.map(o => `
     <div style="display:flex;align-items:center;gap:8px;background:var(--card);padding:6px 10px;border-radius:6px">
-      <span style="flex:1;font-size:13px">${esc(o.ho_ten)} — ${esc(o.vai_tro)}${o.ty_le_so_huu ? ' ('+o.ty_le_so_huu+'%)' : ''}</span>
+      <span style="flex:1;font-size:13px">${esc(o.ho_ten)}${o.so_cccd ? ' - ' + esc(o.so_cccd) : ''} — ${esc(o.vai_tro)}${o.ty_le_so_huu ? ' ('+o.ty_le_so_huu+'%)' : ''}</span>
       <button class="btn btn-ghost btn-sm" onclick="removeOwnerRow(${o.chu_the_id})">✕</button>
     </div>
   `).join('');
@@ -3977,7 +3977,17 @@ function onPartiesImportDone(data) {
 
 function onParcelsImportDone(data) {
   loadParcels();
-  toast(`Đã cập nhật ${data.updated} thửa đất` + (data.skipped && data.skipped.length ? `, bỏ qua ${data.skipped.length} dòng không khớp thửa nào` : ''));
+  let msg = `Đã cập nhật ${data.updated} thửa đất`;
+  if (data.skipped && data.skipped.length) msg += `, bỏ qua ${data.skipped.length} dòng không khớp thửa nào`;
+  if (data.synced_owners) {
+    msg += `. Đã đồng bộ chủ sử dụng cho ${data.synced_owners} thửa (thêm mới ${data.created_parties}, `
+      + `cập nhật ${data.updated_parties} chủ thể)`;
+  }
+  if (data.skipped_owner_names && data.skipped_owner_names.length) {
+    msg += `. Bỏ qua ${data.skipped_owner_names.length} chủ sử dụng thiếu Số CCCD: ${data.skipped_owner_names.slice(0, 5).join(', ')}`
+      + (data.skipped_owner_names.length > 5 ? '...' : '');
+  }
+  toast(msg);
 }
 
 function onAssetsImportDone(data) {

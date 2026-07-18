@@ -3314,8 +3314,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
         q = qs.get('q', [''])[0].strip()
         sql = (
             'SELECT pl.*, pm.so_to_hien_hanh, pm.so_thua_hien_hanh, '
-            "(SELECT GROUP_CONCAT(pt.ho_ten, ', ') FROM bt_parcel_owners po "
-            ' JOIN bt_parties pt ON pt.id=po.chu_the_id WHERE po.parcel_id=pl.id) as chu_so_huu, '
+            "(SELECT GROUP_CONCAT(CASE WHEN pt.so_cccd IS NOT NULL AND pt.so_cccd!='' "
+            "  THEN pt.ho_ten || ' - ' || pt.so_cccd ELSE pt.ho_ten END, '; ') "
+            ' FROM bt_parcel_owners po JOIN bt_parties pt ON pt.id=po.chu_the_id WHERE po.parcel_id=pl.id) as chu_so_huu, '
             "EXISTS(SELECT 1 FROM bt_map_parcels mp JOIN bt_maps mm ON mm.id=mp.map_id "
             "  WHERE mp.parcel_id=pl.id AND mm.loai_ban_do='Bản đồ GPMB') as has_gpmb_map "
             'FROM bt_parcels pl LEFT JOIN bt_parcel_master pm ON pm.id=pl.parcel_master_id '
@@ -3343,7 +3344,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             if not row:
                 self.send_json({'error': 'Không tìm thấy'}, 404); return
             owners = db.execute(
-                'SELECT po.id as link_id, po.chu_the_id, po.vai_tro, po.ty_le_so_huu, pt.ho_ten '
+                'SELECT po.id as link_id, po.chu_the_id, po.vai_tro, po.ty_le_so_huu, pt.ho_ten, pt.so_cccd '
                 'FROM bt_parcel_owners po JOIN bt_parties pt ON pt.id=po.chu_the_id WHERE po.parcel_id=?',
                 (parcel_id,)
             ).fetchall()
@@ -3422,15 +3423,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self.send_json({'ok': True})
 
     def api_bt_parcels_export(self, pid):
-        """Xuất Thửa đất của 1 dự án ra Excel — CHỈ các trường phi không gian (loại đất, nguồn gốc SD,
-        số GCN, ghi chú...). Tờ/Thửa/Xã/diện tích/chủ sử dụng chỉ xuất ra để THAM KHẢO/đối chiếu, không
-        chỉnh sửa được qua Import — Bản đồ GPMB là nguồn duy nhất sinh/sửa Tờ-Thửa-diện tích-chủ SD, xem
-        [[boi_thuong_schema_redesign]]."""
+        """Xuất Thửa đất của 1 dự án ra Excel — Tờ/Thửa/Xã/diện tích chỉ xuất ra để THAM KHẢO/đối chiếu,
+        không chỉnh sửa được qua Import (Bản đồ GPMB là nguồn duy nhất sinh/sửa các trường này). Cột "Chủ
+        sử dụng" là NGOẠI LỆ — CÓ THỂ sửa/điền qua Import (dạng "Họ tên - Số CCCD", nhiều đồng sở hữu
+        cách nhau bằng ";") để tạo/đồng bộ chủ sử dụng vào CSDL Chủ thể (bt_parties) và gắn vào thửa,
+        xem api_bt_parcels_import."""
         sess = self.require_auth()
         if not sess: return
         with get_db() as db:
             rows = db.execute(
-                "SELECT pl.*, (SELECT GROUP_CONCAT(pt.ho_ten, ', ') FROM bt_parcel_owners po "
+                "SELECT pl.*, (SELECT GROUP_CONCAT(CASE WHEN pt.so_cccd IS NOT NULL AND pt.so_cccd!='' "
+                "  THEN pt.ho_ten || ' - ' || pt.so_cccd ELSE pt.ho_ten END, '; ') FROM bt_parcel_owners po "
                 ' JOIN bt_parties pt ON pt.id=po.chu_the_id WHERE po.parcel_id=pl.id) as chu_so_huu '
                 'FROM bt_parcels pl WHERE pl.project_id=? ORDER BY pl.xa, pl.so_to, pl.so_thua', (pid,)
             ).fetchall()
@@ -3438,7 +3441,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         self._xlsx_write_sheet(
             wb.create_sheet('Thửa đất'),
             ['Tờ (đối chiếu, không sửa)', 'Thửa (đối chiếu, không sửa)', 'Xã (đối chiếu, không sửa)',
-             'Diện tích (m², đối chiếu, không sửa)', 'Chủ sử dụng (đối chiếu, không sửa)',
+             'Diện tích (m², đối chiếu, không sửa)', 'Chủ sử dụng (Họ tên - Số CCCD; nhiều người cách nhau bằng ";")',
              'Loại đất', 'Nguồn gốc sử dụng', 'Số GCN', 'Ngày cấp GCN', 'Ghi chú'],
             [[r['so_to'], r['so_thua'], r['xa'], r['tong_dien_tich'], r['chu_so_huu'],
               r['loai_dat'], r['nguon_goc_su_dung'], r['so_gcn'], r['ngay_cap_gcn'], r['ghi_chu']]
@@ -3454,12 +3457,13 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 'SELECT so_to, so_thua, xa FROM bt_parcels WHERE project_id=? ORDER BY id LIMIT 2', (pid,)
             ).fetchall()
         wb = self._new_xlsx_workbook()
-        rows = [[r['so_to'], r['so_thua'], r['xa'], '', '', '']  for r in sample] or \
-               [['1', '4', '', '', '', '']]
+        rows = [[r['so_to'], r['so_thua'], r['xa'], '', '', '', '', '']  for r in sample] or \
+               [['1', '4', '', 'Nguyễn Văn A - 001075012345; Trần Thị B - 001180054321', '', '', '', '']]
         self._xlsx_write_sheet(
             wb.create_sheet('Thửa đất'),
-            ['Tờ', 'Thửa', 'Xã', 'Loại đất', 'Nguồn gốc sử dụng', 'Số GCN', 'Ngày cấp GCN', 'Ghi chú'],
-            [r + ['', ''] for r in rows]
+            ['Tờ', 'Thửa', 'Xã', 'Chủ sử dụng (Họ tên - Số CCCD; nhiều người cách nhau bằng ";")',
+             'Loại đất', 'Nguồn gốc sử dụng', 'Số GCN', 'Ngày cấp GCN', 'Ghi chú'],
+            [r + [''] for r in rows]
         )
         self._xlsx_write_guide_sheet(wb.create_sheet('Hướng dẫn'), [
             ('Cột', 'Ý nghĩa'),
@@ -3467,6 +3471,15 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    'thửa đã có trong dự án (lấy từ Xuất Excel, hoặc xem tab Thửa đất). File này KHÔNG thể '
                    'tạo thửa mới — Bản đồ GPMB mới là nơi duy nhất tạo thửa đất (vào tab 📐 Bản đồ, mảnh '
                    'trích đo Bản đồ GPMB, để thêm thửa mới).'),
+            ('Chủ sử dụng', 'TÙY CHỌN — điền theo đúng định dạng "Họ tên - Số CCCD", nhiều đồng sở hữu '
+                   'cùng 1 thửa cách nhau bằng dấu ";" (VD "Nguyễn Văn A - 001075012345; Trần Thị B - '
+                   '001180054321"). BẮT BUỘC phải có Số CCCD đi kèm mỗi tên — thiếu CCCD thì người đó bị '
+                   'bỏ qua (không tạo/gắn chủ sử dụng). Hệ thống tự đối chiếu theo Số CCCD: đã có chủ thể '
+                   'với CCCD này trong CSDL Chủ thể → chỉ gắn vào thửa (và cập nhật lại họ tên nếu khác); '
+                   'chưa có → tự tạo chủ thể mới. Người đầu tiên trong danh sách được gán vai trò "Đại '
+                   'diện đứng tên", những người sau là "Đồng sở hữu" — để chỉnh vai trò/tỷ lệ sở hữu chi '
+                   'tiết hơn, vào "Sửa thửa đất" sau khi import. Để trống cột này ở 1 dòng thì chủ sử '
+                   'dụng hiện có của thửa đó được GIỮ NGUYÊN, không bị xoá.'),
             ('Loại đất / Nguồn gốc sử dụng / Số GCN / Ngày cấp GCN / Ghi chú',
                    'Các trường ĐƯỢC PHÉP sửa qua Import — điền giá trị mới sẽ ghi đè giá trị cũ.'),
             ('Nếu không tìm thấy Tờ+Thửa+Xã khớp', 'Dòng đó bị bỏ qua, không tạo thửa mới, và được báo '
@@ -3474,12 +3487,38 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ])
         self._send_xlsx_response(wb, 'mau-import-thua-dat.xlsx')
 
+    def _parse_owner_cell(self, cell_text):
+        """Tách chuỗi "Họ tên - Số CCCD; Họ tên 2 - Số CCCD 2" thành list [{'ho_ten','so_cccd'}, ...].
+        Mỗi người BẮT BUỘC phải có CCCD (tách bằng dấu '-' cuối cùng trong đoạn) — đoạn nào không tách
+        được CCCD thì bị bỏ qua và trả riêng trong `skipped` (họ tên, không tạo/gắn chủ sử dụng)."""
+        owners, skipped = [], []
+        for part in (cell_text or '').split(';'):
+            part = part.strip()
+            if not part:
+                continue
+            if ' - ' in part:
+                ho_ten, cccd = part.rsplit(' - ', 1)
+                ho_ten, cccd = ho_ten.strip(), cccd.strip()
+            else:
+                ho_ten, cccd = part, ''
+            if ho_ten and cccd:
+                owners.append({'ho_ten': ho_ten, 'so_cccd': cccd})
+            elif ho_ten:
+                skipped.append(ho_ten)
+        return owners, skipped
+
     def api_bt_parcels_import(self, pid):
-        """Import (chỉ CẬP NHẬT, không tạo mới) các trường phi không gian của Thửa đất trong 1 dự án —
-        đối chiếu theo (Tờ, Thửa, Xã) để tìm đúng thửa đã có. Vì bản chất luôn là ghi đè dữ liệu đã có
-        (không có nhánh 'tạo mới' nào để so sánh), MỌI dòng khớp được đều cần xác nhận trước khi áp dụng
-        (confirm_overwrite=1) — nhất quán với quy tắc 'chặn + hỏi xác nhận ghi đè' đã áp dụng cho GPMB
-        import. Dòng không khớp thửa nào chỉ được báo lại (skipped), không chặn các dòng khớp khác."""
+        """Import các trường phi không gian của Thửa đất trong 1 dự án — đối chiếu theo (Tờ, Thửa, Xã)
+        để tìm đúng thửa đã có (KHÔNG tạo thửa mới, Bản đồ GPMB mới là nơi duy nhất sinh thửa). Vì bản
+        chất luôn là ghi đè dữ liệu đã có, MỌI dòng khớp được đều cần xác nhận trước khi áp dụng
+        (confirm_overwrite=1). Dòng không khớp thửa nào chỉ được báo lại (skipped), không chặn các dòng
+        khớp khác.
+
+        Cột "Chủ sử dụng" (tùy chọn, dạng "Họ tên - Số CCCD; ..."): khi có điền, ĐỒNG BỘ CSDL Chủ thể
+        (bt_parties) — đối chiếu theo Số CCCD: đã có chủ thể với CCCD này → chỉ gắn vào thửa (cập nhật
+        lại họ tên nếu file ghi khác), CHƯA có → tự tạo chủ thể mới rồi gắn. Toàn bộ danh sách chủ sử
+        dụng của thửa được THAY THẾ bằng danh sách trong file (người đầu = 'Đại diện đứng tên', còn lại
+        = 'Đồng sở hữu'); để trống cột này ở 1 dòng thì chủ sử dụng hiện có của thửa đó được giữ nguyên."""
         sess = self.require_auth()
         if not sess: return
         fields, sheets, err = self._read_xlsx_upload()
@@ -3494,6 +3533,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
             'so_to': self._xlsx_find_col(header, ['tờ', 'to']),
             'so_thua': self._xlsx_find_col(header, ['thửa', 'thua']),
             'xa': self._xlsx_find_col(header, ['xã', 'xa']),
+            'chu_su_dung': self._xlsx_find_col(header, ['chủ sử dụng', 'chu su dung']),
             'loai_dat': self._xlsx_find_col(header, ['loại đất', 'loai dat']),
             'nguon_goc': self._xlsx_find_col(header, ['nguồn gốc', 'nguon goc']),
             'so_gcn': self._xlsx_find_col(header, ['số gcn', 'so gcn', 'gcn']),
@@ -3511,7 +3551,11 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 key_to_id[(str(e['so_to'] or '').strip().lower(), str(e['so_thua'] or '').strip().lower(),
                            str(e['xa'] or '').strip().lower())] = e['id']
 
+            existing_parties = db.execute('SELECT id, ho_ten, so_cccd FROM bt_parties').fetchall()
+            cccd_to_party_id = {p['so_cccd'].strip().lower(): p['id'] for p in existing_parties if (p['so_cccd'] or '').strip()}
+
             matched, unmatched = [], []
+            skipped_owner_names = []
             for row in data_rows:
                 if not any(row):
                     continue
@@ -3529,12 +3573,17 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if len(cands) == 1:
                         target_id = cands[0]
                 label = f'Tờ {so_to} - Thửa {so_thua}' + (f' (xã {xa})' if xa else '')
+                owner_cell = self._xlsx_cell_str(row, COL['chu_su_dung'])
+                owners, owner_skipped = self._parse_owner_cell(owner_cell)
+                skipped_owner_names.extend(owner_skipped)
                 data = {
                     'loai_dat': self._xlsx_cell_str(row, COL['loai_dat']),
                     'nguon_goc_su_dung': self._xlsx_cell_str(row, COL['nguon_goc']),
                     'so_gcn': self._xlsx_cell_str(row, COL['so_gcn']),
                     'ngay_cap_gcn': self._xlsx_cell_str(row, COL['ngay_cap_gcn']) or None,
                     'ghi_chu': self._xlsx_cell_str(row, COL['ghi_chu']),
+                    # None = cột trống/không có trong file → giữ nguyên chủ sử dụng hiện có, không đụng tới.
+                    'owners': owners if owner_cell else None,
                 }
                 if target_id:
                     matched.append({'id': target_id, 'label': label, 'data': data})
@@ -3545,7 +3594,33 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 self._send_conflict_response([m['label'] for m in matched], len(matched) + len(unmatched))
                 return
 
-            updated = 0
+            # Bước 1: upsert bt_parties theo CCCD cho MỌI chủ sử dụng xuất hiện trong file (gộp trùng
+            # trong cùng file trước khi ghi, để 1 người xuất hiện ở nhiều thửa chỉ tạo đúng 1 bản ghi).
+            created_parties, updated_parties = 0, 0
+            for m in matched:
+                owners = m['data']['owners']
+                if not owners:
+                    continue
+                for o in owners:
+                    ck = o['so_cccd'].strip().lower()
+                    if ck in cccd_to_party_id:
+                        party_id = cccd_to_party_id[ck]
+                        cur = db.execute('UPDATE bt_parties SET ho_ten=? WHERE id=? AND ho_ten!=?',
+                                          (o['ho_ten'], party_id, o['ho_ten']))
+                        if cur.rowcount:
+                            updated_parties += 1
+                    else:
+                        cur = db.execute(
+                            'INSERT INTO bt_parties (loai_chu_the, ho_ten, so_cccd) VALUES (?,?,?)',
+                            ('Cá nhân', o['ho_ten'], o['so_cccd'])
+                        )
+                        party_id = cur.lastrowid
+                        cccd_to_party_id[ck] = party_id
+                        created_parties += 1
+                    o['chu_the_id'] = party_id
+
+            # Bước 2: cập nhật thửa đất + gắn lại chủ sử dụng (chỉ khi cột Chủ sử dụng có điền ở dòng đó).
+            updated, synced_owners = 0, 0
             for m in matched:
                 d = m['data']
                 db.execute(
@@ -3553,8 +3628,21 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     (d['loai_dat'], d['nguon_goc_su_dung'], d['so_gcn'], d['ngay_cap_gcn'], d['ghi_chu'], m['id'])
                 )
                 updated += 1
+                if d['owners'] is not None:
+                    owners_payload = [
+                        {'chu_the_id': o['chu_the_id'],
+                         'vai_tro': 'Đại diện đứng tên' if i == 0 else 'Đồng sở hữu',
+                         'ty_le_so_huu': None}
+                        for i, o in enumerate(d['owners'])
+                    ]
+                    self._save_parcel_owners(db, m['id'], owners_payload)
+                    synced_owners += 1
             db.commit()
-        self.send_json({'ok': True, 'updated': updated, 'skipped': unmatched})
+        self.send_json({
+            'ok': True, 'updated': updated, 'skipped': unmatched,
+            'synced_owners': synced_owners, 'created_parties': created_parties, 'updated_parties': updated_parties,
+            'skipped_owner_names': skipped_owner_names,
+        })
 
     def api_bt_project_gpmb_status(self, pid):
         """Kiểm tra dự án đã có Bản đồ GPMB với ít nhất 1 thửa hay chưa — dùng để khoá/mở khoá các tab khác."""
@@ -3603,7 +3691,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
             parcels = db.execute(
                 'SELECT mp.*, pm.so_to_hien_hanh, pm.so_thua_hien_hanh, '
                 'pl.loai_dat as thua_loai_dat, '
-                "(SELECT GROUP_CONCAT(pt.ho_ten, ', ') FROM bt_parcel_owners po "
+                "(SELECT GROUP_CONCAT(CASE WHEN pt.so_cccd IS NOT NULL AND pt.so_cccd!='' "
+                "  THEN pt.ho_ten || ' - ' || pt.so_cccd ELSE pt.ho_ten END, '; ') FROM bt_parcel_owners po "
                 ' JOIN bt_parties pt ON pt.id=po.chu_the_id WHERE po.parcel_id=mp.parcel_id) as thua_chu_so_huu '
                 'FROM bt_map_parcels mp LEFT JOIN bt_parcel_master pm ON pm.id=mp.parcel_master_id '
                 'LEFT JOIN bt_parcels pl ON pl.id=mp.parcel_id '
