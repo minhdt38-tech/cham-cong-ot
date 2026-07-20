@@ -2957,18 +2957,23 @@ class Handler(http.server.BaseHTTPRequestHandler):
         ho_ten = body.get('ho_ten', '').strip()
         if not ho_ten:
             self.send_json({'error': 'Họ tên không được để trống'}, 400); return
+        so_cccd = body.get('so_cccd', '')
         with get_db() as db:
             db.execute(
                 'UPDATE bt_parties SET loai_chu_the=?, ho_ten=?, gioi_tinh=?, ngay_sinh=?, so_cccd=?, '
                 'ngay_cap_cccd=?, noi_cap_cccd=?, dia_chi_thuong_tru=?, so_dien_thoai=?, ghi_chu=?, custom_fields=? '
                 'WHERE id=?',
                 (body.get('loai_chu_the', 'Cá nhân'), ho_ten, body.get('gioi_tinh', ''),
-                 body.get('ngay_sinh') or None, body.get('so_cccd', ''), body.get('ngay_cap_cccd') or None,
+                 body.get('ngay_sinh') or None, so_cccd, body.get('ngay_cap_cccd') or None,
                  body.get('noi_cap_cccd', ''), body.get('dia_chi_thuong_tru', ''), body.get('so_dien_thoai', ''),
                  body.get('ghi_chu', ''), json.dumps(body.get('custom_fields', {}), ensure_ascii=False), pid)
             )
+            # Vừa sửa CCCD — nếu trùng với 1 chủ thể KHÁC đang có sẵn (thường do trước đó được tạo riêng
+            # lẻ từ import Thửa đất khi chưa có CCCD, xem _parse_owner_cell), tự động gộp lại thành 1 bản
+            # ghi (giữ lại bản ghi vừa sửa — pid) theo đúng quy tắc đã chốt với Minh 2026-07-17.
+            merged = self._merge_duplicate_parties_by_cccd(db, so_cccd, keep_party_id=pid)
             db.commit()
-        self.send_json({'ok': True})
+        self.send_json({'ok': True, 'merged_parties': merged})
 
     def api_bt_parties_delete(self, pid):
         sess = self.require_auth()
@@ -3510,9 +3515,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def api_bt_parcels_export(self, pid):
         """Xuất Thửa đất của 1 dự án ra Excel — Tờ/Thửa/Xã/diện tích chỉ xuất ra để THAM KHẢO/đối chiếu,
         không chỉnh sửa được qua Import (Bản đồ GPMB là nguồn duy nhất sinh/sửa các trường này). Cột "Chủ
-        sử dụng" là NGOẠI LỆ — CÓ THỂ sửa/điền qua Import (dạng "Họ tên - Số CCCD", nhiều đồng sở hữu
-        cách nhau bằng ";") để tạo/đồng bộ chủ sử dụng vào CSDL Chủ thể (bt_parties) và gắn vào thửa,
-        xem api_bt_parcels_import."""
+        sử dụng" là NGOẠI LỆ — CÓ THỂ sửa/điền qua Import (dạng "Họ tên - Số CCCD", CCCD không bắt buộc,
+        nhiều đồng sở hữu cách nhau bằng ";") để tạo/đồng bộ chủ sử dụng vào CSDL Chủ thể (bt_parties) và
+        gắn vào thửa, xem api_bt_parcels_import."""
         sess = self.require_auth()
         if not sess: return
         with get_db() as db:
@@ -3556,27 +3561,102 @@ class Handler(http.server.BaseHTTPRequestHandler):
                    'thửa đã có trong dự án (lấy từ Xuất Excel, hoặc xem tab Thửa đất). File này KHÔNG thể '
                    'tạo thửa mới — Bản đồ GPMB mới là nơi duy nhất tạo thửa đất (vào tab 📐 Bản đồ, mảnh '
                    'trích đo Bản đồ GPMB, để thêm thửa mới).'),
-            ('Chủ sử dụng', 'TÙY CHỌN — điền theo đúng định dạng "Họ tên - Số CCCD", nhiều đồng sở hữu '
-                   'cùng 1 thửa cách nhau bằng dấu ";" (VD "Nguyễn Văn A - 001075012345; Trần Thị B - '
-                   '001180054321"). BẮT BUỘC phải có Số CCCD đi kèm mỗi tên — thiếu CCCD thì người đó bị '
-                   'bỏ qua (không tạo/gắn chủ sử dụng). Hệ thống tự đối chiếu theo Số CCCD: đã có chủ thể '
-                   'với CCCD này trong CSDL Chủ thể → chỉ gắn vào thửa (và cập nhật lại họ tên nếu khác); '
-                   'chưa có → tự tạo chủ thể mới. Người đầu tiên trong danh sách được gán vai trò "Đại '
-                   'diện đứng tên", những người sau là "Đồng sở hữu" — để chỉnh vai trò/tỷ lệ sở hữu chi '
-                   'tiết hơn, vào "Sửa thửa đất" sau khi import. Để trống cột này ở 1 dòng thì chủ sử '
-                   'dụng hiện có của thửa đó được GIỮ NGUYÊN, không bị xoá.'),
+            ('Chủ sử dụng', 'TÙY CHỌN — điền "Họ tên - Số CCCD" (nếu có CCCD) hoặc chỉ "Họ tên" (nếu chưa '
+                   'có CCCD), nhiều đồng sở hữu cùng 1 thửa cách nhau bằng dấu ";" (VD "Nguyễn Văn A - '
+                   '001075012345; Trần Thị B"). Số CCCD KHÔNG còn bắt buộc. Người CÓ CCCD: hệ thống đối '
+                   'chiếu theo CCCD — đã có chủ thể với CCCD này → chỉ gắn vào thửa (cập nhật lại họ tên '
+                   'nếu khác); chưa có → tự tạo mới. Người CHƯA CÓ CCCD: mặc định coi là CHỦ SỬ DỤNG KHÁC '
+                   'NHAU mỗi lần xuất hiện (tạo chủ thể mới mỗi thửa) cho tới khi CCCD được bổ sung trùng '
+                   'nhau ở lần import sau thì hệ thống TỰ ĐỘNG gộp lại thành 1 — TRỪ tên khớp từ khoá tổ '
+                   'chức (VD "UBND xã", "HTX...", "Công ty...") thì nhận diện/gộp NGAY theo tên, không cần '
+                   'CCCD. Người đầu tiên trong danh sách được gán vai trò "Đại diện đứng tên", những người '
+                   'sau là "Đồng sở hữu" — để chỉnh vai trò/tỷ lệ sở hữu chi tiết hơn, vào "Sửa thửa đất" '
+                   'sau khi import. Để trống cột này ở 1 dòng thì chủ sử dụng hiện có của thửa đó được GIỮ '
+                   'NGUYÊN, không bị xoá.'),
             ('Loại đất / Nguồn gốc sử dụng / Số GCN / Ngày cấp GCN / Ghi chú',
-                   'Các trường ĐƯỢC PHÉP sửa qua Import — điền giá trị mới sẽ ghi đè giá trị cũ.'),
+                   'TÙY CHỌN — để trống ở 1 dòng thì GIỮ NGUYÊN giá trị hiện có, không bị xoá/ghi đè. Chỉ '
+                   'những Ô CÓ ĐIỀN và KHÁC với dữ liệu đang có trong hệ thống mới được tính là thay đổi.'),
             ('Nếu không tìm thấy Tờ+Thửa+Xã khớp', 'Dòng đó bị bỏ qua, không tạo thửa mới, và được báo '
                    'lại trong kết quả sau khi import.'),
+            ('Xác nhận trước khi ghi', 'Sau khi tải file lên, hệ thống chỉ liệt kê những THAY ĐỔI THẬT SỰ '
+                   '(dữ liệu mới hoặc khác với hiện có) kèm 1 file "change log" (trước/sau) để tải về xem '
+                   'lại — dòng nào giống hệt dữ liệu đã có sẽ tự bỏ qua, không hỏi. Phải nhập lại mật khẩu '
+                   'tài khoản để xác nhận thì các thay đổi mới thực sự được ghi vào hệ thống.'),
         ])
         self._send_xlsx_response(wb, 'mau-import-thua-dat.xlsx')
 
+    # Từ khoá nhận diện "Tổ chức" (UBND xã, hợp tác xã, doanh nghiệp, trường học…) khi Excel không có cột
+    # riêng đánh dấu loại chủ sử dụng — so khớp KHÔNG phân biệt hoa/thường, chỉ cần xuất hiện trong tên.
+    # Chốt với Minh 2026-07-17: dùng từ khoá thường gặp thay vì chỉ nhận đúng "UBND xã" — nếu gặp tên tổ
+    # chức khác không khớp danh sách này, Minh có thể yêu cầu bổ sung thêm từ khoá.
+    # LƯU Ý: 'trường'/'tram' KHÔNG được để dạng từ khoá trần 1 từ — đối chiếu với dữ liệu thật của Minh
+    # (file "Test import data thua dat.xlsx") phát hiện CẢ 29/29 tên chứa "Trường" trong file là TÊN
+    # NGƯỜI (VD "Nguyễn Văn Trường", "Lê Văn Trường") vì "Trường"/"Trạm" đều là tên đệm/tên riêng phổ
+    # biến trong tiếng Việt, không phải chỉ dấu hiệu tổ chức — nếu để trần sẽ nhận nhầm hàng loạt cá
+    # nhân thành tổ chức. Thay bằng cụm từ ĐẦY ĐỦ (trường/trạm + loại hình) để giảm nhận nhầm.
+    _ORG_NAME_KEYWORDS = (
+        'ubnd', 'ủy ban', 'uy ban', 'htx', 'hợp tác xã', 'hop tac xa', 'công ty', 'cong ty', 'cty',
+        'doanh nghiệp', 'doanh nghiep', 'xí nghiệp', 'xi nghiep', 'ban quản lý', 'ban quan ly', 'bql',
+        'chi cục', 'chi cuc', 'trung tâm', 'trung tam', 'bệnh viện', 'benh vien', 'đồn công an',
+        'don cong an', 'ban chqs', 'chi nhánh', 'chi nhanh',
+        'trường học', 'truong hoc', 'trường tiểu học', 'truong tieu hoc', 'trường thcs', 'truong thcs',
+        'trường thpt', 'truong thpt', 'trường mầm non', 'truong mam non', 'trường mẫu giáo',
+        'truong mau giao', 'trạm y tế', 'tram y te', 'trạm bơm', 'tram bom', 'trạm biến áp',
+        'tram bien ap', 'trạm kiểm lâm', 'tram kiem lam', 'trạm xá', 'tram xa', 'trạm điện', 'tram dien',
+    )
+
+    def _is_organization_name(self, ho_ten):
+        """True nếu tên khớp 1 trong các từ khoá tổ chức — dùng để quyết định chủ sử dụng KHÔNG có CCCD
+        này nên được nhận diện/gộp theo TÊN (tổ chức, VD "UBND xã" ở nhiều thửa là CÙNG 1 chủ sử dụng)
+        hay tạo MỚI mỗi lần gặp (cá nhân — theo mặc định coi là người khác nhau tới khi có CCCD trùng)."""
+        name = (ho_ten or '').strip().lower()
+        if not name:
+            return False
+        return any(kw in name for kw in self._ORG_NAME_KEYWORDS)
+
+    def _merge_duplicate_parties_by_cccd(self, db, so_cccd, keep_party_id=None):
+        """Sau khi 1 chủ thể (bt_parties) được gán/sửa Số CCCD, tìm CÁC chủ thể KHÁC đang có CÙNG CCCD
+        này — thường do trước đó mỗi thửa ghi nhận 1 chủ sử dụng riêng biệt vì CHƯA có CCCD (đúng thiết
+        kế: "khác nhau cho tới khi CCCD trùng thì tự gộp", chốt với Minh 2026-07-17) — và GỘP LẠI thành 1
+        bản ghi duy nhất: chuyển toàn bộ liên kết (thửa đất đồng sở hữu, nhân khẩu, hồ sơ hộ + người
+        trong hồ sơ) từ các bản ghi trùng sang bản ghi giữ lại rồi xoá các bản ghi trùng. Trả về số bản
+        ghi đã gộp (0 nếu không trùng). Gọi ở MỌI nơi CCCD được ghi/sửa — cả import Thửa đất lẫn form
+        "Sửa chủ thể" thủ công — để không bị lệch nhau giữa 2 đường."""
+        cccd_norm = (so_cccd or '').strip().lower()
+        if not cccd_norm:
+            return 0
+        dup_rows = db.execute(
+            "SELECT id FROM bt_parties WHERE LOWER(TRIM(so_cccd))=? ORDER BY id", (cccd_norm,)
+        ).fetchall()
+        dup_ids = [r['id'] for r in dup_rows]
+        if len(dup_ids) < 2:
+            return 0
+        keep_id = keep_party_id if keep_party_id in dup_ids else dup_ids[0]
+        merge_ids = [i for i in dup_ids if i != keep_id]
+        for mid in merge_ids:
+            # bt_parcel_owners không có ràng buộc UNIQUE(parcel_id, chu_the_id) ở tầng DB — tự kiểm tra để
+            # không tạo 2 dòng trùng nếu (hiếm) cả 2 bản ghi trùng lỡ cùng được gắn vào 1 thửa.
+            existing_parcels = set(r['parcel_id'] for r in db.execute(
+                'SELECT parcel_id FROM bt_parcel_owners WHERE chu_the_id=?', (keep_id,)
+            ).fetchall())
+            for r in db.execute('SELECT * FROM bt_parcel_owners WHERE chu_the_id=?', (mid,)).fetchall():
+                if r['parcel_id'] in existing_parcels:
+                    db.execute('DELETE FROM bt_parcel_owners WHERE id=?', (r['id'],))
+                else:
+                    db.execute('UPDATE bt_parcel_owners SET chu_the_id=? WHERE id=?', (keep_id, r['id']))
+            db.execute('UPDATE bt_household_members SET chu_the_id=? WHERE chu_the_id=?', (keep_id, mid))
+            db.execute('UPDATE bt_dossier_persons SET chu_the_id=? WHERE chu_the_id=?', (keep_id, mid))
+            db.execute('UPDATE bt_dossiers SET chu_the_id=? WHERE chu_the_id=?', (keep_id, mid))
+            db.execute('DELETE FROM bt_parties WHERE id=?', (mid,))
+        return len(merge_ids)
+
     def _parse_owner_cell(self, cell_text):
-        """Tách chuỗi "Họ tên - Số CCCD; Họ tên 2 - Số CCCD 2" thành list [{'ho_ten','so_cccd'}, ...].
-        Mỗi người BẮT BUỘC phải có CCCD (tách bằng dấu '-' cuối cùng trong đoạn) — đoạn nào không tách
-        được CCCD thì bị bỏ qua và trả riêng trong `skipped` (họ tên, không tạo/gắn chủ sử dụng)."""
-        owners, skipped = [], []
+        """Tách chuỗi "Họ tên - Số CCCD; Họ tên 2" thành list [{'ho_ten','so_cccd','is_org'}, ...]. Số
+        CCCD KHÔNG còn bắt buộc (chốt với Minh 2026-07-17) — chủ sử dụng chỉ có tên (chưa có CCCD) vẫn
+        được ghi nhận: mặc định coi là CÁ NHÂN KHÁC NHAU mỗi lần xuất hiện cho tới khi CCCD được bổ sung
+        trùng nhau thì hệ thống tự gộp (_merge_duplicate_parties_by_cccd) — TRỪ tên khớp từ khoá tổ chức
+        (UBND xã, HTX, Công ty…) thì nhận diện/gộp theo TÊN ngay, không cần CCCD (_is_organization_name)."""
+        owners = []
         for part in (cell_text or '').split(';'):
             part = part.strip()
             if not part:
@@ -3585,25 +3665,34 @@ class Handler(http.server.BaseHTTPRequestHandler):
                 ho_ten, cccd = part.rsplit(' - ', 1)
                 ho_ten, cccd = ho_ten.strip(), cccd.strip()
             else:
-                ho_ten, cccd = part, ''
-            if ho_ten and cccd:
-                owners.append({'ho_ten': ho_ten, 'so_cccd': cccd})
-            elif ho_ten:
-                skipped.append(ho_ten)
-        return owners, skipped
+                ho_ten, cccd = part.strip(), ''
+            if not ho_ten:
+                continue
+            owners.append({'ho_ten': ho_ten, 'so_cccd': cccd,
+                            'is_org': (not cccd) and self._is_organization_name(ho_ten)})
+        return owners
 
     def api_bt_parcels_import(self, pid):
         """Import các trường phi không gian của Thửa đất trong 1 dự án — đối chiếu theo (Tờ, Thửa, Xã)
-        để tìm đúng thửa đã có (KHÔNG tạo thửa mới, Bản đồ GPMB mới là nơi duy nhất sinh thửa). Vì bản
-        chất luôn là ghi đè dữ liệu đã có, MỌI dòng khớp được đều cần xác nhận trước khi áp dụng
-        (confirm_overwrite=1). Dòng không khớp thửa nào chỉ được báo lại (skipped), không chặn các dòng
-        khớp khác.
+        để tìm đúng thửa đã có (KHÔNG tạo thửa mới, Bản đồ GPMB mới là nơi duy nhất sinh thửa; Tờ/Thửa/Xã
+        chỉ dùng để ĐỐI CHIẾU, không bao giờ bị ghi đè qua đường này). Dòng không khớp thửa nào chỉ được
+        báo lại (skipped_not_found), không chặn các dòng khớp khác.
 
-        Cột "Chủ sử dụng" (tùy chọn, dạng "Họ tên - Số CCCD; ..."): khi có điền, ĐỒNG BỘ CSDL Chủ thể
-        (bt_parties) — đối chiếu theo Số CCCD: đã có chủ thể với CCCD này → chỉ gắn vào thửa (cập nhật
-        lại họ tên nếu file ghi khác), CHƯA có → tự tạo chủ thể mới rồi gắn. Toàn bộ danh sách chủ sử
-        dụng của thửa được THAY THẾ bằng danh sách trong file (người đầu = 'Đại diện đứng tên', còn lại
-        = 'Đồng sở hữu'); để trống cột này ở 1 dòng thì chủ sử dụng hiện có của thửa đó được giữ nguyên."""
+        Thiết kế lại 2026-07-17 theo yêu cầu của Minh — SO SÁNH TỪNG TRƯỜNG với CSDL hiện có thay vì ghi
+        đè mù toàn bộ dòng khớp như bản trước:
+          - Trường TRỐNG trong file = không có ý định sửa, GIỮ NGUYÊN giá trị hiện có (áp dụng cho MỌI
+            trường phi không gian, kể cả Chủ sử dụng).
+          - Trường có điền NHƯNG giá trị giống hệt CSDL hiện có → bỏ qua, không đụng tới (no_change).
+          - Trường có điền VÀ khác CSDL hiện có (kể cả khi CSDL đang trống) → đưa vào danh sách CẦN XÁC
+            NHẬN (pending). Lần gọi đầu (chưa có confirm_overwrite) KHÔNG ghi gì cả — chỉ trả về bản xem
+            trước + 1 file Excel "change log" (trước/sau) để tải về. Chỉ khi gọi lại với
+            confirm_overwrite=1 (sau khi frontend đã bắt người dùng xác nhận lại mật khẩu) mới thực ghi.
+
+        Cột "Chủ sử dụng" (tùy chọn, "Họ tên - Số CCCD; ..." — CCCD KHÔNG bắt buộc): người có CCCD được
+        đối chiếu/gộp theo CCCD như trước. Người CHƯA có CCCD mặc định được coi là CHỦ SỬ DỤNG KHÁC NHAU
+        mỗi lần xuất hiện (tạo chủ thể mới, TRỪ khi tên khớp từ khoá tổ chức — VD "UBND xã" — thì nhận
+        diện/gộp theo tên, xem _is_organization_name) — cho tới khi CCCD được bổ sung trùng nhau ở lần
+        import sau, hệ thống TỰ ĐỘNG gộp các bản ghi trùng (xem _merge_duplicate_parties_by_cccd)."""
         sess = self.require_auth()
         if not sess: return
         fields, sheets, err = self._read_xlsx_upload()
@@ -3629,18 +3718,40 @@ class Handler(http.server.BaseHTTPRequestHandler):
             self.send_json({'error': 'Không tìm thấy cột Tờ / Thửa trong file. Vui lòng dùng đúng file mẫu.'}, 400)
             return
 
+        FIELD_LABELS = {
+            'loai_dat': 'Loại đất', 'nguon_goc_su_dung': 'Nguồn gốc sử dụng', 'so_gcn': 'Số GCN',
+            'ngay_cap_gcn': 'Ngày cấp GCN', 'ghi_chu': 'Ghi chú', 'owners': 'Chủ sử dụng',
+        }
+
+        def owners_display(owner_list):
+            if not owner_list:
+                return '(chưa có)'
+            return '; '.join(f"{o['ho_ten']} - {o['so_cccd']}" if o.get('so_cccd') else o['ho_ten'] for o in owner_list)
+
         with get_db() as db:
-            existing = db.execute('SELECT id, so_to, so_thua, xa FROM bt_parcels WHERE project_id=?', (pid,)).fetchall()
-            key_to_id = {}
+            existing = db.execute(
+                'SELECT id, so_to, so_thua, xa, loai_dat, nguon_goc_su_dung, so_gcn, ngay_cap_gcn, ghi_chu '
+                'FROM bt_parcels WHERE project_id=?', (pid,)
+            ).fetchall()
+            key_to_id, existing_by_id = {}, {}
             for e in existing:
                 key_to_id[(str(e['so_to'] or '').strip().lower(), str(e['so_thua'] or '').strip().lower(),
                            str(e['xa'] or '').strip().lower())] = e['id']
+                existing_by_id[e['id']] = dict(e)
 
-            existing_parties = db.execute('SELECT id, ho_ten, so_cccd FROM bt_parties').fetchall()
-            cccd_to_party_id = {p['so_cccd'].strip().lower(): p['id'] for p in existing_parties if (p['so_cccd'] or '').strip()}
+            current_owners_by_parcel = {}
+            if existing_by_id:
+                placeholders = ','.join('?' * len(existing_by_id))
+                owner_rows = db.execute(
+                    f'SELECT po.parcel_id, pt.id as party_id, pt.ho_ten, pt.so_cccd FROM bt_parcel_owners po '
+                    f'JOIN bt_parties pt ON pt.id=po.chu_the_id WHERE po.parcel_id IN ({placeholders}) ORDER BY po.parcel_id, po.id',
+                    tuple(existing_by_id.keys())
+                ).fetchall()
+                for r in owner_rows:
+                    current_owners_by_parcel.setdefault(r['parcel_id'], []).append(
+                        {'ho_ten': r['ho_ten'], 'so_cccd': r['so_cccd'] or '', 'party_id': r['party_id']})
 
-            matched, unmatched = [], []
-            skipped_owner_names = []
+            unmatched, no_change_count, pending = [], 0, []
             for row in data_rows:
                 if not any(row):
                     continue
@@ -3658,75 +3769,143 @@ class Handler(http.server.BaseHTTPRequestHandler):
                     if len(cands) == 1:
                         target_id = cands[0]
                 label = f'Tờ {so_to} - Thửa {so_thua}' + (f' (xã {xa})' if xa else '')
-                owner_cell = self._xlsx_cell_str(row, COL['chu_su_dung'])
-                owners, owner_skipped = self._parse_owner_cell(owner_cell)
-                skipped_owner_names.extend(owner_skipped)
-                data = {
-                    'loai_dat': self._xlsx_cell_str(row, COL['loai_dat']),
-                    'nguon_goc_su_dung': self._xlsx_cell_str(row, COL['nguon_goc']),
-                    'so_gcn': self._xlsx_cell_str(row, COL['so_gcn']),
-                    'ngay_cap_gcn': self._xlsx_cell_str(row, COL['ngay_cap_gcn']) or None,
-                    'ghi_chu': self._xlsx_cell_str(row, COL['ghi_chu']),
-                    # None = cột trống/không có trong file → giữ nguyên chủ sử dụng hiện có, không đụng tới.
-                    'owners': owners if owner_cell else None,
-                }
-                if target_id:
-                    matched.append({'id': target_id, 'label': label, 'data': data})
-                else:
+                if target_id is None:
                     unmatched.append(label)
+                    continue
 
-            if matched and not confirm_overwrite:
-                self._send_conflict_response([m['label'] for m in matched], len(matched) + len(unmatched))
+                cur_row = existing_by_id[target_id]
+                field_changes = []
+                final_values = {}
+                for key_f, col_key in (('loai_dat', 'loai_dat'), ('nguon_goc_su_dung', 'nguon_goc'),
+                                        ('so_gcn', 'so_gcn'), ('ngay_cap_gcn', 'ngay_cap_gcn'), ('ghi_chu', 'ghi_chu')):
+                    new_val = self._xlsx_cell_str(row, COL[col_key])
+                    old_val = str(cur_row.get(key_f) or '').strip()
+                    if not new_val or new_val == old_val:
+                        final_values[key_f] = cur_row.get(key_f)  # trống HOẶC giống hệt = giữ nguyên
+                        continue
+                    final_values[key_f] = new_val
+                    field_changes.append({'field': FIELD_LABELS[key_f], 'old': old_val or '(trống)', 'new': new_val})
+
+                owner_cell = self._xlsx_cell_str(row, COL['chu_su_dung'])
+                new_owners, owners_changed = None, False
+                if owner_cell:
+                    new_owners = self._parse_owner_cell(owner_cell)
+                    cur_owners = current_owners_by_parcel.get(target_id, [])
+                    cur_tuples = [(o['ho_ten'].strip().lower(), (o['so_cccd'] or '').strip().lower()) for o in cur_owners]
+                    new_tuples = [(o['ho_ten'].strip().lower(), (o['so_cccd'] or '').strip().lower()) for o in new_owners]
+                    if new_tuples != cur_tuples:
+                        owners_changed = True
+                        field_changes.append({'field': FIELD_LABELS['owners'],
+                                               'old': owners_display(cur_owners), 'new': owners_display(new_owners)})
+
+                if not field_changes:
+                    no_change_count += 1
+                    continue
+                pending.append({
+                    'id': target_id, 'label': label, 'field_changes': field_changes,
+                    'final_values': final_values, 'new_owners': new_owners if owners_changed else None,
+                })
+
+            if pending and not confirm_overwrite:
+                # Chưa xác nhận — KHÔNG ghi gì vào CSDL. Trả bản xem trước (tối đa 50 dòng, kèm tổng thật)
+                # + file Excel change log (trước/sau, ĐẦY ĐỦ mọi thay đổi) để Minh tải về xem trước khi
+                # nhập mật khẩu xác nhận ở bước sau.
+                wb = self._new_xlsx_workbook()
+                log_rows = []
+                for p in pending:
+                    for fc in p['field_changes']:
+                        log_rows.append([p['label'], fc['field'], fc['old'], fc['new']])
+                self._xlsx_write_sheet(wb.create_sheet('Thay đổi'),
+                                        ['Thửa đất', 'Trường', 'Giá trị cũ', 'Giá trị mới'], log_rows)
+                buf = io.BytesIO()
+                wb.save(buf)
+                changelog_b64 = base64.b64encode(buf.getvalue()).decode('ascii')
+                self.send_json({
+                    'conflict': True,
+                    'pending_changes': len(pending),
+                    'no_change': no_change_count,
+                    'skipped_not_found': unmatched[:50],
+                    'skipped_not_found_total': len(unmatched),
+                    'changes_preview': [{'label': p['label'], 'fields': p['field_changes']} for p in pending[:50]],
+                    'changelog_xlsx_base64': changelog_b64,
+                    'changelog_filename': 'changelog-thua-dat.xlsx',
+                }, 409)
                 return
 
-            # Bước 1: upsert bt_parties theo CCCD cho MỌI chủ sử dụng xuất hiện trong file (gộp trùng
-            # trong cùng file trước khi ghi, để 1 người xuất hiện ở nhiều thửa chỉ tạo đúng 1 bản ghi).
-            created_parties, updated_parties = 0, 0
-            for m in matched:
-                owners = m['data']['owners']
-                if not owners:
-                    continue
-                for o in owners:
-                    ck = o['so_cccd'].strip().lower()
-                    if ck in cccd_to_party_id:
-                        party_id = cccd_to_party_id[ck]
-                        cur = db.execute('UPDATE bt_parties SET ho_ten=? WHERE id=? AND ho_ten!=?',
-                                          (o['ho_ten'], party_id, o['ho_ten']))
-                        if cur.rowcount:
-                            updated_parties += 1
-                    else:
-                        cur = db.execute(
-                            'INSERT INTO bt_parties (loai_chu_the, ho_ten, so_cccd) VALUES (?,?,?)',
-                            ('Cá nhân', o['ho_ten'], o['so_cccd'])
-                        )
-                        party_id = cur.lastrowid
-                        cccd_to_party_id[ck] = party_id
-                        created_parties += 1
-                    o['chu_the_id'] = party_id
+            # Đã xác nhận (hoặc không có gì cần xác nhận, pending rỗng) — ghi thật.
+            existing_parties = db.execute('SELECT id, ho_ten, so_cccd, loai_chu_the FROM bt_parties').fetchall()
+            cccd_to_party_id = {p['so_cccd'].strip().lower(): p['id'] for p in existing_parties if (p['so_cccd'] or '').strip()}
+            org_name_to_party_id = {p['ho_ten'].strip().lower(): p['id'] for p in existing_parties if p['loai_chu_the'] == 'Tổ chức'}
+            current_owner_id_by_name = {
+                pid_: {o['ho_ten'].strip().lower(): o['party_id'] for o in owners}
+                for pid_, owners in current_owners_by_parcel.items()
+            }
 
-            # Bước 2: cập nhật thửa đất + gắn lại chủ sử dụng (chỉ khi cột Chủ sử dụng có điền ở dòng đó).
-            updated, synced_owners = 0, 0
-            for m in matched:
-                d = m['data']
-                db.execute(
-                    'UPDATE bt_parcels SET loai_dat=?, nguon_goc_su_dung=?, so_gcn=?, ngay_cap_gcn=?, ghi_chu=? WHERE id=?',
-                    (d['loai_dat'], d['nguon_goc_su_dung'], d['so_gcn'], d['ngay_cap_gcn'], d['ghi_chu'], m['id'])
-                )
-                updated += 1
-                if d['owners'] is not None:
+            created_parties, merged_parties, updated, synced_owners = 0, 0, 0, 0
+            for m in pending:
+                if any(f['field'] != FIELD_LABELS['owners'] for f in m['field_changes']):
+                    fv = m['final_values']
+                    db.execute(
+                        'UPDATE bt_parcels SET loai_dat=?, nguon_goc_su_dung=?, so_gcn=?, ngay_cap_gcn=?, ghi_chu=? WHERE id=?',
+                        (fv['loai_dat'], fv['nguon_goc_su_dung'], fv['so_gcn'], fv['ngay_cap_gcn'], fv['ghi_chu'], m['id'])
+                    )
+                    updated += 1
+                if m['new_owners'] is not None:
+                    resolved = []
+                    for o in m['new_owners']:
+                        cccd_key = o['so_cccd'].strip().lower()
+                        if cccd_key:
+                            # Có CCCD — đối chiếu/gộp theo CCCD như thiết kế ban đầu.
+                            if cccd_key in cccd_to_party_id:
+                                party_id = cccd_to_party_id[cccd_key]
+                                db.execute('UPDATE bt_parties SET ho_ten=? WHERE id=? AND ho_ten!=?',
+                                           (o['ho_ten'], party_id, o['ho_ten']))
+                            else:
+                                cur = db.execute('INSERT INTO bt_parties (loai_chu_the, ho_ten, so_cccd) VALUES (?,?,?)',
+                                                  ('Cá nhân', o['ho_ten'], o['so_cccd']))
+                                party_id = cur.lastrowid
+                                cccd_to_party_id[cccd_key] = party_id
+                                created_parties += 1
+                            # CCCD vừa gán có thể trùng với 1 (hoặc nhiều) chủ thể KHÁC được tạo trước đó
+                            # khi chưa có CCCD (cùng người thật, khác bản ghi) — tự gộp lại thành 1.
+                            merged_parties += self._merge_duplicate_parties_by_cccd(db, o['so_cccd'], keep_party_id=party_id)
+                        elif o['is_org']:
+                            # Không CCCD nhưng tên khớp từ khoá tổ chức (VD "UBND xã") — nhận diện/gộp theo TÊN.
+                            name_key = o['ho_ten'].strip().lower()
+                            if name_key in org_name_to_party_id:
+                                party_id = org_name_to_party_id[name_key]
+                            else:
+                                cur = db.execute('INSERT INTO bt_parties (loai_chu_the, ho_ten, so_cccd) VALUES (?,?,?)',
+                                                  ('Tổ chức', o['ho_ten'], ''))
+                                party_id = cur.lastrowid
+                                org_name_to_party_id[name_key] = party_id
+                                created_parties += 1
+                        else:
+                            # Cá nhân chưa có CCCD — nếu tên này ĐANG là chủ sử dụng sẵn có của CHÍNH thửa
+                            # này (trước khi đổi), giữ nguyên bản ghi đó thay vì tạo trùng vô ích; ngược lại
+                            # LUÔN tạo MỚI — coi là chủ sử dụng khác nhau cho tới khi có CCCD trùng thì gộp.
+                            name_key = o['ho_ten'].strip().lower()
+                            reuse_id = current_owner_id_by_name.get(m['id'], {}).get(name_key)
+                            if reuse_id:
+                                party_id = reuse_id
+                            else:
+                                cur = db.execute('INSERT INTO bt_parties (loai_chu_the, ho_ten, so_cccd) VALUES (?,?,?)',
+                                                  ('Cá nhân', o['ho_ten'], ''))
+                                party_id = cur.lastrowid
+                                created_parties += 1
+                        resolved.append(party_id)
                     owners_payload = [
-                        {'chu_the_id': o['chu_the_id'],
-                         'vai_tro': 'Đại diện đứng tên' if i == 0 else 'Đồng sở hữu',
-                         'ty_le_so_huu': None}
-                        for i, o in enumerate(d['owners'])
+                        {'chu_the_id': pid_, 'vai_tro': 'Đại diện đứng tên' if i == 0 else 'Đồng sở hữu', 'ty_le_so_huu': None}
+                        for i, pid_ in enumerate(resolved)
                     ]
                     self._save_parcel_owners(db, m['id'], owners_payload)
                     synced_owners += 1
             db.commit()
         self.send_json({
-            'ok': True, 'updated': updated, 'skipped': unmatched,
-            'synced_owners': synced_owners, 'created_parties': created_parties, 'updated_parties': updated_parties,
-            'skipped_owner_names': skipped_owner_names,
+            'ok': True, 'updated': updated, 'synced_owners': synced_owners,
+            'no_change': no_change_count, 'skipped_not_found': unmatched[:50],
+            'skipped_not_found_total': len(unmatched),
+            'created_parties': created_parties, 'merged_parties': merged_parties,
         })
 
     def api_bt_project_gpmb_status(self, pid):

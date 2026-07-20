@@ -385,7 +385,7 @@ th.filterable{position:relative}
       <button class="btn btn-ghost" onclick="document.getElementById('bt-import-parcels-input').click()">📥 Nhập Excel</button>
       <button class="btn btn-ghost" onclick="btExportExcel(`/api/bt/projects/${currentProjId}/parcels/template`)">📄 Tải file mẫu</button>
       <input type="file" id="bt-import-parcels-input" style="display:none" accept=".xlsx"
-        onchange="btStartImport(this.files[0], `/api/bt/projects/${currentProjId}/parcels/import`, 'bt-import-parcels-input', onParcelsImportDone)">
+        onchange="btStartParcelsImport(this.files[0], `/api/bt/projects/${currentProjId}/parcels/import`, 'bt-import-parcels-input')">
     </div>
     <div class="form-group form-full" style="font-size:12px;color:var(--muted);padding:0 16px 10px">
       Thửa đất được tạo tự động từ Bản đồ GPMB. Để thêm/sửa/xóa thửa hoặc thay đổi số tờ, số thửa, diện tích, xã — vào tab 🗂️ Bản đồ (loại Bản đồ GPMB).
@@ -1155,6 +1155,36 @@ th.filterable{position:relative}
   </div>
 </div>
 
+<!-- ══ THỬA ĐẤT IMPORT — XEM TRƯỚC THAY ĐỔI + XÁC NHẬN MẬT KHẨU (2026-07-20): riêng cho luồng import
+     Thửa đất kiểu "diff" (so khớp Tờ/Thửa/Xã tham chiếu, chỉ ghi trường/chủ SD THẬT SỰ khác CSDL hiện
+     có) — TÁCH RIÊNG khỏi #modal-bt-import-confirm (ghi đè kiểu cũ, 4 module khác vẫn dùng nguyên) và
+     #modal-confirm (xóa) để không đụng/rủi ro 2 luồng đó. Xem btStartParcelsImport/sendParcelsImport. ══ -->
+<div class="modal-overlay" id="modal-parcels-import-confirm">
+  <div class="modal">
+    <div class="modal-head">
+      <h3>Xác nhận thay đổi Thửa đất</h3>
+      <button class="modal-close" onclick="closeParcelsImportConfirm()">✕</button>
+    </div>
+    <div class="modal-body">
+      <p id="parcels-import-summary" style="font-size:14px;line-height:1.6"></p>
+      <div style="margin:10px 0">
+        <button class="btn btn-ghost" onclick="downloadParcelsImportChangelog()">📥 Tải file changelog (trước/sau)</button>
+      </div>
+      <div id="parcels-import-preview" style="max-height:220px;overflow:auto;border:1px solid rgba(255,255,255,.12);border-radius:8px;padding:8px;font-size:13px;line-height:1.5"></div>
+      <div class="form-group" style="margin-top:14px">
+        <label>Nhập mật khẩu tài khoản để xác nhận ghi thay đổi</label>
+        <input type="password" id="parcels-import-password" placeholder="Mật khẩu" autocomplete="current-password"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();confirmParcelsImport();}">
+      </div>
+      <p id="parcels-import-password-error" style="color:#e74c3c;font-size:12px;margin-top:6px;display:none"></p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeParcelsImportConfirm()">Hủy</button>
+      <button class="btn btn-primary" id="parcels-import-confirm-btn" onclick="confirmParcelsImport()">Xác nhận và ghi thay đổi</button>
+    </div>
+  </div>
+</div>
+
 <!-- ══ MỐC GIỚI GPMB — RÀ SOÁT DIỆN TÍCH THU HỒI (không phải hành động xóa — không yêu cầu mật khẩu) ══ -->
 <div class="modal-overlay" id="modal-mocgioi-confirm">
   <div class="modal">
@@ -1599,9 +1629,16 @@ async function saveParty() {
   const method = editPartyId ? 'PUT' : 'POST';
   const res = await fetch(url, { method, headers: {'Content-Type':'application/json'}, body: JSON.stringify(body) });
   if (res.ok) {
+    const data = await res.json().catch(() => ({}));
     closePartyModal();
     await loadParties();
-    toast(editPartyId ? 'Đã cập nhật chủ thể' : 'Đã thêm chủ thể mới');
+    // Sửa CCCD có thể trùng với chủ thể khác đã được tạo riêng lẻ trước đó (VD từ import Thửa đất khi
+    // chưa có CCCD) — backend tự gộp lại, báo cho Minh biết để không bất ngờ khi thấy danh sách ngắn lại.
+    if (data.merged_parties) {
+      toast(`Đã cập nhật chủ thể — CCCD này trùng với ${data.merged_parties} chủ thể khác đã có, hệ thống đã tự gộp lại thành 1 (chuyển hết thửa đất/nhân khẩu liên quan sang bản ghi này)`);
+    } else {
+      toast(editPartyId ? 'Đã cập nhật chủ thể' : 'Đã thêm chủ thể mới');
+    }
   } else { toast('Lỗi khi lưu chủ thể', true); }
 }
 
@@ -4216,6 +4253,143 @@ function onPartiesImportDone(data) {
     + (data.skipped_members ? `, bỏ qua ${data.skipped_members} nhân khẩu không khớp chủ thể` : ''));
 }
 
+// ══════════════════════════════════════════════════════════════
+// THỬA ĐẤT IMPORT (2026-07-20) — luồng RIÊNG kiểu "diff": Tờ/Thửa/Xã chỉ dùng để đối chiếu (không
+// bao giờ bị sửa — nguồn duy nhất là Bản đồ GPMB), các trường còn lại + Chủ sử dụng chỉ được ghi khi
+// THẬT SỰ khác dữ liệu hiện có. TÁCH RIÊNG khỏi btStartImport/sendBtImport (ghi đè kiểu cũ, 4 module
+// khác — Chủ thể/Tài sản/Dự án/Hồ sơ Hộ — vẫn dùng nguyên, không đụng tới) vì cần thêm: xem trước danh
+// sách thay đổi, tải file changelog Excel (trước/sau), và nhập lại mật khẩu tài khoản trước khi ghi.
+// ══════════════════════════════════════════════════════════════
+let pendingParcelsImport = null; // { file, url, inputId, conflictData }
+
+function btStartParcelsImport(file, url, inputId) {
+  if (!file) return;
+  pendingParcelsImport = { file, url, inputId, conflictData: null };
+  sendParcelsImport(false);
+}
+
+async function sendParcelsImport(confirmOverwrite) {
+  if (!pendingParcelsImport) return;
+  const { file, url, inputId } = pendingParcelsImport;
+  const fd = new FormData();
+  fd.append('file', file);
+  if (confirmOverwrite) fd.append('confirm_overwrite', '1');
+  showBtBusy('Đang so sánh dữ liệu Thửa đất với CSDL hiện có — file lớn có thể mất vài chục giây, vui lòng không tải lại trang...');
+  let res;
+  try {
+    res = await fetch(url, { method: 'POST', body: fd });
+  } catch (e) {
+    hideBtBusy();
+    toast('Lỗi kết nối khi import file', true);
+    pendingParcelsImport = null;
+    return;
+  }
+  hideBtBusy();
+  if (res.status === 409) {
+    const data = await res.json();
+    pendingParcelsImport.conflictData = data;
+    openParcelsImportConfirm(data);
+    return;
+  }
+  if (inputId) document.getElementById(inputId).value = '';
+  if (res.ok) {
+    const data = await res.json();
+    pendingParcelsImport = null;
+    onParcelsImportDone(data);
+  } else {
+    const data = await res.json().catch(() => ({}));
+    toast(data.error || 'Lỗi khi import file', true);
+    pendingParcelsImport = null;
+  }
+}
+
+function openParcelsImportConfirm(data) {
+  const skippedTotal = data.skipped_not_found_total || (data.skipped_not_found ? data.skipped_not_found.length : 0);
+  let summary = `Có ${data.pending_changes} thửa với dữ liệu mới hoặc thay đổi, ${data.no_change} thửa giống hệt CSDL hiện có (tự bỏ qua, không hỏi)`;
+  if (skippedTotal) summary += `, ${skippedTotal} dòng không khớp Tờ/Thửa/Xã nào trong CSDL (bỏ qua)`;
+  summary += '. Xem trước danh sách bên dưới hoặc tải file changelog đầy đủ. Nhập mật khẩu tài khoản để xác nhận ghi các thay đổi này.';
+  document.getElementById('parcels-import-summary').textContent = summary;
+
+  const previewEl = document.getElementById('parcels-import-preview');
+  previewEl.innerHTML = '';
+  const preview = data.changes_preview || [];
+  preview.forEach(item => {
+    const row = document.createElement('div');
+    row.style.marginBottom = '8px';
+    const fieldsText = item.fields.map(f => `${f.field}: "${f.old || '(trống)'}" → "${f.new || '(trống)'}"`).join('; ');
+    row.innerHTML = `<b>${item.label}</b><br><span style="opacity:.85">${fieldsText}</span>`;
+    previewEl.appendChild(row);
+  });
+  if (data.pending_changes > preview.length) {
+    const more = document.createElement('div');
+    more.style.opacity = '.7';
+    more.textContent = `… và ${data.pending_changes - preview.length} thửa khác (xem đầy đủ trong file changelog)`;
+    previewEl.appendChild(more);
+  }
+
+  document.getElementById('parcels-import-password').value = '';
+  document.getElementById('parcels-import-password-error').style.display = 'none';
+  document.getElementById('modal-parcels-import-confirm').classList.add('open');
+}
+
+function closeParcelsImportConfirm() {
+  document.getElementById('modal-parcels-import-confirm').classList.remove('open');
+  if (pendingParcelsImport && pendingParcelsImport.inputId) document.getElementById(pendingParcelsImport.inputId).value = '';
+  pendingParcelsImport = null;
+}
+
+function downloadParcelsImportChangelog() {
+  if (!pendingParcelsImport || !pendingParcelsImport.conflictData) return;
+  const b64 = pendingParcelsImport.conflictData.changelog_xlsx_base64;
+  if (!b64) return;
+  const byteChars = atob(b64);
+  const byteNumbers = new Array(byteChars.length);
+  for (let i = 0; i < byteChars.length; i++) byteNumbers[i] = byteChars.charCodeAt(i);
+  const blob = new Blob([new Uint8Array(byteNumbers)], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = pendingParcelsImport.conflictData.changelog_filename || 'changelog-thua-dat.xlsx';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(a.href);
+}
+
+async function confirmParcelsImport() {
+  const pwd = document.getElementById('parcels-import-password').value;
+  const errEl = document.getElementById('parcels-import-password-error');
+  errEl.style.display = 'none';
+  if (!pwd) {
+    errEl.textContent = 'Vui lòng nhập mật khẩu để xác nhận';
+    errEl.style.display = 'block';
+    return;
+  }
+  const btn = document.getElementById('parcels-import-confirm-btn');
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Đang kiểm tra...';
+  let verified = false;
+  try {
+    const res = await fetch('/api/verify-password', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({ password: pwd })
+    });
+    const data = await res.json();
+    verified = res.ok && data.ok;
+    if (!verified) {
+      errEl.textContent = data.error || 'Mật khẩu không đúng';
+      errEl.style.display = 'block';
+    }
+  } catch (e) {
+    errEl.textContent = 'Lỗi kết nối, vui lòng thử lại';
+    errEl.style.display = 'block';
+  }
+  btn.disabled = false;
+  btn.textContent = originalText;
+  if (!verified) return;
+  document.getElementById('modal-parcels-import-confirm').classList.remove('open');
+  await sendParcelsImport(true);
+}
+
 function onParcelsImportDone(data) {
   loadParcels();
   if (data.synced_owners) {
@@ -4224,15 +4398,15 @@ function onParcelsImportDone(data) {
     // giải thích tương tự ở saveParcel()).
     mapDetailCache = {};
   }
+  const skippedTotal = data.skipped_not_found_total || (data.skipped_not_found ? data.skipped_not_found.length : 0);
   let msg = `Đã cập nhật ${data.updated} thửa đất`;
-  if (data.skipped && data.skipped.length) msg += `, bỏ qua ${data.skipped.length} dòng không khớp thửa nào`;
+  if (data.no_change) msg += `, ${data.no_change} thửa giống hệt CSDL (bỏ qua)`;
+  if (skippedTotal) msg += `, ${skippedTotal} dòng không khớp Tờ/Thửa/Xã nào`;
   if (data.synced_owners) {
-    msg += `. Đã đồng bộ chủ sử dụng cho ${data.synced_owners} thửa (thêm mới ${data.created_parties}, `
-      + `cập nhật ${data.updated_parties} chủ thể)`;
+    msg += `. Đã đồng bộ chủ sử dụng cho ${data.synced_owners} thửa (tạo mới ${data.created_parties} chủ thể)`;
   }
-  if (data.skipped_owner_names && data.skipped_owner_names.length) {
-    msg += `. Bỏ qua ${data.skipped_owner_names.length} chủ sử dụng thiếu Số CCCD: ${data.skipped_owner_names.slice(0, 5).join(', ')}`
-      + (data.skipped_owner_names.length > 5 ? '...' : '');
+  if (data.merged_parties) {
+    msg += `. Tự động gộp ${data.merged_parties} chủ thể trùng Số CCCD`;
   }
   toast(msg);
 }
