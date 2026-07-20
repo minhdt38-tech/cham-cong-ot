@@ -1565,7 +1565,19 @@ async function loadParties() {
   renderPartiesTable();
 }
 
-function renderPartiesTable() {
+// Phân trang bảng Chủ thể (2026-07-20, theo yêu cầu Minh): sau đợt import Thửa đất có thể phát sinh
+// hàng nghìn chủ thể (mỗi tên chưa có CCCD tạo 1 bản ghi riêng), hiện PARTIES_PAGE_SIZE dòng đầu, bấm
+// "Xem thêm" nạp thêm từng đợt — cùng kiểu với PARCELS_PAGE_SIZE ở bảng Thửa đất.
+const PARTIES_PAGE_SIZE = 100;
+let partiesShownLimit = PARTIES_PAGE_SIZE;
+
+function showMoreParties() {
+  partiesShownLimit += PARTIES_PAGE_SIZE;
+  renderPartiesTable(true);
+}
+
+function renderPartiesTable(preserveLimit) {
+  if (!preserveLimit) partiesShownLimit = PARTIES_PAGE_SIZE; // đổi tìm kiếm/tải lại → quay về trang đầu
   const body = document.getElementById('party-tbl-body');
   const empty = document.getElementById('party-tbl-empty');
   if (!partiesList.length) {
@@ -1574,7 +1586,8 @@ function renderPartiesTable() {
     return;
   }
   empty.style.display = 'none';
-  body.innerHTML = partiesList.map((p, i) => `
+  const shown = partiesList.slice(0, partiesShownLimit);
+  let html = shown.map((p, i) => `
     <tr>
       <td>${i+1}</td>
       <td>${esc(p.ho_ten)}</td>
@@ -1589,6 +1602,14 @@ function renderPartiesTable() {
       </td>
     </tr>
   `).join('');
+  if (partiesList.length > shown.length) {
+    html += `
+    <tr><td colspan="8" style="text-align:center;padding:10px">
+      <span style="font-size:12px;color:var(--muted)">Đang hiện ${shown.length.toLocaleString('vi-VN')}/${partiesList.length.toLocaleString('vi-VN')} chủ thể — </span>
+      <button class="btn btn-ghost btn-sm" onclick="showMoreParties()">⬇ Xem thêm ${Math.min(PARTIES_PAGE_SIZE, partiesList.length - shown.length).toLocaleString('vi-VN')} chủ thể</button>
+    </td></tr>`;
+  }
+  body.innerHTML = html;
 }
 
 function openPartyModal(id) {
